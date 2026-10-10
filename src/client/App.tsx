@@ -6,6 +6,7 @@ import {
  Search, ShieldAlert, SlidersHorizontal, Target, TrendingUp, X, Zap
 } from 'lucide-react';
 import MarketChart from './components/MarketChart';
+import TradingViewWidget from './components/TradingViewWidget';
 import { analyzeCandles } from '../shared/analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
 import type { FundamentalsPayload, MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
@@ -238,6 +239,7 @@ export default function App(){
       <div><div className="eyebrow"><span className="eyebrow-accent">●</span> YOUR GLOBAL INTELLIGENCE TERMINAL</div><h1>全局情报<span className="title-dim">，尽在掌握。</span></h1><p>从世界事件到产业链，从上市公司披露到股价信号。先看事实，再判断影响。</p></div>
       <div className="heading-extra"><Globe2 size={14}/> GLOBAL COVERAGE <span className="accent-tiny">/</span> 7 SECTORS</div>
      </section>
+     <div className="global-tape"><div className="tape-top"><span className="eyebrow">CROSS-ASSET MONITOR</span><span>第三方行情组件 · 可能延迟</span></div><TradingViewWidget kind="tape"/></div>
      <div className="overview-grid">
       <div className="overview-main">
        <div className="panel hero-news">
@@ -329,7 +331,7 @@ export default function App(){
      <div className="research-layout">
       <div className="research-primary">
        <div className="panel candle-panel"><div className="panel-heading"><div><span className="eyebrow">OHLCV / HISTORICAL DATA</span><h2>价格走势与均线结构</h2></div><span className="date-chip"><Clock3 size={13}/> {selectedData?.asOf||'等待数据'}</span></div>
-        {selectedData?<MarketChart candles={selectedData.candles}/>:<Blank loading={!marketErrors[selected]} title="正在加载 K 线" detail={marketErrors[selected]||'仅使用真实来源数据'}/>}
+        {selectedData?<MarketChart candles={selectedData.candles}/>:<div className="chart-fallback">{!marketErrors[selected]&&<p className="widget-loading">正在尝试获取可分析的 OHLCV 数据…</p>}<TradingViewWidget symbol={selected}/><StatusNote>以下是 TradingView 官方嵌入图表；它不向本系统提供原始 K 线，暂不能计算五线开花。{marketErrors[selected]||'如需本地技术分析请配置行情 API。'}</StatusNote></div>}
         <div className="chart-disclaimer">{selectedData?.notice||'尚未获得报价'} {selectedData?.sourceUrl&&<a href={selectedData.sourceUrl} target="_blank" rel="noopener noreferrer">数据来源 <ExternalLink size={12}/></a>}</div>
        </div>
        {selectedData?<div className="panel analysis-box"><AnalysisPanel data={selectedData}/></div>:<div className="panel"><Blank title="技术分析等待行情" detail={marketErrors[selected]||'请先选择能提供日线历史数据的股票'}/></div>}
