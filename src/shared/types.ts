@@ -2,7 +2,7 @@ export type Candle = { time: string; open: number; high: number; low: number; cl
 export type MarketPayload = {
   symbol: string; displaySymbol: string; name: string; exchange: string; currency: string;
   candles: Candle[]; last: number | null; previous: number | null; change: number | null; changePercent: number | null;
-  asOf: string | null; delayed: true; provider: string; sourceUrl: string; notice: string;
+  asOf: string | null; delayed: true; stale?: boolean; fetchedAt?: string; cacheSource?: string; provider: string; sourceUrl: string; notice: string;
 };
 export type NewsItem = {
   id: string; title: string; source: string; url: string; publishedAt: string | null;
