@@ -357,3 +357,14 @@ kbd{font-family:inherit;font-size:10px;font-weight:700;color:#9eacb9;border:1px 
  .app-footer{flex-direction:column;align-items:flex-start}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+.global-tape{border:1px solid #2c4051;background:#101c2a;border-radius:10px;margin-bottom:19px;overflow:hidden}
+.tape-top{display:flex;justify-content:space-between;align-items:center;padding:9px 17px 5px;gap:12px}
+.tape-top>span:last-child{font-size:11px;color:#778f9f}
+.tv-widget-shell{position:relative;width:100%;background:#101b2a}
+.tv-widget-tape{height:77px}.tv-widget-chart{height:455px;min-height:400px}
+.tv-widget-inner{height:calc(100% - 20px);width:100%}
+.tv-attribution{display:block;text-align:right;color:#7d9eb0;text-decoration:underline;font-size:10px;padding:2px 12px;height:20px}
+.tv-attribution:hover{color:#a5ded6}
+.chart-fallback .status-note{margin:11px 17px}
+.widget-loading{color:#88a5b7;font-size:12px;padding:7px 17px;margin:0}
