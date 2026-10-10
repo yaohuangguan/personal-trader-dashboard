@@ -9,7 +9,7 @@
 - **Global event feed**: nine English-language Google News RSS queries spanning geopolitics, macro and the seven monitored industries. Fetch errors and source timestamps are visible. Original articles open in a new tab.
 - **Seven-sector catalyst desk**: AI hardware, AI software/applications, robotics, innovative medicine, commercial space, energy storage/new energy and consumer. Source-linked headlines are *unverified research leads*, not earnings confirmation.
 - **US and China equity watchlist**: search by common name, ticker, or 6-digit A-share code; follow up to 30 tickers, persisted in browser localStorage.
-- **Real historical OHLCV charts**: Stooq U.S. daily bars and Eastmoney's public historical interface for A shares (best effort). Optional Twelve Data provider takes priority via secret. Dates, provider identity, errors and delayed status are shown.
+- **Historical OHLCV charts**: the app attempts permitted daily feeds and supports optional **Twelve Data / Alpha Vantage** API keys. Both keyless feeds failed in an actual 2026-10-10 smoke test (Stooq served a browser challenge, Eastmoney returned null). The UI therefore falls back to an **official TradingView embedded chart**, but does **not** fabricate raw candles or run the technical model without valid OHLCV. A cross-asset ticker tape is embedded separately.
 - **Explainable technical research**: MA5/10/20/60/120, MA slopes, bullish ordering, RSI14, MACD, 20-day relative volume, trend persistence, 120-day range position and ATR. Separate scoring dimensions and cautionary notes.
 - **Fundamentals**: official SEC XBRL companyfacts annual revenue and net income for U.S. issuers once SEC_USER_AGENT is configured. A-share users are linked to official CNINFO reports; structured Chinese financial statements are **not** claimed to be integrated.
 - **Keyboard-centric UX**: Ctrl/Cmd+K or / to search, a responsive terminal layout, local-only bookmarks, quick navigation, and real provider errors.
@@ -37,6 +37,7 @@ npx wrangler login
 npx wrangler secret put SEC_USER_AGENT
 # optional licensed data source
 npx wrangler secret put TWELVE_DATA_API_KEY
+# or: npx wrangler secret put ALPHA_VANTAGE_API_KEY
 npm run deploy
 \`\`\`
 
@@ -61,7 +62,7 @@ The catalyst framework keeps **headline / rumor**, **order confirmation**, **rev
 
 1. **No simulated prices or manufactured news.** Missing providers produce visible unavailable states.
 2. **Not real-time exchange data.** Free sources expose daily OHLCV, and may have weekends, holidays, restrictions, outages, adjustment differences, and missing instruments. Do not place orders from these figures.
-3. Stooq and Eastmoney public feeds are used for *personal research prototypes*. Eastmoney's historical interface is unofficial. Before commercial use, replace them with licensed, contractually permitted data feeds. The optional Twelve Data feed may be rate-limited or require higher tiers for specific exchanges.
+3. Both keyless feeds proved unreliable under smoke testing; source restrictions and upstream changes are outside this repository's control. Before dependable use, configure a licensed, contractually permitted provider. The optional Twelve Data feed may be rate-limited or require higher tiers for specific exchanges. Alpha Vantage free daily data commonly offers only 100 bars, fewer than our 121-bar five-line minimum. TradingView official embeds can display charts even when model data is missing.
 4. Google News is a headline index, not source verification, truth ranking or guaranteed comprehensive coverage. Source timestamps and link resolution can vary.
 5. SEC XBRL does not provide a normalized restated data warehouse; chart values must be checked against original 10-K filings. A-share financial statements currently link out to CNINFO.
 6. News/bookmarks/watchlist are stored in the active browser, not synced between devices. Scheduled cloud-side alerts, durable event memory, broker integrations, research notes and push notifications are future work.
