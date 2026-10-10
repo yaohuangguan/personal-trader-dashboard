@@ -6,7 +6,7 @@
 
 ## What works now
 
-- **Global event feed**: nine English-language Google News RSS queries spanning geopolitics, macro and the seven monitored industries. Fetch errors and source timestamps are visible. Original articles open in a new tab.
+- **Global event feed**: nine topical news queries, using Google News where available and independently falling back to BBC/CNBC original publisher RSS feeds and topic-focused GDELT indexing. Fetch errors and source timestamps are visible. Original articles open in a new tab.
 - **Seven-sector catalyst desk**: AI hardware, AI software/applications, robotics, innovative medicine, commercial space, energy storage/new energy and consumer. Source-linked headlines are *unverified research leads*, not earnings confirmation.
 - **US and China equity watchlist**: search by common name, ticker, or 6-digit A-share code; follow up to 30 tickers, persisted in browser localStorage.
 - **Historical OHLCV charts**: the app attempts permitted daily feeds and supports optional **Twelve Data / Alpha Vantage** API keys. Both keyless feeds failed in an actual 2026-10-10 smoke test (Stooq served a browser challenge, Eastmoney returned null). The UI therefore falls back to an **official TradingView embedded chart**, but does **not** fabricate raw candles or run the technical model without valid OHLCV. A cross-asset ticker tape is embedded separately.
