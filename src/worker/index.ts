@@ -1,7 +1,9 @@
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
+import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
+import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews } from './research';
 
-interface Env { ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; APP_NAME?:string }
+interface Env { ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
@@ -71,8 +73,15 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  const cn=/^\d{6}\.(SH|SZ)$/.test(symbol);
  const known=CATALOG.find(c=>c.symbol===symbol);
  let source:{candles:Candle[];url:string}|null=null,provider='',notice='',failure='';
- // Configure a licensed provider for production-grade reliability; free feeds are research-grade only.
- if(env.TWELVE_DATA_API_KEY){
+ // Prefer licensed, auditable price-history APIs. Never suggest unlicensed feeds are guaranteed.
+ if(env.FMP_API_KEY){
+  try{
+   source=await fmpDaily(symbol,env.FMP_API_KEY);
+   provider='Financial Modeling Prep';
+   notice='FMP EOD OHLCV. Delay and exchange entitlements depend on your subscription.';
+  }catch(e){failure+=' FMP: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source&&env.TWELVE_DATA_API_KEY){
   try{source=await twelveData(symbol,env.TWELVE_DATA_API_KEY);provider='Twelve Data';notice='Provider daily candles. Exchange entitlements and delay depend on your plan.';}
   catch(e){failure=e instanceof Error?e.message:String(e);}
  }
@@ -82,6 +91,20 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
    provider='Alpha Vantage (daily)';
    notice='免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。';
   }catch(e){failure+=' Alpha Vantage: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source&&cn){
+  try{
+   source=await tencentAshares(symbol);
+   provider='腾讯财经公开日线（非授权接口，前复权）';
+   notice='500根左右的前复权日线；成交量使用原始接口单位（通常为手）。研究使用，非交易所实时或受保证的授权数据。';
+  }catch(e){failure+=' Tencent CN: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source){
+  try{
+   source=await yahooDaily(symbol);
+   provider='Yahoo Finance (unofficial daily endpoint)';
+   notice='Unlicensed public endpoint, may rate limit (429) without warning; not suitable for production financial feeds.';
+  }catch(e){failure+=' Yahoo: '+(e instanceof Error?e.message:String(e));}
  }
  if(!source){
   try{
@@ -93,8 +116,9 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
    }
   }catch(e){failure+=' Public source: '+(e instanceof Error?e.message:String(e));}
  }
- if(!source||!source.candles.length)throw new Error('No permitted OHLCV source available for '+symbol+'. Configure a licensed Twelve Data / Alpha Vantage API key. '+failure);
- const candles=source.candles;
+ if(!source||!source.candles.length)throw new Error('No permitted OHLCV source available for '+symbol+'. Configure a licensed FMP / Twelve Data / Alpha Vantage API key. '+failure);
+ const candles=validateDailyBars(source.candles);
+ if(candles.length<2)throw new Error('Source returned insufficient valid candles for '+symbol);
  const last=candles.at(-1)?.close??null,previous=candles.at(-2)?.close??null;
  return {symbol,displaySymbol:symbol,name:known?.name??symbol,exchange:known?.exchange??(cn?'CN':'US'),currency:cn?'CNY':'USD',
   candles,last,previous,change:last!==null&&previous!==null?last-previous:null,changePercent:last!==null&&previous?((last/previous)-1)*100:null,
@@ -251,10 +275,30 @@ async function financials(symbol:string,env:Env):Promise<FundamentalsPayload>{
   netIncome:annual(['NetIncomeLoss']),sourceUrl:'https://www.sec.gov/edgar/browse/?CIK='+cik,
   notice:'US GAAP 10-K 年度数据，非实时财报。口径因公司披露项目而异；请以原始报告为准。'};
 }
+async function scanOnce(env:Env){
+ if(!env.DB)throw new Error('D1 DB binding is not configured');
+ const feeds=await news('all');
+ return await persistScan(env.DB,feeds.items,feeds.warnings);
+}
 async function handle(req:Request,env:Env):Promise<Response>{
  const url=new URL(req.url),p=url.pathname;
+ if(p==='/api/admin/ingest'){
+  if(req.method!=='POST')return json({error:'Method not allowed'},405);
+  const secret=env.INGEST_SECRET;
+  if(!secret || secret.length<24)return json({error:'Manual ingest not configured'},503);
+  const auth=req.headers.get('Authorization')||'';
+  const actual=auth.startsWith('Bearer ')?auth.slice(7):'';
+  // Fixed-length XOR avoids immediately leaking the first mismatching character.
+  const expected=new TextEncoder().encode(secret),given=new TextEncoder().encode(actual);
+  let diff=expected.length^given.length;
+  for(let i=0;i<Math.max(expected.length,given.length);i++)diff|=(expected[i]||0)^(given[i]||0);
+  if(diff!==0)return json({error:'Unauthorized'},401);
+  try{return json(await scanOnce(env));}catch(e){return json({error:'Ingestion failed',details:String(e)},502);}
+ }
  if(req.method!=='GET')return json({error:'Method not allowed'},405);
- if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),providers:{licensed:'Twelve Data or Alpha Vantage (optional key)',us:'Stooq daily (currently may block automation)',cn:'Eastmoney daily (unofficial; may return unavailable)',news:'Google News RSS',filings:'SEC EDGAR (configuration required)'},mode:'research-grade'});
+ if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
+  providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',
+  news:'Google News / BBC / CNBC / GDELT',filings:'SEC EDGAR (contact header required)',earnings:'FMP (optional key)'},mode:'research-grade'});
  if(p==='/api/catalog')return json({items:CATALOG,sectors:SECTORS});
  if(p==='/api/search'){
   const q=(url.searchParams.get('q')||'').slice(0,80),local=searchLocal(q);
@@ -269,8 +313,63 @@ async function handle(req:Request,env:Env):Promise<Response>{
  if(p==='/api/market'){
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
   if(!validSymbol(symbol))return json({error:'Ticker must be 1–18 characters: letters, digits, dot, hyphen or caret'},400);
-  try{return json(await cached('market:'+symbol+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),240,()=>market(symbol,env)));}
-  catch(e){return json({error:'Market data temporarily unavailable',details:e instanceof Error?e.message:String(e),symbol},502);}
+  try{
+   const saved=env.DB?await readSnapshot(env.DB,symbol):null;
+   if(saved?.fetchedAt && Date.now()-Date.parse(saved.fetchedAt)<40*60000)return json({...saved,cacheSource:'D1'});
+   try{
+    const result=await cached('market:'+symbol+':'+Boolean(env.FMP_API_KEY)+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),900,()=>market(symbol,env));
+    if(env.DB)try{await saveSnapshot(env.DB,result);}catch(err){console.warn('Quote persistence:',String(err));}
+    return json({...result,stale:false,cacheSource:'upstream'});
+   }catch(e){
+    if(saved)return json({...saved,stale:true,notice:saved.notice+' | Live update failed; historical last-success snapshot shown.'});
+    throw e;
+   }
+  }catch(e){return json({error:'Market data temporarily unavailable',details:e instanceof Error?e.message:String(e),symbol},502);}
+ }
+ if(p==='/api/intelligence/summary'){
+  if(!env.DB)return json({stored:false,total:0,new24h:0,sectors:[],lastRun:null,reason:'D1 not configured'});
+  try{return json(await intelSummary(env.DB));}catch(e){return json({error:'Intelligence summary failed',details:String(e)},502);}
+ }
+ if(p==='/api/intelligence'){
+  if(!env.DB)return json({stored:false,items:[],reason:'D1 not configured'});
+  const category=url.searchParams.get('category')||'all';
+  if(!NEWS_CATEGORIES.some(c=>c.id===category))return json({error:'Unknown topic'},400);
+  const limit=Math.min(100,Math.max(1,Number(url.searchParams.get('limit'))||50));
+  const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
+  if(symbol&&!validSymbol(symbol))return json({error:'Invalid ticker'},400);
+  try{return json({stored:true,items:await listEvents(env.DB,{category,limit,onlyNew:url.searchParams.get('new')==='1',symbol:symbol||undefined})});}
+  catch(e){return json({error:'Intelligence history failed',details:String(e)},502);}
+ }
+ if(p==='/api/earnings-calendar'){
+  const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
+  if(!validSymbol(symbol))return json({error:'Invalid ticker'},400);
+  try{return json(await cached('earnings:'+symbol,14400,()=>earningsCalendar(symbol,env)));}
+  catch(e){return json({available:false,items:[],provider:'FMP',reason:'Earnings calendar unavailable: '+String(e)});}
+ }
+ if(p==='/api/filings'){
+  const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
+  if(!validSymbol(symbol))return json({error:'Invalid ticker'},400);
+  try{return json(await cached('filings:'+symbol,21600,()=>officialFilings(symbol,env)));}
+  catch(e){return json({available:false,items:[],provider:'Announcement provider unavailable',sourceUrl:/\.(SH|SZ)$/.test(symbol)?'https://www.cninfo.com.cn/new/index':'https://www.sec.gov/edgar/search/',notice:String(e)});}
+ }
+ if(p==='/api/announcement'){
+  const artCode=url.searchParams.get('code')||'';
+  if(!/^AN\d{18}$/.test(artCode))return json({error:'Invalid announcement id'},400);
+  try{return json(await cached('announcement:'+artCode,21600,()=>announcementDetail(artCode)));}
+  catch(e){return json({error:'Announcement detail unavailable',details:String(e)},502);}
+ }
+ if(p==='/api/stock/news'){
+  const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
+  if(!validSymbol(symbol))return json({error:'Invalid ticker'},400);
+  try{
+   let source:NewsItem[]=[];
+   if(env.DB){
+    const history=await listEvents(env.DB,{category:'all',symbol,limit:60});
+    source=history;
+   }
+   if(!source.length)source=(await news('all')).items;
+   return json(await companyNews(symbol,source));
+  }catch(e){return json({error:'Stock news unavailable',details:String(e)},502);}
  }
  if(p==='/api/news'){
   const category=url.searchParams.get('category')||'all';
@@ -286,9 +385,14 @@ async function handle(req:Request,env:Env):Promise<Response>{
  }
  return json({error:'Unknown API path'},404);
 }
-export default {async fetch(request:Request,env:Env):Promise<Response>{
- try {
-  if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
-  return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
- }catch(e){return json({error:'Unexpected server error',details:e instanceof Error?e.message:String(e)},500);}
-}};
+export default {
+ async fetch(request:Request,env:Env):Promise<Response>{
+  try {
+   if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
+   return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
+  }catch(e){return json({error:'Unexpected server error',details:e instanceof Error?e.message:String(e)},500);}
+ },
+ async scheduled(_controller:unknown,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
+  if(env.DB)ctx.waitUntil(scanOnce(env).catch(err=>console.error('Scheduled intelligence scan failed:',String(err))));
+ }
+};

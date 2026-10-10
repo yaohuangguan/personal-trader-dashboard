@@ -7,14 +7,15 @@ import {
 } from 'lucide-react';
 import MarketChart from './components/MarketChart';
 import TradingViewWidget from './components/TradingViewWidget';
+import { OverviewIntelStrip, IntelHistory, StockResearchExtras } from './components/IntelPanels';
 import { analyzeCandles } from '../shared/analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
 import type { FundamentalsPayload, MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
 
-type View='overview'|'news'|'radar'|'markets'|'research'|'saved';
+type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved';
 const NAV:[View,string,typeof Globe2][]=[
  ['overview','情报总览',LayoutDashboard],['news','全球快讯',Globe2],['radar','产业催化',Radar],
- ['markets','市场观察',LineChart],['research','个股研究',Target],['saved','收藏情报',Bookmark]
+ ['markets','市场观察',LineChart],['research','个股研究',Target],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
 ];
 function readStored<T>(key:string,fallback:T):T{
  try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw) as T:fallback;}catch{return fallback;}
@@ -239,6 +240,7 @@ export default function App(){
       <div><div className="eyebrow"><span className="eyebrow-accent">●</span> YOUR GLOBAL INTELLIGENCE TERMINAL</div><h1>全局情报<span className="title-dim">，尽在掌握。</span></h1><p>从世界事件到产业链，从上市公司披露到股价信号。先看事实，再判断影响。</p></div>
       <div className="heading-extra"><Globe2 size={14}/> GLOBAL COVERAGE <span className="accent-tiny">/</span> 7 SECTORS</div>
      </section>
+     <OverviewIntelStrip onOpen={()=>changeView("history")}/>
      <div className="global-tape"><div className="tape-top"><span className="eyebrow">CROSS-ASSET MONITOR</span><span>第三方行情组件 · 可能延迟</span></div><TradingViewWidget kind="tape"/></div>
      <div className="overview-grid">
       <div className="overview-main">
@@ -324,7 +326,7 @@ export default function App(){
     </>}
     {view==='research'&&<>
      <div className="stock-header">
-      <div className="stock-id"><div className="eyebrow">SECURITY RESEARCH / {selectedData?.exchange||'GLOBAL'}</div><div className="stock-heading"><h1>{selectedData?.name||selected}</h1><span>{selected}</span></div><p>{selectedData?.provider||'等待市场数据提供方'} · {selectedData?.currency||'—'}</p></div>
+      <div className="stock-id"><div className="eyebrow">SECURITY RESEARCH / {selectedData?.exchange||'GLOBAL'}</div><div className="stock-heading"><h1>{selectedData?.name||selected}</h1><span>{selected}</span></div><p>{selectedData?.provider||'等待市场数据提供方'} · {selectedData?.currency||'—'} {selectedData?.stale?'· 历史快照（刷新失败）':''}</p></div>
       <div className="stock-price-wrap"><div className="stock-price"><strong>{money(selectedData?.last)}</strong><span>{selectedData?.currency||''}</span></div><div className={'stock-delta '+changeClass(selectedData?.changePercent)}>{selectedData?.changePercent!=null?(selectedData.changePercent>=0?<ArrowUpRight size={16}/>:<ArrowDownRight size={16}/>):null}{percent(selectedData?.changePercent)} <span>最近交易日</span></div></div>
       <button className={'outline-button watch-toggle '+(watchlist.includes(selected)?'in-watch':'')} onClick={()=>toggleWatch(selected)}>{watchlist.includes(selected)?<Check size={15}/>:<Plus size={15}/>} {watchlist.includes(selected)?'已在关注':'加入关注'}</button>
      </div>
@@ -351,7 +353,9 @@ export default function App(){
        </div>
       </div>
      </div>
+     <StockResearchExtras symbol={selected} onStock={chooseSymbol}/>
     </>}
+    {view==='history'&&<IntelHistory onStock={chooseSymbol}/>}
     {view==='saved'&&<>
      <SectionHeading eyebrow="PRIVATE RESEARCH LIBRARY" title="收藏情报" right={<span className="small-metadata">{saved.length} 条已保存</span>}/>
      <p className="section-subtitle">快速保存值得二次验证的原始报道；只存当前浏览器，不会上传你的研究列表。</p>

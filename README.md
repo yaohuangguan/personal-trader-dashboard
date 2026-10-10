@@ -1,77 +1,106 @@
-# Market Atlas · Personal Financial Intelligence Terminal
+# Market Atlas · Global Financial Intelligence Terminal
 
-> **A research desk, not a P&L dashboard.** Global finance and geopolitical news, seven catalyst chains, daily U.S. and Chinese equity charts, company fundamentals, and explainable Five-Line Blossom + Volume-Price-Time-Space research.
+**Personal research desk, not a trading or P&L app.** Follow global events, seven industry catalyst chains, U.S. and A-share daily candles, individual company disclosures, and explainable technical trends — from one screen.
 
-[![CI](https://github.com/yaohuangguan/personal-trader-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/yaohuangguan/personal-trader-dashboard/actions/workflows/ci.yml)
+**Mac preview:** https://personal-market-atlas-mac.nzp.workers.dev (moviegoer24 Cloudflare account, D1-backed)
+**Original deployment:** https://personal-market-atlas.nzs.workers.dev (different Cloudflare account; **not automatically updated** by Mac deployment)
 
-## What works now
+## What is implemented
 
-- **Global event feed**: nine topical news queries, using Google News where available and independently falling back to BBC/CNBC original publisher RSS feeds and topic-focused GDELT indexing. Fetch errors and source timestamps are visible. Original articles open in a new tab.
-- **Seven-sector catalyst desk**: AI hardware, AI software/applications, robotics, innovative medicine, commercial space, energy storage/new energy and consumer. Source-linked headlines are *unverified research leads*, not earnings confirmation.
-- **US and China equity watchlist**: search by common name, ticker, or 6-digit A-share code; follow up to 30 tickers, persisted in browser localStorage.
-- **Historical OHLCV charts**: the app attempts permitted daily feeds and supports optional **Twelve Data / Alpha Vantage** API keys. Both keyless feeds failed in an actual 2026-10-10 smoke test (Stooq served a browser challenge, Eastmoney returned null). The UI therefore falls back to an **official TradingView embedded chart**, but does **not** fabricate raw candles or run the technical model without valid OHLCV. A cross-asset ticker tape is embedded separately.
-- **Explainable technical research**: MA5/10/20/60/120, MA slopes, bullish ordering, RSI14, MACD, 20-day relative volume, trend persistence, 120-day range position and ATR. Separate scoring dimensions and cautionary notes.
-- **Fundamentals**: official SEC XBRL companyfacts annual revenue and net income for U.S. issuers once SEC_USER_AGENT is configured. A-share users are linked to official CNINFO reports; structured Chinese financial statements are **not** claimed to be integrated.
-- **Keyboard-centric UX**: Ctrl/Cmd+K or / to search, a responsive terminal layout, local-only bookmarks, quick navigation, and real provider errors.
+| Workspace | Capabilities | Data limitations |
+|---|---|---|
+| Intelligence overview | Global macro + sector RSS, original links, source dates, cross-asset ticker tape, 24h new-event stats | RSS may be blocked; sources fall back to BBC/CNBC/GDELT. Headline does not verify a thesis. |
+| Event history | D1-backed deduplicated article keys; first seen, last seen, sightings, topic and deterministic ticker/sector matches; 24h filters | Classification is based on feed topic/headline keywords, not an AI-confirmed business relationship. |
+| Catalyst radar | Seven sector lines, related companies, news/timeline navigation | Revenue, orders and margins are **not** inferred from media headlines. |
+| Markets | Browser-local watchlists; A-share OHLCV; U.S. fallback TradingView official embed | Unlicensed endpoints can rate-limit; quotes are never represented as real-time exchange feeds. |
+| Individual stock | Actual 5/10/20/60/120 MA analysis, volume/price/time/space, MACD, RSI, ATR; primary disclosure timeline; news/event links | Full technical analysis requires >=121 valid historical candles. |
+| A-share announcements | Eastmoney index titles/dates/categories; fetch original indexed notice body and PDF link on demand; title-keyword event tags; CNINFO official verification link | Third-party index can fail. Extracted text and tags are **not** audited or financial statement extraction. |
+| US filings | SEC EDGAR official 10-K/10-Q/8-K list and XBRL annual revenue / income when SEC_USER_AGENT is configured | Filing dates are historical, not earnings predictions. |
+| Earnings calendar | Scheduled and reported EPS/date via optional authorized FMP account | With no entitlement, the UI explicitly says unavailable rather than guessing dates. |
 
-## Getting started
+## Data provider priority
 
-Requires Node.js 20.18+ or Node.js 22+.
+1. Financial Modeling Prep **stable EOD full** (requires key and allowed symbol entitlement).
+2. Twelve Data daily historical bars (optional key).
+3. Alpha Vantage daily (optional key; free plan usually only ~100 candles, which is not enough for the 121-bar technical model).
+4. For **A shares**, the Tencent public historical API, with ~500 forward-adjusted daily candles during current testing; labels identify the feed as unofficial/unlicensed and not guaranteed for future uptime.
+5. Yahoo chart (best effort, currently returns 429 from Mac for tested US stocks), Stooq, Eastmoney fallback.
+6. When raw OHLCV is unavailable, official TradingView embeds still provide a reference chart; the local Five-Line model does **not** fabricate a score.
 
-\`\`\`bash
-npm install
-npm run dev
-\`\`\`
+Successful OHLCV responses are persisted as a D1 last-success snapshot. Stale/fallback snapshots carry an explicit notice, provider, fetch timestamp and as-of date. Source rows are normalized, validated and sorted before computing signals.
 
-Vite runs at http://localhost:5173 and proxies /api to the Cloudflare Worker on http://localhost:8787. The first dev command builds static assets for Wrangler. Run tests / CI checks with:
-
-\`\`\`bash
-npm test
-npm run build
-\`\`\`
-
-To deploy to your own Cloudflare account:
-
-\`\`\`bash
-npx wrangler login
-npx wrangler secret put SEC_USER_AGENT
-# optional licensed data source
-npx wrangler secret put TWELVE_DATA_API_KEY
-# or: npx wrangler secret put ALPHA_VANTAGE_API_KEY
-npm run deploy
-\`\`\`
-
-Choose an appropriate, **real contact email** in the SEC User-Agent value. Never commit API keys or SEC contact information in source control. Restrict private deployments using **Cloudflare Access** before adding personal portfolio information.
+Before commercial use, negotiate licensed, exchange-entitled data; **do not assume a publicly reachable market API gives redistribution rights**.
 
 ## Architecture
 
-- React + TypeScript + Vite frontend
-- Cloudflare Worker API, alongside Workers Static Assets
-- Browser localStorage: followed tickers and saved articles. No broker authentication, trading, custody or portfolio holdings on the server.
-- External data gateways are isolated in src/worker/index.ts, with short-lived isolate caching. API payloads include original provider and timestamps.
+- **Frontend:** React + TypeScript + Vite + lightweight-charts, keyboard Cmd/Ctrl+K search, responsive dark UI.
+- **Backend:** Cloudflare Worker static assets + API.
+- **Durable storage:** Cloudflare D1 tables: intel_events, intel_sector_links, intel_scan_runs, market_snapshots.
+- **Cron:** Mac preview scheduled at minute 15 of every hour. Worker pulls multiple RSS/secondary indices and stores real source-linked items; old items update sightings without becoming new events.
+- **Security:** no trading execution, no brokerage auth, no private portfolio server-side; all keys are Worker secrets; public article archive only. Watchlist/bookmarks use browser localStorage.
+- **Verification:** deterministic analysis tests, ID stability tests, invalid candle rejection, Mac/Wrangler build + actual D1 repeated-ingestion smoke tests.
 
-## Research model
+## Develop on Mac
 
-**Five-Line Blossom** is a configurable *observation framework*, not a backtested predictor. Version 1 uses moving averages **5/10/20/60/120**: bullish order and positive 5-day slopes; above MA5 and MACD positive dynamics are required for the stronger 'blossom' flag. Full classification requires at least 121 daily candles.
+Requires Node.js 22+ and Wrangler authorization for the intended account.
 
-**Volume-Price-Time-Space** separates relative trading volume, MA price structure, how long the instrument remained above MA20, and position within the recent 120-day trading range. The four components form an **explainable heuristic observation score**, not an expected-return or win-probability estimate. The thresholds are research defaults, not optimized parameters.
+\`\`\`bash
+git clone https://github.com/yaohuangguan/personal-trader-dashboard.git
+cd personal-trader-dashboard
+npm ci
+npm run build
+npm test
 
-The catalyst framework keeps **headline / rumor**, **order confirmation**, **revenue accounting** and **profit realization** separate. The news feed provides headlines only, so its stage remains 'unverified lead' without original source verification. U.S. leader signals and potential A-share peers are watchlists, not an assertion of direct commercial exposure.
+# Mac D1 already exists; initialize other environments with their own D1 ID.
+npm run db:migrate:mac
+npm run dev:mac
+\`\`\`
 
-## Transparency and limitations
+Mac staging account's database ID is in \`wrangler.mac.toml\`. The default \`wrangler.toml\` deliberately doesn't reference a cross-account D1. Do not copy that Mac database ID into a Windows-account deployment. Create its own D1 and set the \`DB\` binding there.
 
-1. **No simulated prices or manufactured news.** Missing providers produce visible unavailable states.
-2. **Not real-time exchange data.** Free sources expose daily OHLCV, and may have weekends, holidays, restrictions, outages, adjustment differences, and missing instruments. Do not place orders from these figures.
-3. Both keyless feeds proved unreliable under smoke testing; source restrictions and upstream changes are outside this repository's control. Before dependable use, configure a licensed, contractually permitted provider. The optional Twelve Data feed may be rate-limited or require higher tiers for specific exchanges. Alpha Vantage free daily data commonly offers only 100 bars, fewer than our 121-bar five-line minimum. TradingView official embeds can display charts even when model data is missing.
-4. Google News is a headline index, not source verification, truth ranking or guaranteed comprehensive coverage. Source timestamps and link resolution can vary.
-5. SEC XBRL does not provide a normalized restated data warehouse; chart values must be checked against original 10-K filings. A-share financial statements currently link out to CNINFO.
-6. News/bookmarks/watchlist are stored in the active browser, not synced between devices. Scheduled cloud-side alerts, durable event memory, broker integrations, research notes and push notifications are future work.
-7. **Investment research only. Not advice, prediction or trade execution.**
+To deploy Mac preview:
 
-## Next milestones
+\`\`\`bash
+npm run deploy:mac
+\`\`\`
 
-- Licensed A-share and U.S. providers, earnings calendar and company profiles
-- Persisted news/event clusters, direct evidence links, revision tracking, source reputation
-- Durable alerting, custom thesis rules, deduplicated catalyst history
-- Portfolio CSV import, optional Cloudflare D1 + Access-protected account sync
-- Quant research tests for trend thresholds, benchmark comparison and look-ahead bias
+### Secrets
+
+\`\`\`bash
+npx wrangler secret put FMP_API_KEY --config wrangler.mac.toml
+npx wrangler secret put TWELVE_DATA_API_KEY --config wrangler.mac.toml
+npx wrangler secret put SEC_USER_AGENT --config wrangler.mac.toml
+# optional: enable the protected manual scan endpoint
+npx wrangler secret put INGEST_SECRET --config wrangler.mac.toml
+\`\`\`
+
+Use only the secrets you actually need; never check any tokens into Git or print them in logs. **SEC_USER_AGENT** must contain legitimate organization/application identity and contact email. Its omission leaves US official filing features explicitly unavailable.
+
+A private-use dashboard should be placed behind Cloudflare Access before adding any real personal portfolio data or accounts. This repo currently stores no private holdings in the cloud.
+
+### Manual / local verification of ingestion
+
+\`\`\`bash
+npm run db:migrate:local:mac
+npx wrangler dev --config wrangler.mac.toml --port 8789
+curl http://127.0.0.1:8789/cdn-cgi/local/scheduled
+curl http://127.0.0.1:8789/api/intelligence/summary
+# trigger it again: same articles must have new_events=0
+\`\`\`
+
+If an administrator configures \`INGEST_SECRET\`, the cloud-side manual endpoint is \`POST /api/admin/ingest\` with \`Authorization: Bearer <secret>\`. Without a strong secret (24+ bytes), that endpoint remains disabled. Scheduled cron does **not** require the manual secret.
+
+## Methodology and audit standard
+
+- **Five-Line Blossom:** MA5/10/20/60/120 rising, bullish order, last close above MA5, MACD histogram positive. Requires 121+ daily bars. This is a heuristic observation state and not a backtested alpha or win probability.
+- **Volume–Price–Time–Space:** 20-day relative volume, MA price structure, days above MA20, 120-day range/breakout and ATR risk context. Each dimension shows evidence instead of a naked buy/sell verdict.
+- **News -> Order -> Revenue -> Profit:** media headlines start with evidence stage \`media_lead\`. Primary validation and investment conclusions require human inspection of filings; this version never marks orders or earnings "verified" merely because a story repeats.
+- **Historical truth:** source URLs, timestamps, observed dates, provider labels and feed warnings remain visible. Missing data is labeled, not replaced with demos.
+
+## Next engineering decisions
+
+1. For dependable U.S. and commercial A-share analysis: activate a licensed FMP/Twelve Data/EODHD or equivalent feed with >=121 historical bars and sufficient exchange rights.
+2. For complete A-share financial statements: add an authorized structured filing feed and accounting-period parsing, rather than infer revenue from notice titles.
+3. For richer catalyst reasoning: add structured thesis hypotheses, source attachments, manual verification and a change-detection graph beyond headline similarity.
+
+This is a personal information and research system, **not investment advice, predictive trading or trade execution**.
