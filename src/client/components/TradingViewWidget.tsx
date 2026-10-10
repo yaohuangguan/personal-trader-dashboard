@@ -55,6 +55,6 @@ export default function TradingViewWidget({kind='advanced',symbol='NVDA',symbols
  },[kind,symbol,symbols.join('|')]);
  return <div className={'tv-widget-shell '+(kind==='tape'?'tv-widget-tape':kind==='quotes'?'tv-widget-quotes':'tv-widget-chart')}>
   <div ref={ref} className="tradingview-widget-container tv-widget-inner"/>
-  <a className="tv-attribution" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">Charts by TradingView</a>
+  <span className="tv-attribution">Chart data &amp; widgets by TradingView · third-party reference</span>
  </div>;
 }

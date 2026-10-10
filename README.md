@@ -104,3 +104,18 @@ If an administrator configures \`INGEST_SECRET\`, the cloud-side manual endpoint
 3. For richer catalyst reasoning: add structured thesis hypotheses, source attachments, manual verification and a change-detection graph beyond headline similarity.
 
 This is a personal information and research system, **not investment advice, predictive trading or trade execution**.
+
+## In-app reading and installable PWA
+
+Market Atlas now uses an integrated reader rather than opening an external website when a user taps a headline or disclosure record.
+
+- News headlines, bookmarks, company news and historical event timelines all open the **same site-local reader** with publisher/source attribution, timestamp and source-provided RSS excerpt. The source may not license full-text redistribution: when the source provides no synopsis, the reader **plainly states that no content is available** instead of silently fetching and republishing a copyrighted article.
+- For US corporate filings, the app can retrieve short HTML/text extracts from a validated SEC filing document matching the official submission index, with the SEC User-Agent configured. Report typography/tables may be incomplete. When the contact header is missing, the reader displays an unavailability explanation.
+- For A-share disclosures, the existing Eastmoney document index and text extract remain in-app. PDF attachments load through **same-origin** \`GET /api/announcement-pdf?code=AN...\`; the Worker resolves attachments itself, allowlists \`pdf.dfcfw.com\`, validates magic bytes and enforces a 12 MB limit. No arbitrary fetch URL is accepted.
+- Charts are still powered by market-data providers, and fallback TradingView embeds may load third-party resources; application-controlled links do not navigate away. Commercial use requires appropriate market-data redistribution rights.
+
+The site is now an installable **Progressive Web App** (PWA): manifest, installable 192/512 and maskable icons, Apple touch icon, standalone display, service worker precache, offline app-shell support, install instructions, update prompt and offline status. On iOS, use **Safari → Share → Add to Home Screen**. Chrome/Edge desktop and Android may show an install button. An installation is not a native App Store application.
+
+**Offline behavior is intentionally conservative:** UI assets and on-device saved articles are accessible as stored; API calls are \`NetworkOnly\` to ensure the UI does not silently claim stale quotes and articles are live. Opening a detail page with no source-provided excerpt will not manufacture a summary. Chrome third-party widgets and official PDF assets require connectivity.
+
+To test locally, run \`npm run build\` and inspect \`dist/manifest.webmanifest\`, \`dist/sw.js\`, offline service-worker behavior and the \`/api/announcement-pdf\` response. Tests assert that app-owned article elements do not open new tabs.

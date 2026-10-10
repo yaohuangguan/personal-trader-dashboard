@@ -143,14 +143,16 @@ function tag(block:string,name:string):string {
  const match=block.match(new RegExp('<'+name+'(?:\\s[^>]*)?>([\\s\\S]*?)<\\/'+name+'>','i'));
  return match?decodeXml(match[1]):'';
 }
-function parseFeed(xml:string,category:string,fallbackSource=''):NewsItem[]{
+export function parseFeed(xml:string,category:string,fallbackSource=''):NewsItem[]{
  const entries=Array.from(xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/g)).slice(0,30);
  return entries.map((m,i)=>{
   const title=tag(m[1],'title'),link=tag(m[1],'link'),source=tag(m[1],'source');
   const cleanSource=source||fallbackSource||(title.includes(' - ')?title.split(' - ').at(-1):'News')||'News';
   const headline=title.endsWith(' - '+cleanSource)?title.slice(0,-(cleanSource.length+3)):title;
   const time=Date.parse(tag(m[1],'pubDate'));
-  return {id:category+'-'+String(time||0)+'-'+i,title:headline,source:cleanSource,url:link,publishedAt:Number.isFinite(time)?new Date(time).toISOString():null,category,originalTitle:title};
+  const description=tag(m[1],'description').replace(/\s+/g,' ').trim();
+  const summary=description&&description!==headline?description.slice(0,520):undefined;
+  return {id:category+'-'+String(time||0)+'-'+i,title:headline,source:cleanSource,url:link,publishedAt:Number.isFinite(time)?new Date(time).toISOString():null,category,originalTitle:title,summary};
  }).filter(item=>item.title.length>5&&item.url.startsWith('https://'));
 }
 const publicRss = {
@@ -280,6 +282,53 @@ async function scanOnce(env:Env){
  const feeds=await news('all');
  return await persistScan(env.DB,feeds.items,feeds.warnings);
 }
+async function serveAnnouncementPdf(code:string):Promise<Response>{
+ const detail=await cached('announcement:'+code,21600,()=>announcementDetail(code));
+ if(!detail.pdfUrl)throw new Error('Attachment is not available');
+ const target=new URL(detail.pdfUrl);
+ if(target.protocol!=='https:' || target.hostname!=='pdf.dfcfw.com')throw new Error('Blocked untrusted PDF host');
+ const res=await withTimeout(target.toString(),{headers:{accept:'application/pdf'}},15000);
+ if(!res.ok)throw new Error('Document source returned HTTP '+res.status);
+ if(Number(res.headers.get('content-length')||0)>12*1024*1024)throw new Error('PDF exceeds 12 MB size limit');
+ const stream=res.body?.getReader();if(!stream)throw new Error('Missing PDF body');
+ let size=0;const pieces:Uint8Array[]=[];
+ try{
+  while(true){
+   const {done,value}=await stream.read();if(done)break;
+   size+=value.byteLength;
+   if(size>12*1024*1024)throw new Error('PDF exceeds 12 MB size limit');
+   pieces.push(value);
+  }
+ }finally{void stream.cancel().catch(()=>{});}
+ const bytes=new Uint8Array(size);let offset=0;
+ for(const part of pieces){bytes.set(part,offset);offset+=part.length;}
+ if(size<5 || new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw new Error('Source did not return a PDF document');
+ return new Response(bytes,{headers:{'content-type':'application/pdf','content-disposition':'inline; filename="announcement.pdf"',
+  'cache-control':'public, max-age=3600','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; frame-ancestors 'self'"}});
+}
+async function inAppFilingDocument(symbol:string,form:string,date:string,env:Env){
+ const filings=await officialFilings(symbol,env);
+ const found=filings.items.find(f=>f.form===form&&f.date===date);
+ if(!found)return {available:false,content:'',title:symbol+' '+form,provider:filings.provider,
+  notice:'未在当前 SEC 官方披露列表中找到对应记录。',sourceUrl:filings.sourceUrl,publishedAt:date};
+ const u=new URL(found.url);
+ if(u.protocol!=='https:'||u.hostname!=='www.sec.gov'||!u.pathname.startsWith('/Archives/edgar/data/'))
+  throw new Error('Untrusted SEC document path');
+ if(!env.SEC_USER_AGENT)throw new Error('SEC User-Agent is not configured');
+ const res=await withTimeout(u.toString(),{headers:{'User-Agent':env.SEC_USER_AGENT,accept:'text/html, text/plain, application/xml'}},13000);
+ if(!res.ok)throw new Error('SEC document HTTP '+res.status);
+ const mime=res.headers.get('content-type')||'';
+ if(/pdf|zip|octet-stream/.test(mime))return {available:false,content:'',title:symbol+' '+form,provider:'SEC EDGAR',
+  notice:'该披露文件不是可直接解析的 HTML/文本格式。',sourceUrl:filings.sourceUrl,publishedAt:date};
+ const html=(await res.text()).slice(0,1200000);
+ const content=html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
+  .replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&')
+  .replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/[ \t]{2,}/g,' ')
+  .replace(/\n{3,}/g,'\n\n').trim().slice(0,50000);
+ return {available:content.length>0,content,title:symbol+' · '+form,provider:'SEC EDGAR',
+  notice:'SEC 官方披露文本摘录（最多5万字符）；表格和脚注格式可能丢失，请谨慎解读。',sourceUrl:filings.sourceUrl,publishedAt:date};
+}
 async function handle(req:Request,env:Env):Promise<Response>{
  const url=new URL(req.url),p=url.pathname;
  if(p==='/api/admin/ingest'){
@@ -351,6 +400,19 @@ async function handle(req:Request,env:Env):Promise<Response>{
   if(!validSymbol(symbol))return json({error:'Invalid ticker'},400);
   try{return json(await cached('filings:'+symbol,21600,()=>officialFilings(symbol,env)));}
   catch(e){return json({available:false,items:[],provider:'Announcement provider unavailable',sourceUrl:/\.(SH|SZ)$/.test(symbol)?'https://www.cninfo.com.cn/new/index':'https://www.sec.gov/edgar/search/',notice:String(e)});}
+ }
+ if(p==='/api/announcement-pdf'){
+  const code=url.searchParams.get('code')||'';
+  if(!/^AN\d{18}$/.test(code))return json({error:'Invalid announcement code'},400);
+  try{return await serveAnnouncementPdf(code);}
+  catch(e){return json({error:'PDF unavailable',details:e instanceof Error?e.message:String(e)},502);}
+ }
+ if(p==='/api/filing-document'){
+  const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
+  const form=url.searchParams.get('form')||'',date=url.searchParams.get('date')||'';
+  if(!validSymbol(symbol)||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!['10-K','10-Q','8-K','20-F','6-K'].includes(form))return json({error:'Invalid filing selection'},400);
+  try{return json(await cached('filing-text:'+symbol+':'+form+':'+date,3600,()=>inAppFilingDocument(symbol,form,date,env)));}
+  catch(e){return json({error:'Filing document unavailable',details:e instanceof Error?e.message:String(e)},502);}
  }
  if(p==='/api/announcement'){
   const artCode=url.searchParams.get('code')||'';
