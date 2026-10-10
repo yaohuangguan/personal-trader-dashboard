@@ -2,7 +2,7 @@
 
 ## Data trust levels
 1. SEC XBRL: official primary issuer disclosure, normalized with caveats.
-2. RSS indexed headlines: source-linked leads only; no implication of verification.
+2. News headlines: Google News indexing, BBC/CNBC original RSS and GDELT independent fallback. Source-linked leads only; no implication of verification.
 3. Stooq / Eastmoney history: publicly available non-SLA daily OHLCV. Eastmoney is unofficial. Both may fail or lack permissions for commercialization.
 4. Heuristic technical analysis: deterministic, derived from OHLCV. Not a forecast.
 
