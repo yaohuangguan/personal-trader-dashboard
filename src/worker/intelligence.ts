@@ -64,9 +64,9 @@ export async function persistScan(db:D1Database,articles:NewsItem[],warnings:str
  const inserts:DBStatement[]=[];
  for(const {item,id,sectors,tickers} of unique){
   inserts.push(db.prepare(
-   'INSERT INTO intel_events(id,title,original_title,source,url,category,published_at,first_seen_at,last_seen_at,sightings,tickers_json,evidence_stage) '+
-   "VALUES (?,?,?,?,?,?,?,?,?,1,?,'media_lead') ON CONFLICT(id) DO UPDATE SET last_seen_at=excluded.last_seen_at, sightings=intel_events.sightings+1"
-  ).bind(id,item.title,item.originalTitle||item.title,item.source,item.url,item.category,item.publishedAt,now,now,JSON.stringify(tickers)));
+   'INSERT INTO intel_events(id,title,original_title,source,url,category,published_at,first_seen_at,last_seen_at,sightings,tickers_json,evidence_stage,summary '+
+   "VALUES (?,?,?,?,?,?,?,?,?,1,?,'media_lead',?) ON CONFLICT(id) DO UPDATE SET last_seen_at=excluded.last_seen_at, sightings=intel_events.sightings+1, summary=COALESCE(excluded.summary,intel_events.summary)"
+  ).bind(id,item.title,item.originalTitle||item.title,item.source,item.url,item.category,item.publishedAt,now,now,JSON.stringify(tickers),item.summary||null));
   for(const link of sectors){
    inserts.push(db.prepare('INSERT OR IGNORE INTO intel_sector_links(event_id,sector_id,reason) VALUES (?,?,?)').bind(id,link.id,link.reason));
   }
@@ -82,16 +82,16 @@ export async function persistScan(db:D1Database,articles:NewsItem[],warnings:str
 type RawEvent = {
  id:string;title:string;original_title:string;source:string;url:string;category:string;
  published_at:string|null;first_seen_at:string;last_seen_at:string;sightings:number;tickers_json:string;evidence_stage:string;
- sectors:string|null;
+ sectors:string|null;summary:string|null;
 };
 function toEvent(row:RawEvent):EventRecord {
  let tickers:string[]=[];
  try{tickers=JSON.parse(row.tickers_json) as string[];}catch{}
  return {id:row.id,title:row.title,originalTitle:row.original_title,source:row.source,url:row.url,category:row.category,
-  publishedAt:row.published_at,firstSeenAt:row.first_seen_at,lastSeenAt:row.last_seen_at,sightings:row.sightings,
+  publishedAt:row.published_at,firstSeenAt:row.first_seen_at,lastSeenAt:row.last_seen_at,sightings:row.sightings,summary:row.summary||undefined,
   tickers,evidenceStage:row.evidence_stage,sectors:(row.sectors||'').split(',').filter(Boolean)};
 }
-const selected='e.id,e.title,e.original_title,e.source,e.url,e.category,e.published_at,e.first_seen_at,e.last_seen_at,e.sightings,e.tickers_json,e.evidence_stage,GROUP_CONCAT(DISTINCT l.sector_id) AS sectors';
+const selected='e.id,e.title,e.original_title,e.source,e.url,e.category,e.published_at,e.first_seen_at,e.last_seen_at,e.sightings,e.tickers_json,e.evidence_stage,e.summary,GROUP_CONCAT(DISTINCT l.sector_id) AS sectors';
 export async function listEvents(db:D1Database,opts:{category:string;limit:number;onlyNew?:boolean;symbol?:string}):Promise<EventRecord[]>{
  const where:string[]=[];const args:(string|number)[]=[];
  if(opts.category!=='all'){

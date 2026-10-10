@@ -462,3 +462,62 @@ kbd{font-family:inherit;font-size:10px;font-weight:700;color:#9eacb9;border:1px 
 .announcement-inspector-title button{background:transparent;color:#a4dace;border:0;font-size:12px}
 .announcement-inspector h4{font-size:13px;line-height:1.65;margin:10px 0}
 .announcement-excerpt{white-space:pre-wrap;overflow-wrap:anywhere;overflow-y:auto;max-height:390px;font-size:12px;color:#cadde1;line-height:1.8;background:#101c29;border:1px solid #31485a;border-radius:7px;padding:14px;margin-top:12px}
+
+/* Unified in-app research reading */
+.inapp-news-button{padding:0;border:0;background:transparent;text-align:left;cursor:pointer;vertical-align:baseline;font-family:inherit}
+.inapp-news-button:hover,.event-title-button:hover,.deep-link-button:hover{color:var(--accent)}
+.event-title-button{display:block;background:transparent;border:0;padding:0;color:#e5f3f9;font-weight:650;font-size:14px;text-align:left;line-height:1.65;cursor:pointer;margin:7px 0;width:100%}
+.event-title-button svg,.deep-link-button svg{display:inline;vertical-align:middle;opacity:.8}
+.deep-link-button{display:inline;color:#cce4e7;background:transparent;border:0;padding:0;font-size:12px;line-height:1.6;text-align:left;cursor:pointer}
+.deep-filing-button{width:100%;padding:11px 0;text-align:left;background:transparent;border:0;border-bottom:1px solid #293d4d;color:#e6f3f7;cursor:pointer}
+.deep-filing-button:hover{color:var(--accent)}
+.inline-source-button{border:0;background:transparent;color:#83dccb;display:inline-flex;align-items:center;gap:5px;padding:0;font-size:11px;cursor:pointer}
+.inline-source-button:hover{color:#fff}
+.reader-backdrop{position:fixed;inset:0;background:rgba(2,9,15,.83);backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:16px;z-index:100}
+.reader-modal{width:min(850px,100%);max-height:min(90dvh,940px);background:#111f2e;border:1px solid #375468;border-radius:14px;box-shadow:0 30px 90px #010409c7;display:flex;flex-direction:column;overflow:hidden}
+.reader-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 24px;background:#17293b;border-bottom:1px solid #304255;color:#f3faff}
+.reader-header span{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:750;letter-spacing:.1em}
+.reader-header span svg{color:var(--accent)}
+.reader-header em{font-style:normal;color:#89a5b7;font-size:10px}
+.reader-header button,.reader-footer button{background:transparent;border:0;color:#b3c6d4;display:flex;align-items:center;gap:8px}
+.reader-header button{padding:6px;border-radius:7px}
+.reader-header button:hover,.reader-footer button:hover{background:#274455;color:#fff}
+.reader-scroll{overflow-y:auto;padding:30px 34px;flex:1;min-height:0;overscroll-behavior:contain}
+.reader-type{display:flex;align-items:center;gap:8px;color:#6ae4c5;font-size:11px;font-weight:750;letter-spacing:.08em}
+.reader-scroll h2{font-size:clamp(21px,3vw,30px);font-weight:750;line-height:1.42;color:#f3f9fc;letter-spacing:-.014em;margin:14px 0 18px}
+.reader-facts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid #2a4354}
+.reader-facts span{font-size:11px;background:#213547;border:1px solid #345166;color:#a6c7ce;border-radius:5px;padding:4px 8px}
+.reader-body{padding-top:26px;line-height:1.8;color:#cedde7;font-size:14px}
+.reader-body>p{line-height:1.8}
+.reader-section-title{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:12px;font-weight:750;color:#d9eee8;letter-spacing:.05em;margin:0 0 14px}
+.reader-section-title span{font-weight:450;color:#819dad;font-size:11px}
+.reader-excerpt{padding:17px 19px;margin:0 0 27px;background:#193039;border-left:3px solid #49c8ab;border-radius:5px;line-height:1.8;white-space:pre-wrap}
+.reader-notice{padding:14px 16px;background:#202e3b;border:1px solid #385267;border-radius:7px;color:#a8bfd0;font-size:12px;line-height:1.8;margin:0 0 24px}
+.reader-provenance{margin-top:19px;display:flex;gap:9px;align-items:center;color:#82d5c1;font-size:12px}
+.reader-provenance svg{flex-shrink:0}
+.reader-document{font-size:13px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;color:#dce7ec;background:#0b1926;border:1px solid #284253;border-radius:7px;padding:19px;max-height:560px;overflow:auto}
+.reader-state{display:flex;align-items:center;gap:10px;color:#a6c5cb;padding:30px 0}
+.reader-footer{background:#172638;border-top:1px solid #304255;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 22px;color:#839daa;font-size:11px}
+.reader-footer button{padding:7px;font-weight:600;font-size:12px}
+.inapp-pdf{margin:15px 0 5px;border:1px solid #2c5262;border-radius:8px;background:#0c1d2b;overflow:hidden}
+.inapp-pdf>p{color:#b5d3d9;font-size:11px;margin:0;padding:11px 14px;background:#193344;border-bottom:1px solid #325264}
+.inapp-pdf iframe{width:100%;height:min(72vh,640px);min-height:350px;border:0;background:#fff}
+.pwa-install-trigger{border:1px solid #30635f;background:#1b363d;color:#9becd6;border-radius:7px;padding:8px 10px;display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:11px;font-weight:650}
+.pwa-install-trigger:hover{background:#25504c;color:#fff}
+.pwa-state-message{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:110;background:#283b46;border:1px solid #8b764e;border-radius:10px;color:#f4dbb1;max-width:calc(100vw - 28px);padding:12px 17px;display:flex;align-items:center;gap:10px;font-size:12px;box-shadow:0 10px 30px #0008}
+.pwa-update-banner{position:fixed;bottom:24px;right:24px;z-index:120;background:#18393d;border:1px solid #3c8a7b;border-radius:9px;padding:14px;box-shadow:0 15px 45px #0009;display:flex;gap:12px;align-items:center;color:#d7f3ec;font-size:12px;max-width:min(500px,calc(100vw - 28px))}
+.pwa-update-banner button{background:#2e7669;color:#e7fffa;border:0;border-radius:6px;padding:7px 10px;white-space:nowrap}
+.pwa-update-banner button:last-child{background:transparent;padding:6px}
+.pwa-help-backdrop{position:fixed;inset:0;z-index:150;background:#000b;display:flex;align-items:center;justify-content:center;padding:16px}
+.pwa-help-dialog{width:min(480px,100%);background:#152738;border:1px solid #48786e;border-radius:14px;padding:24px;color:#c6dce4;box-shadow:0 30px 70px #000b}
+.pwa-help-dialog p{font-size:13px;line-height:1.8}
+.pwa-help-title{display:flex;align-items:center;justify-content:space-between}
+.pwa-help-title h2{font-size:20px;color:#fff;margin:0}
+.pwa-help-title button{border:0;background:transparent;color:#c9e1eb;padding:5px}
+.pwa-help-foot{color:#93abb9;border-top:1px solid #325162;padding-top:14px;margin-bottom:0}
+@media(max-width:760px){.pwa-install-trigger{padding:7px}.pwa-install-trigger span{display:none}
+ .reader-backdrop{padding:0}.reader-modal{height:100dvh;max-height:100dvh;width:100%;border-radius:0}
+ .reader-header{padding:14px 17px}.reader-scroll{padding:24px 18px}.reader-footer{padding:12px 17px}
+ .reader-document{max-height:none}.inapp-pdf iframe{min-height:420px;height:65dvh}
+ .pwa-update-banner{bottom:12px;right:12px}
+}

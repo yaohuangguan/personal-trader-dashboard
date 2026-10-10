@@ -66,3 +66,13 @@ Mac \`wrangler dev\` exposes \`/cdn-cgi/local/scheduled\`, which triggers the sa
 - Source classification is headline-level. Entity resolution, article translations, event merging across publishers, thesis revision and claim-level evidence are future work.
 - Earnings calendar and SEC filing features depend on valid provider credentials/contact entitlements.
 - Cross-account production migration requires new D1 provisioning, applying \`migrations/\`, and no private data copied between accounts without explicit approval.
+
+## PWA, reading rights and bounded document proxy
+
+The UI's news, event-history, bookmark and company-research links now open an in-app React reader without navigating away. It displays publisher-attributed RSS descriptions when supplied; a missing summary is **not** equivalent to knowing the article content. No arbitrary website article is scraped/reprinted. SEC reports may show official textual excerpts when an SEC contact User-Agent is configured.
+
+A-share PDF attachments are resolved from validated announcement codes by the backend; the only allowed PDF origin is \`https://pdf.dfcfw.com\`. The Worker limits downloads to 12 MiB, verifies a PDF magic signature, sets \`Content-Disposition: inline\`, and embeds a same-origin \`/api/announcement-pdf?code=...\` frame. User-provided external URLs are not accepted. Full PDF rendering on iOS depends on built-in WebKit PDF support; source text remains available if the device cannot display the embedded attachment.
+
+Vite PWA builds \`dist/manifest.webmanifest\`, \`dist/sw.js\`, app icons and workbox assets. Navigation shell and static bundles are precached; \`/api/*\` is NetworkOnly, so stale prices cannot be incorrectly surfaced as live market prices. The UI supports install prompts, manual iOS Add to Home Screen guidance, offline labels and update notification. PWA is not an App Store distribution.
+
+D1 schema migration \`0002_article_summary.sql\` preserves short feed descriptions in archived events and refreshes them on subsequent scans. Existing records without an RSS summary remain accurately marked as unavailable.

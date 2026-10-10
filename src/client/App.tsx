@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Bookmark, BookmarkCheck, CalendarDays,
- Check, ChevronRight, Clock3, Command, ExternalLink, FileText, Globe2, Layers3,
+ Check, ChevronRight, Clock3, Command, ExternalLink, FileText, Globe2, Layers3, BookOpen,
  LayoutDashboard, LineChart, LoaderCircle, Menu, Newspaper, Plus, Radar, RefreshCw,
  Search, ShieldAlert, SlidersHorizontal, Target, TrendingUp, X, Zap
 } from 'lucide-react';
 import MarketChart from './components/MarketChart';
 import TradingViewWidget from './components/TradingViewWidget';
+import {useReader} from './components/InAppReader';
+import PWAControls from './components/PWAControls';
 import { OverviewIntelStrip, IntelHistory, StockResearchExtras } from './components/IntelPanels';
 import { analyzeCandles } from '../shared/analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
@@ -51,11 +53,12 @@ function Blank({title,detail,loading=false}:{title:string;detail:string;loading?
 }
 function NewsRow({item,save,saved,major=false}:{item:NewsItem;save:(n:NewsItem)=>void;saved:boolean;major?:boolean}){
  const sectors=matchSectors(item).slice(0,2);
+ const {openNews}=useReader();
  return <article className={'news-row '+(major?'news-major':'')}>
   <div className="news-copy">
    <div className="news-meta"><span className="source-dot"/><strong>{item.source}</strong><span className="separator-dot">·</span><span title={item.publishedAt||''}>{relative(item.publishedAt)}</span>{sectors.map(s=><span key={s.id} className="tag-neutral">{s.name}</span>)}</div>
-   <a href={item.url} target="_blank" rel="noopener noreferrer" className="news-title">{item.title}<ExternalLink size={12} className="inline-external"/></a>
-   {major&&<div className="news-extra">源站：{sourceDomain(item.url)} · 点击阅读原文以核实完整上下文</div>}
+   <button type="button" onClick={()=>openNews(item)} className="news-title inapp-news-button">{item.title}<BookOpen size={13} className="inline-external"/></button>
+   {major&&<div className="news-extra">来源：{sourceDomain(item.url)} · 点击在本站阅读当前可用摘要</div>}
   </div>
   <button aria-label={saved?'取消收藏':'收藏新闻'} title={saved?'取消收藏':'收藏'} className={'icon-button news-save '+(saved?'saved':'')} onClick={()=>save(item)}>{saved?<BookmarkCheck size={17}/>:<Bookmark size={17}/>}</button>
  </article>;
@@ -77,6 +80,7 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
  </button>;
 }
 function FinanceSection({data,loading}:{data:FundamentalsPayload|null;loading:boolean}){
+ const {openFinance}=useReader();
  if(loading)return <Blank loading title="正在读取财务披露" detail="优先读取 SEC 官方数据，不生成推测财务数值"/>;
  if(!data)return <Blank title="财报尚未加载" detail="选择一只股票以查看相关官方披露"/>;
  return <div className="finance-wrap">
@@ -94,7 +98,7 @@ function FinanceSection({data,loading}:{data:FundamentalsPayload|null;loading:bo
     </div>)}
    </div>
   </>}
-  <a className="outline-link" href={data.sourceUrl} target="_blank" rel="noopener noreferrer">查看官方披露原文 <ExternalLink size={13}/></a>
+  <button type="button" className="outline-link" onClick={()=>openFinance(data)}>查看财务数据口径与站内披露入口 <BookOpen size={13}/></button>
  </div>;
 }
 function AnalysisPanel({data}:{data:MarketPayload}){
@@ -120,6 +124,7 @@ function AnalysisPanel({data}:{data:MarketPayload}){
  </div>;
 }
 export default function App(){
+ const {openMarket}=useReader();
  const [view,setView]=useState<View>('overview');
  const [mobileNav,setMobileNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
@@ -229,6 +234,7 @@ export default function App(){
     <div className="top-left"><button className="icon-button mobile-menu" aria-label="打开导航" onClick={()=>setMobileNav(true)}><Menu size={20}/></button><span className="crumb">RESEARCH DESK</span><ChevronRight size={14}/><strong>{NAV.find(n=>n[0]===view)?.[1]}</strong></div>
     <div className="top-right">
      <span className="time-label"><span className="pulse-dot"/> AKL {currentTime}</span>
+     <PWAControls/>
      <button onClick={()=>setRefreshKey(v=>v+1)} className="icon-button" aria-label="刷新所有数据" title="刷新数据"><RefreshCw size={17}/></button>
      <span className="top-divider"/>
      <button className="search-trigger" onClick={()=>{setSearchOpen(true);searchRef.current?.focus();}}><Search size={16}/><span>搜索全球股票 / 代码</span><kbd>⌘ K</kbd></button>
@@ -334,7 +340,7 @@ export default function App(){
       <div className="research-primary">
        <div className="panel candle-panel"><div className="panel-heading"><div><span className="eyebrow">OHLCV / HISTORICAL DATA</span><h2>价格走势与均线结构</h2></div><span className="date-chip"><Clock3 size={13}/> {selectedData?.asOf||'等待数据'}</span></div>
         {selectedData?<MarketChart candles={selectedData.candles}/>:<div className="chart-fallback">{!marketErrors[selected]&&<p className="widget-loading">正在尝试获取可分析的 OHLCV 数据…</p>}<TradingViewWidget symbol={selected}/><StatusNote>以下是 TradingView 官方嵌入图表；它不向本系统提供原始 K 线，暂不能计算五线开花。{marketErrors[selected]||'如需本地技术分析请配置行情 API。'}</StatusNote></div>}
-        <div className="chart-disclaimer">{selectedData?.notice||'尚未获得报价'} {selectedData?.sourceUrl&&<a href={selectedData.sourceUrl} target="_blank" rel="noopener noreferrer">数据来源 <ExternalLink size={12}/></a>}</div>
+        <div className="chart-disclaimer">{selectedData?.notice||'尚未获得报价'} {selectedData?.sourceUrl&&<button type="button" className="inline-source-button" onClick={()=>openMarket(selectedData)}>查看数据来源与口径 <BookOpen size={12}/></button>}</div>
        </div>
        {selectedData?<div className="panel analysis-box"><AnalysisPanel data={selectedData}/></div>:<div className="panel"><Blank title="技术分析等待行情" detail={marketErrors[selected]||'请先选择能提供日线历史数据的股票'}/></div>}
        <div className="panel"><div className="panel-heading"><div><span className="eyebrow">OFFICIAL DISCLOSURE / FINANCIALS</span><h2>财务披露与业绩</h2></div><FileText size={18} className="panel-heading-icon"/></div><FinanceSection data={fundamentals} loading={financeLoading}/></div>
