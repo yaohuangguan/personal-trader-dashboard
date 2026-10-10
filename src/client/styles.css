@@ -368,3 +368,7 @@ kbd{font-family:inherit;font-size:10px;font-weight:700;color:#9eacb9;border:1px 
 .tv-attribution:hover{color:#a5ded6}
 .chart-fallback .status-note{margin:11px 17px}
 .widget-loading{color:#88a5b7;font-size:12px;padding:7px 17px;margin:0}
+
+.tv-widget-quotes{height:425px;min-height:400px;padding:0 9px}
+.tv-widget-quotes .tv-widget-inner{height:calc(100% - 20px)}
+.widget-note{color:#91a5b7;font-size:11px;line-height:1.6;padding:0 18px 14px}
