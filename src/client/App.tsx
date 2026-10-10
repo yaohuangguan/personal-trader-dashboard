@@ -251,7 +251,7 @@ export default function App(){
           {highlighted&&<div className="featured-story"><div className="featured-glow"/><div className="featured-overline"><Zap size={14}/> LATEST GLOBAL SIGNAL</div><div className="featured-content"><NewsRow item={highlighted} save={toggleSave} saved={savedIds.has(highlighted.url)} major/></div></div>}
           {news.slice(1,8).map(x=><NewsRow key={x.id} item={x} save={toggleSave} saved={savedIds.has(x.url)}/>)}
          </div>}
-        <div className="panel-bottom"><span>Google News RSS · 源站验证 · {newsData?.fetchedAt?'更新 '+dateTime(newsData.fetchedAt):'等待更新'}</span><button onClick={()=>changeView('news')}>全部资讯 <ArrowRight size={13}/></button></div>
+        <div className="panel-bottom"><span>公开新闻源 · 原文可溯 · {newsData?.fetchedAt?'更新 '+dateTime(newsData.fetchedAt):'等待更新'}</span><button onClick={()=>changeView('news')}>全部资讯 <ArrowRight size={13}/></button></div>
        </div>
        <div className="panel">
         <div className="panel-heading"><div><span className="eyebrow">CATALYST MONITOR / 02</span><h2>七大产业链脉搏</h2></div><button className="text-link" onClick={()=>changeView('radar')}>产业研究 <ArrowRight size={15}/></button></div>
