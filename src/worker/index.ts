@@ -119,11 +119,11 @@ function tag(block:string,name:string):string {
  const match=block.match(new RegExp('<'+name+'(?:\\s[^>]*)?>([\\s\\S]*?)<\\/'+name+'>','i'));
  return match?decodeXml(match[1]):'';
 }
-function parseFeed(xml:string,category:string):NewsItem[]{
+function parseFeed(xml:string,category:string,fallbackSource=''):NewsItem[]{
  const entries=Array.from(xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/g)).slice(0,30);
  return entries.map((m,i)=>{
   const title=tag(m[1],'title'),link=tag(m[1],'link'),source=tag(m[1],'source');
-  const cleanSource=source||title.split(' - ').at(-1)||'News';
+  const cleanSource=source||fallbackSource||(title.includes(' - ')?title.split(' - ').at(-1):'News')||'News';
   const headline=title.endsWith(' - '+cleanSource)?title.slice(0,-(cleanSource.length+3)):title;
   const time=Date.parse(tag(m[1],'pubDate'));
   return {id:category+'-'+String(time||0)+'-'+i,title:headline,source:cleanSource,url:link,publishedAt:Number.isFinite(time)?new Date(time).toISOString():null,category,originalTitle:title};
@@ -144,7 +144,7 @@ async function publicFeed(key:keyof typeof publicRss):Promise<NewsItem[]>{
    const response=await withTimeout(source,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},10000);
    if(!response.ok)throw new Error(key+' RSS HTTP '+response.status);
    const xml=await response.text();if(!xml.includes('<rss'))throw new Error(key+' feed did not return RSS');
-   return parseFeed(xml,'world');
+   return parseFeed(xml,'world',key==='cnbc'?'CNBC':'BBC News');
   });
   pendingRss.set(cacheKey,job);
   void job.finally(()=>pendingRss.delete(cacheKey)).catch(()=>{});
