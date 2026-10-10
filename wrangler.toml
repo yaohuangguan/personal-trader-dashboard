@@ -12,4 +12,4 @@ run_worker_first = ["/api/*"]
 [vars]
 APP_NAME = "Market Atlas"
 # Optional: configure SEC_USER_AGENT through wrangler secret put.
-# Optional: configure TWELVE_DATA_API_KEY through wrangler secret put.
+# Optional: configure TWELVE_DATA_API_KEY / ALPHA_VANTAGE_API_KEY through wrangler secret put.
