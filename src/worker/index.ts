@@ -1,7 +1,7 @@
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
 
-interface Env { ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; APP_NAME?:string }
+interface Env { ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
@@ -54,6 +54,18 @@ async function twelveData(symbol:string,key:string):Promise<{candles:Candle[];ur
  const candles=payload.values.map(v=>({time:v.datetime.slice(0,10),open:num(v.open),high:num(v.high),low:num(v.low),close:num(v.close),volume:num(v.volume)})).sort((a,b)=>a.time.localeCompare(b.time));
  return {candles,url:endpoint};
 }
+async function alphaVantage(symbol:string,key:string):Promise<{candles:Candle[];url:string}>{
+ const t=symbol.endsWith('.SH')?symbol.slice(0,6)+'.SHH':symbol.endsWith('.SZ')?symbol.slice(0,6)+'.SHZ':symbol;
+ const url='https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol='+encodeURIComponent(t)+'&outputsize=compact&apikey='+encodeURIComponent(key);
+ const response=await withTimeout(url,{},13000);if(!response.ok)throw new Error('Alpha Vantage HTTP '+response.status);
+ const data=await response.json() as Record<string,unknown>;
+ const values=data['Time Series (Daily)'] as Record<string,Record<string,string>>|undefined;
+ if(!values)throw new Error(String(data['Note']||data['Information']||data['Error Message']||'No Alpha Vantage series'));
+ const candles=Object.entries(values).map(([time,v])=>({
+  time,open:num(v['1. open']),high:num(v['2. high']),low:num(v['3. low']),close:num(v['4. close']),volume:num(v['5. volume'])
+ })).filter(c=>c.close>0&&c.open>0).sort((a,b)=>a.time.localeCompare(b.time));
+ return {candles,url:'https://www.alphavantage.co/documentation/'};
+}
 async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  const symbol=normalizeSymbol(symbolRaw);if(!validSymbol(symbol))throw new Error('Invalid ticker');
  const cn=/^\d{6}\.(SH|SZ)$/.test(symbol);
@@ -64,13 +76,25 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
   try{source=await twelveData(symbol,env.TWELVE_DATA_API_KEY);provider='Twelve Data';notice='Provider daily candles. Exchange entitlements and delay depend on your plan.';}
   catch(e){failure=e instanceof Error?e.message:String(e);}
  }
- if(!source){
-  source=cn?await eastmoney(symbol):await stooq(symbol);
-  provider=cn?'东方财富（非官方公开历史行情接口）':'Stooq（日线历史行情）';
-  notice='日线历史数据，非交易所实时或逐笔报价。'+(failure?' Licensed provider fallback: '+failure:'');
+ if(!source&&env.ALPHA_VANTAGE_API_KEY){
+  try{
+   source=await alphaVantage(symbol,env.ALPHA_VANTAGE_API_KEY);
+   provider='Alpha Vantage (daily)';
+   notice='免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。';
+  }catch(e){failure+=' Alpha Vantage: '+(e instanceof Error?e.message:String(e));}
  }
+ if(!source){
+  try{
+   const candidate=cn?await eastmoney(symbol):await stooq(symbol);
+   if(candidate.candles.length) {
+    source=candidate;
+    provider=cn?'东方财富（非官方公开历史行情接口）':'Stooq（日线历史行情）';
+    notice='日线历史数据，非交易所实时或逐笔报价。属于非SLA来源，服务可能拒绝自动访问。';
+   }
+  }catch(e){failure+=' Public source: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source||!source.candles.length)throw new Error('No permitted OHLCV source available for '+symbol+'. Configure a licensed Twelve Data / Alpha Vantage API key. '+failure);
  const candles=source.candles;
- if(candles.length===0)throw new Error('No historical candles for '+symbol+'. Verify exchange and provider availability.');
  const last=candles.at(-1)?.close??null,previous=candles.at(-2)?.close??null;
  return {symbol,displaySymbol:symbol,name:known?.name??symbol,exchange:known?.exchange??(cn?'CN':'US'),currency:cn?'CNY':'USD',
   candles,last,previous,change:last!==null&&previous!==null?last-previous:null,changePercent:last!==null&&previous?((last/previous)-1)*100:null,
@@ -162,7 +186,7 @@ async function financials(symbol:string,env:Env):Promise<FundamentalsPayload>{
 async function handle(req:Request,env:Env):Promise<Response>{
  const url=new URL(req.url),p=url.pathname;
  if(req.method!=='GET')return json({error:'Method not allowed'},405);
- if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),providers:{us:'Stooq daily',cn:'Eastmoney daily (unofficial)',news:'Google News RSS',filings:'SEC EDGAR (configuration required)'},mode:'research-grade'});
+ if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),providers:{licensed:'Twelve Data or Alpha Vantage (optional key)',us:'Stooq daily (currently may block automation)',cn:'Eastmoney daily (unofficial; may return unavailable)',news:'Google News RSS',filings:'SEC EDGAR (configuration required)'},mode:'research-grade'});
  if(p==='/api/catalog')return json({items:CATALOG,sectors:SECTORS});
  if(p==='/api/search'){
   const q=(url.searchParams.get('q')||'').slice(0,80),local=searchLocal(q);
@@ -177,7 +201,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
  if(p==='/api/market'){
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
   if(!validSymbol(symbol))return json({error:'Ticker must be 1–18 characters: letters, digits, dot, hyphen or caret'},400);
-  try{return json(await cached('market:'+symbol+':'+Boolean(env.TWELVE_DATA_API_KEY),240,()=>market(symbol,env)));}
+  try{return json(await cached('market:'+symbol+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),240,()=>market(symbol,env)));}
   catch(e){return json({error:'Market data temporarily unavailable',details:e instanceof Error?e.message:String(e),symbol},502);}
  }
  if(p==='/api/news'){
