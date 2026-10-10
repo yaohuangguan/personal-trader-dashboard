@@ -37,7 +37,7 @@ export default function TradingViewWidget({kind='advanced',symbol='NVDA'}:{kind?
   return ()=>{holder.replaceChildren();};
  },[kind,symbol]);
  return <div className={'tv-widget-shell '+(kind==='tape'?'tv-widget-tape':'tv-widget-chart')}>
-  <div ref={ref} className="tv-widget-inner"/>
+  <div ref={ref} className="tradingview-widget-container tv-widget-inner"/>
   <a className="tv-attribution" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">Charts by TradingView</a>
  </div>;
 }
