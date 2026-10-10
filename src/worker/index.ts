@@ -129,13 +129,81 @@ function parseFeed(xml:string,category:string):NewsItem[]{
   return {id:category+'-'+String(time||0)+'-'+i,title:headline,source:cleanSource,url:link,publishedAt:Number.isFinite(time)?new Date(time).toISOString():null,category,originalTitle:title};
  }).filter(item=>item.title.length>5&&item.url.startsWith('https://'));
 }
+const publicRss = {
+ world:'https://feeds.bbci.co.uk/news/world/rss.xml',
+ business:'https://feeds.bbci.co.uk/news/business/rss.xml',
+ technology:'https://feeds.bbci.co.uk/news/technology/rss.xml',
+ cnbc:'https://www.cnbc.com/id/100003114/device/rss/rss.html'
+} as const;
+const pendingRss = new Map<string,Promise<NewsItem[]>>();
+async function publicFeed(key:keyof typeof publicRss):Promise<NewsItem[]>{
+ const source=publicRss[key],cacheKey='public-rss:'+key;
+ let job=pendingRss.get(cacheKey);
+ if(!job){
+  job=cached(cacheKey,240,async()=>{
+   const response=await withTimeout(source,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},10000);
+   if(!response.ok)throw new Error(key+' RSS HTTP '+response.status);
+   const xml=await response.text();if(!xml.includes('<rss'))throw new Error(key+' feed did not return RSS');
+   return parseFeed(xml,'world');
+  });
+  pendingRss.set(cacheKey,job);
+  void job.finally(()=>pendingRss.delete(cacheKey)).catch(()=>{});
+ }
+ return job;
+}
+async function fallbackPublicLane(category:string):Promise<NewsItem[]>{
+ const keys:(keyof typeof publicRss)[] = category==='world'
+  ?['world','business','cnbc']
+  :category==='macro'?['business','cnbc','world']
+  :['technology','cnbc','business'];
+ const feeds=await Promise.allSettled(keys.map(k=>publicFeed(k)));
+ const merged=feeds.flatMap(r=>r.status==='fulfilled'?r.value:[]);
+ if(!merged.length)throw new Error('BBC/CNBC feeds unavailable');
+ if(category==='world')return merged.map(x=>({...x,category:'world'}));
+ if(category==='macro')return merged.filter(x=>/market|stock|trading|earnings|inflation|bank|econom|tariff|trade|fed|rate|business|finance|investment|oil|energy|economic|tax|china|debt|recession/i.test(x.title)).map(x=>({...x,category}));
+ const chain=SECTORS.find(s=>s.id===category);
+ if(!chain)return [];
+ return merged.filter(x=>chain.words.some(w=>x.title.toLowerCase().includes(w.toLowerCase()))).map(x=>({...x,category}));
+}
+async function gdeltLane(category:string):Promise<NewsItem[]>{
+ const feed=feeds[category];if(!feed)return [];
+ const q=feed.q.replace(/\s+when:\d+d/g,'');
+ const url='https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent(q)+'&mode=artlist&format=json&maxrecords=20&timespan=3d&sort=datedesc';
+ const res=await withTimeout(url,{},10000);if(!res.ok)throw new Error('GDELT HTTP '+res.status);
+ const data=await res.json() as {articles?:{title?:string;url?:string;domain?:string;seendate?:string}[]};
+ return (data.articles??[]).filter(a=>!!a.title&&a.url?.startsWith('https://')).map((a,i)=>{
+  const t=a.seendate??'';
+  const iso=/^\d{14}$/.test(t)?t.slice(0,4)+'-'+t.slice(4,6)+'-'+t.slice(6,8)+'T'+t.slice(8,10)+':'+t.slice(10,12)+':'+t.slice(12,14)+'Z':null;
+  return {id:'gdelt-'+category+'-'+i+'-'+t,title:a.title!,originalTitle:a.title!,url:a.url!,source:a.domain||'GDELT-indexed publisher',publishedAt:iso,category};
+ });
+}
 async function fetchNewsLane(category:string):Promise<NewsItem[]>{
  const f=feeds[category];if(!f)return [];
  const url='https://news.google.com/rss/search?q='+encodeURIComponent(f.q)+(f.lang==='zh'?'&hl=zh-CN&gl=CN&ceid=CN:zh-Hans':'&hl=en-US&gl=US&ceid=US:en');
- const res=await withTimeout(url,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},11000);
- if(!res.ok)throw new Error('News RSS HTTP '+res.status);
- const xml=await res.text();if(!xml.includes('<rss'))throw new Error('News feed was not RSS');
- return parseFeed(xml,category);
+ let firstError='';
+ try {
+  const res=await withTimeout(url,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},8000);
+  if(!res.ok)throw new Error('Google News RSS HTTP '+res.status);
+  const xml=await res.text();if(!xml.includes('<rss'))throw new Error('Google News did not return RSS');
+  const result=parseFeed(xml,category);
+  if(result.length)return result;
+  firstError='Google News RSS returned no articles';
+ }catch(e){firstError=e instanceof Error?e.message:String(e);}
+ // Independent official publisher feeds are preferred when the Google News index blocks Workers.
+ try{
+  const fallback=await fallbackPublicLane(category);
+  if(fallback.length>=3 || category==='world'||category==='macro')return fallback;
+ }catch(e){firstError+='; Publisher RSS: '+(e instanceof Error?e.message:String(e));}
+ // GDELT acts as a topic-focused fallback, never silently turned into fabricated financial conclusions.
+ try{
+  const result=await gdeltLane(category);
+  if(result.length)return result;
+ }catch(e){firstError+='; GDELT: '+(e instanceof Error?e.message:String(e));}
+ try{
+  const remaining=await fallbackPublicLane(category);
+  if(remaining.length)return remaining;
+ }catch{}
+ throw new Error(category+' feed unavailable: '+firstError);
 }
 async function news(category:string):Promise<NewsPayload>{
  const keys=category==='all'?Object.keys(feeds):[category];if(!keys.every(k=>feeds[k]))throw new Error('Unknown news category');
