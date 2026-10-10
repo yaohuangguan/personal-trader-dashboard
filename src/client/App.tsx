@@ -266,7 +266,7 @@ export default function App(){
       <div className="overview-side">
        <div className="panel">
         <div className="panel-heading compact"><div><span className="eyebrow">FOCUS LIST / 03</span><h2>市场关注</h2></div><button className="icon-button" title="打开自选股" onClick={()=>changeView('markets')}><ChevronRight size={18}/></button></div>
-        <div className="quote-lines">{watchlist.slice(0,8).map(symbol=><QuoteLine key={symbol} selected={selected===symbol} data={markets[symbol]||{symbol,name:CATALOG.find(c=>c.symbol===symbol)?.name||symbol} as MarketPayload} onClick={()=>chooseSymbol(symbol)}/>)}</div>
+        {watchlist.every(symbol=>!markets[symbol]?.last)?<><TradingViewWidget kind="quotes" symbols={watchlist.slice(0,8)}/><div className="widget-note">TradingView 第三方参考行情 · 可能延迟，点击右上角进入本站个股研究。</div></>:<div className="quote-lines">{watchlist.slice(0,8).map(symbol=><QuoteLine key={symbol} selected={selected===symbol} data={markets[symbol]||{symbol,name:CATALOG.find(c=>c.symbol===symbol)?.name||symbol} as MarketPayload} onClick={()=>chooseSymbol(symbol)}/>)}</div>}
         <div className="panel-bottom"><span>真实日线 · 收盘价</span><button onClick={()=>changeView('markets')}>管理自选 <ArrowRight size={13}/></button></div>
        </div>
        <div className="panel focus-spotlight">
