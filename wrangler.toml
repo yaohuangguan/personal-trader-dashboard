@@ -1,0 +1,15 @@
+name = "personal-market-atlas"
+main = "src/worker/index.ts"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[vars]
+APP_NAME = "Market Atlas"
+# Optional: configure SEC_USER_AGENT through wrangler secret put.
+# Optional: configure TWELVE_DATA_API_KEY / ALPHA_VANTAGE_API_KEY through wrangler secret put.
