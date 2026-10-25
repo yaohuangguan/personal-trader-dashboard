@@ -1,7 +1,7 @@
 import {t as uiText} from '../preferences';
 import {usePreferences} from '../preferences';
 import { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, CrosshairMode, LineStyle, type UTCTimestamp } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type Time } from 'lightweight-charts';
 import type { IntradayPayload } from '../../shared/desk-types';
 
 export default function IntradayChart({ data }: { data: IntradayPayload }) {
@@ -12,14 +12,16 @@ export default function IntradayChart({ data }: { data: IntradayPayload }) {
     if (!element.current || !data.points.length) return;
     setHover(data.points.at(-1));
     const root = element.current;
+    const clockFormatter=new Intl.DateTimeFormat(display.locale,{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false});
+    const beijingClock=(time:Time)=>typeof time==='number'?clockFormatter.format(new Date(time*1000)):String(time);
     const chart = createChart(root, {
       width: root.clientWidth, height: root.clientWidth < 600 ? 310 : 425,
       layout: { background: { type: ColorType.Solid, color: '#0c0c0d' }, textColor: '#85858c', fontSize: Math.round(display.fontSize*.82) },
       grid: { vertLines: { visible: false }, horzLines: { color: '#202023' } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.24 } },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, lockVisibleTimeRangeOnResize: true },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, lockVisibleTimeRangeOnResize: true, tickMarkFormatter:beijingClock },
       crosshair: { mode: CrosshairMode.Normal },
-      localization: { timeFormatter: (time: number) => new Intl.DateTimeFormat(display.locale, { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' }).format(new Date(time * 1000)) },
+      localization: { locale:display.locale,timeFormatter:beijingClock },
     });
     const price = chart.addAreaSeries({ lineColor: '#dedee3', topColor: '#d0d0d019', bottomColor: '#d0d0d000', lineWidth: 2, priceLineVisible: false });
     price.setData(data.points.map(p => ({ time: p.time as UTCTimestamp, value: p.price })));
