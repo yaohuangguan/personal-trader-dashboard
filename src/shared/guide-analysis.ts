@@ -15,7 +15,7 @@ export type RuleState = 'pass' | 'fail' | 'unknown';
 export type GuideRule = { id: string; title: string; state: RuleState; value: string; rule: string; chapter: string; required: boolean };
 export type GuideEvent = { date: string; index: number; low: number; high: number; close: number; midpoint: number; observedBars: number; state: 'pending' | 'confirmed' | 'failed'; confirmationDate: string | null; invalidationDate: string | null; reason: string };
 export type GuideAnalysis = {
-  ready: boolean; available: number; required: number; asOf: string | null; provisional: boolean;
+  currentLaunch:boolean; ready: boolean; available: number; required: number; asOf: string | null; provisional: boolean;
   stage: string; rules: GuideRule[]; events: GuideEvent[]; event: GuideEvent | null;
   ma: Record<number, number | null>; adhesionPct: number | null; adhesionLabel: string;
   priorAdhesionBars: number; volumeRatio: number | null; bias60: number | null;
@@ -88,7 +88,7 @@ export function analyzeGuide(input: Candle[], options: { now?: Date; settings?: 
     const event: GuideEvent = { date: c.time, index: i, low: c.low, high: c.high, close: c.close, midpoint, observedBars: Math.min(settings.confirmationEnd, lastClosed - i), state: 'pending', confirmationDate: null, invalidationDate: null, reason: '等待3–5根后续已收盘日线' };
     for (let j = i + 1; j <= Math.min(lastClosed, i + settings.confirmationEnd); j++) {
       if (candles[j].low < midpoint) { event.state = 'failed'; event.invalidationDate = candles[j].time; event.reason = '后续最低价跌破启动阳线实体中点'; break; }
-      if (j - i >= settings.confirmationStart && ordered(j)) { event.state = 'confirmed'; event.confirmationDate = candles[j].time; event.reason = '已观察至少3根，实体半位守住且5>10>20>30>60'; }
+      if (j - i >= settings.confirmationStart && ordered(j)) { event.state = 'confirmed'; event.confirmationDate ??= candles[j].time; event.reason = '已观察至少3根，实体半位守住且5>10>20>30>60'; }
     }
     if (event.state === 'pending' && lastClosed - i >= settings.confirmationEnd) { event.state = 'failed'; event.reason = '5根确认窗口内未形成标准多头排列'; }
     events.push(event);
@@ -132,7 +132,7 @@ export function analyzeGuide(input: Candle[], options: { now?: Date; settings?: 
   let stage = !ready ? '数据不足' : event?.state === 'failed' ? '确认失效' : event?.state === 'confirmed' ? '开花确认' : event ? '确认观察' : current?.launch ? '盘中候选' : coefficient(n - 1) !== null && coefficient(n - 1)! < settings.adhesionPct ? '粘合蓄势' : ordered(n - 1) ? '趋势延续' : '尚未成形';
   if (last && event?.state === 'confirmed' && ma[20] !== null && last.close < ma[20]!) stage = '开花后走弱';
   if (last && event?.state === 'confirmed' && last.close < event.low) stage = '确认失效';
-  return { ready, available: n, required: 65, asOf: last?.time ?? null, provisional, stage, rules: focus?.rules ?? [], events: events.slice(-12), event, ma, adhesionPct: coefficient(n - 1), adhesionLabel: adhesionLabel(coefficient(n - 1)), priorAdhesionBars: current?.count ?? 0, volumeRatio: current?.ratio ?? null, bias60, launchGainPct: current?.gain ?? null, latestVolume: last?.volume ?? null, pullback, crossedLines: current?.crosses ?? 0, sevenLineCrosses: last && [5, 10, 20, 30, 60, 120, 250].every(p => ma[p] !== null) ? [5, 10, 20, 30, 60, 120, 250].filter(p => last.open <= ma[p]! && last.close >= ma[p]!).length : null, risks, supporting, dimensions, settings, warnings: [ ...(input.length && !n ? ['存在无效或重复OHLCV，停止判断'] : []), ...(!ready ? ['核心至少需65根有效日线；长周期背景另需250根'] : []), ...(provisional ? ['最后一根日线未收盘，盘中形态不计为已确认信号'] : []), '条件命中不代表回测胜率；不把主力意图从价格形态推定为事实。' ] };
+  return { currentLaunch:!!current?.launch, ready, available: n, required: 65, asOf: last?.time ?? null, provisional, stage, rules: focus?.rules ?? [], events: events.slice(-12), event, ma, adhesionPct: coefficient(n - 1), adhesionLabel: adhesionLabel(coefficient(n - 1)), priorAdhesionBars: current?.count ?? 0, volumeRatio: current?.ratio ?? null, bias60, launchGainPct: current?.gain ?? null, latestVolume: last?.volume ?? null, pullback, crossedLines: current?.crosses ?? 0, sevenLineCrosses: last && [5, 10, 20, 30, 60, 120, 250].every(p => ma[p] !== null) ? [5, 10, 20, 30, 60, 120, 250].filter(p => last.open <= ma[p]! && last.close >= ma[p]!).length : null, risks, supporting, dimensions, settings, warnings: [ ...(input.length && !n ? ['存在无效或重复OHLCV，停止判断'] : []), ...(!ready ? ['核心至少需65根有效日线；长周期背景另需250根'] : []), ...(provisional ? ['最后一根日线未收盘，盘中形态不计为已确认信号'] : []), '条件命中不代表回测胜率；不把主力意图从价格形态推定为事实。' ] };
 }
 
 export function closedPeriodCandles(input: Candle[], unit: 'week' | 'month', now = new Date()) {

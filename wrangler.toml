@@ -15,3 +15,11 @@ run_worker_first = ["/api/*"]
 APP_NAME = "Market Atlas"
 # Optional: configure SEC_USER_AGENT through wrangler secret put.
 # Optional: configure TWELVE_DATA_API_KEY / ALPHA_VANTAGE_API_KEY through wrangler secret put.
+
+[[durable_objects.bindings]]
+name = "SIGNAL_MONITOR"
+class_name = "SignalMonitor"
+
+[[migrations]]
+tag = "signal-monitor-v1"
+new_sqlite_classes = ["SignalMonitor"]

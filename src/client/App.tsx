@@ -1,3 +1,4 @@
+import SignalCenter from './components/SignalCenter';
 import {t as uiText} from './preferences';
 import Settings from './components/Settings';
 import MarketOverview from './components/MarketOverview';
@@ -21,9 +22,9 @@ import { analyzeGuide } from '../shared/guide-analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
 import type { MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
 
-type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved'|'screener';
+type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved'|'screener'|'signals';
 const NAV:[View,string,typeof Globe2][]=[
- ['research','个股工作台',Target],['screener','五线选股器',SlidersHorizontal],['markets','市场全景',LineChart],['news','7×24 快讯',Globe2],
+ ['research','个股工作台',Target],['screener','五线选股器',SlidersHorizontal],['signals','盘中信号',Bell],['markets','市场全景',LineChart],['news','7×24 快讯',Globe2],
  ['overview','情报总览',LayoutDashboard],['radar','产业联动',Radar],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
 ];
 function readStored<T>(key:string,fallback:T):T{
@@ -88,7 +89,7 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
 }
 export default function App(){
  usePreferences();
- const [view,setView]=useState<View>(()=>(['overview','news','radar','markets','research','history','saved','screener'] as string[]).includes(new URLSearchParams(window.location.search).get('view')||'')?new URLSearchParams(window.location.search).get('view') as View:'research');
+ const [view,setView]=useState<View>(()=>(['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(new URLSearchParams(window.location.search).get('view')||'')?new URLSearchParams(window.location.search).get('view') as View:'research');
  const [mobileNav,setMobileNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
  const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[]));
@@ -161,6 +162,7 @@ export default function App(){
  const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):[symbol,...prev].slice(0,30)),[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
  const changeView=useCallback((v:View)=>{setView(v);setMobileNav(false);const url=new URL(window.location.href);if(v!=='research')url.searchParams.set('view',v);else url.searchParams.delete('view');window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
+ useEffect(()=>{const open=()=>changeView('signals');window.addEventListener('atlas:monitor-pool',open);return()=>window.removeEventListener('atlas:monitor-pool',open);},[changeView]);
  const searchOptions=useMemo(()=>{
   const list=remoteResults.length?remoteResults:searchLocal(searchQuery);
   const seen=new Set<string>();return list.filter(x=>{if(seen.has(x.symbol))return false;seen.add(x.symbol);return true;}).slice(0,12);
@@ -274,6 +276,7 @@ export default function App(){
      </div>))}</div>)}
      <StatusNote>{uiText("这是事实收集与跟踪工具，不会因报道提及某公司就宣称其订单、收入或利润已兑现。需结合公告、财报和其他独立证据。")}</StatusNote>
     </>)}
+    {view==='signals'&&<SignalCenter watchlist={watchlist} onStock={chooseSymbol}/>}
     {uiText(view==='markets'&&<MarketOverview onStock={chooseSymbol} onWatch={toggleWatch} watchlist={watchlist}/>)}
     {uiText(view==='research'&&<ResearchDesk symbol={selected} market={selectedData} marketError={marketErrors[selected]} markets={markets} watchlist={watchlist} onSelect={chooseSymbol} onToggleWatch={toggleWatch} onSearch={()=>{setSearchOpen(true);searchRef.current?.focus();}} onRefresh={()=>setRefreshKey(v=>v+1)}/>)}
     {uiText(view==='history'&&<IntelHistory onStock={chooseSymbol}/>)}

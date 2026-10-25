@@ -1,3 +1,5 @@
+import {monitorRoute,type MonitorNamespace} from './signal-monitor';
+export {SignalMonitor} from './signal-monitor';
 import { deskRoute } from './desk-api';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
@@ -5,7 +7,7 @@ import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from 
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env { ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
+interface Env { SIGNAL_MONITOR?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
@@ -466,6 +468,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
 export default {
  async fetch(request:Request,env:Env):Promise<Response>{
   try {
+   const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
    const desk=await deskRoute(request);if(desk)return desk;
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});

@@ -26,6 +26,7 @@ test('the guide launch remains pending until three observed follow-up bars and u
   assert.equal(analyzeGuide(two, { now }).event!.state, 'pending');
   assert.equal(analyzeGuide(three, { now }).event!.state, 'confirmed');
   assert.equal(analyzeGuide(three, { now }).event!.confirmationDate, three.at(-1)!.time);
+  assert.equal(analyzeGuide(append(append(three,110),111),{now}).event!.confirmationDate,three.at(-1)!.time,'confirmation stays at its first known day instead of re-firing on days 4 and 5');
   assert.deepEqual(analyzeGuide(three.slice(0, start.length), { now }).events, a.events);
   const historical = analyzeGuide(three, {now: new Date('2025-04-11T08:00:00Z')});
   assert.equal(historical.event!.state, 'pending'); assert.equal(historical.available, start.length);

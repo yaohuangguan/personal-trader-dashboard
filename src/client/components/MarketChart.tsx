@@ -7,7 +7,7 @@ import { createChart, ColorType, CrosshairMode, LineStyle, type IChartApi, type 
 import './MarketChart.css';
 import type { Candle } from '../../shared/types';
 import type { GuideEvent } from '../../shared/guide-analysis';
-import { chartIndicators, defaultMAs, validMAPreferences, type MAPreference, type Point } from '../../shared/chart-indicators';
+import { chartIndicators, defaultMAs, migrateMAPreferences, validMAPreferences, type MAPreference, type Point } from '../../shared/chart-indicators';
 
 const UP = '#f04a55', DOWN = '#28cdb6';
 const SETTINGS_KEY = 'atlas.chart.ma.v2';
@@ -19,7 +19,7 @@ const volumeNumber = (value: number | undefined) => value === undefined ? '—' 
 function readPreferences() {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
-    return validMAPreferences(saved) ? saved : defaultMAs();
+    return migrateMAPreferences(saved);
   } catch { return defaultMAs(); }
 }
 function timeKey(time: Time): string {
@@ -31,6 +31,7 @@ const rangeSize = (range: Range, length: number, unit: 'day' | 'week' | 'month')
 
 export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: 'day' | 'week' | 'month'; chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
   const display=usePreferences();
+  const chipEligible=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&!(/^(?:000\d{3}\.SH|399\d{3}\.SZ)$/.test(symbol));
   const [chipsOpen,setChipsOpen]=useState(false);
   const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
@@ -223,7 +224,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       <div className="terminal-toolbar">
         <div className="terminal-range" aria-label={uiText("图表显示范围")}>{uiText(([['1M', '1个月'], ['3M', '3个月'], ['6M', '6个月'], ['1Y', '1年'], ['ALL', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => chooseRange(value)}>{uiText(label)}</button>))}</div>
         <div className="terminal-tools"><span className="terminal-frequency">{uiText(unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : '日 K')}{uiText(symbol ? ' · ' + symbol : '')}</span>
-          <button type="button" aria-pressed={chipsOpen} onClick={()=>setChipsOpen(v=>!v)} disabled={unit!=='day'||!symbol||!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)}>{uiText("筹码峰")}</button><button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />{uiText("均线参数")}</button>
+          <button type="button" aria-pressed={chipsOpen} onClick={()=>setChipsOpen(v=>!v)} disabled={unit!=='day'||!chipEligible}>{uiText("筹码峰")}</button><button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />{uiText("均线参数")}</button>
           <button type="button" onClick={resetView} aria-label={uiText("重置缩放")}><RotateCcw size={14} /></button>
           <button type="button" onClick={() => setExpanded(value => !value)} aria-label={uiText(expanded ? '收起图表' : '展开图表')}>{uiText(expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />)}</button>
         </div>
@@ -250,7 +251,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     </>)}
     {uiText(chartError && <div className="terminal-error" role="alert">{uiText("图表无法显示：")}{uiText(chartError)}</div>)}
     <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
-    {uiText(!compact && chipsOpen && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
+    {uiText(!compact && chipsOpen && chipEligible && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
     {uiText(!compact && <>
       <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("交叉 / 展开标记")}</label></div>
       {uiText(panels.VOL && <section className="terminal-indicator" aria-label={uiText("VOL 成交量副图")}>

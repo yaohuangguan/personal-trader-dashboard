@@ -1,7 +1,7 @@
 import type { Candle } from './types';
 
 export const DEFAULT_MA_PERIODS = [5, 13, 20, 30, 60, 120, 144, 250] as const;
-export const MA_COLORS = ['#f4f5f7', '#f7cf65', '#ed89bf', '#52c6e5', '#8a99ff', '#ff9b60', '#71cfb5', '#bf9ce5'];
+export const MA_COLORS = ['#f4f5f7', '#f7cf65', '#ed89bf', '#52c6e5', '#8affb7', '#ff9b60', '#728acf', '#bf9ce5'];
 export type MAPreference = { period: number; enabled: boolean; color: string };
 export type Point = { time: string; value: number };
 export type MACDPoint = { time: string; dif: number; dea: number; histogram: number };
@@ -17,6 +17,12 @@ export function validMAPreferences(value: unknown): value is MAPreference[] {
     line && Number.isInteger(line.period) && line.period >= 1 && line.period <= 500 &&
     typeof line.enabled === 'boolean' && /^#[0-9a-f]{6}$/i.test(line.color)
   ) && new Set(value.filter(line => line.enabled).map(line => line.period)).size === value.filter(line => line.enabled).length;
+}
+
+export function migrateMAPreferences(value:unknown):MAPreference[]{
+ if(!validMAPreferences(value))return defaultMAs();
+ const oldColors=['#f4f5f7','#f7cf65','#ed89bf','#52c6e5','#8a99ff','#ff9b60','#71cfb5','#bf9ce5'];
+ return value.every((line,i)=>line.color.toLowerCase()===oldColors[i])?value.map((line,i)=>({...line,color:MA_COLORS[i]})):value;
 }
 
 /** Compute on the complete input, before selecting a visible date range. */

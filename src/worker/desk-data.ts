@@ -1,5 +1,5 @@
 import {aggregateDaily} from '../shared/market-models';
-import {sinaAdjustedDaily,sinaBeijingDaily} from './research';
+import {sinaAdjustedDaily,sinaBeijingDaily,sinaIndexDaily} from './research';
 // HTTP adapters ported from a-stock-data v3.10.3 (Apache-2.0).
 // https://github.com/simonlin1212/a-stock-data -- public snapshots are NOT exchange Level-2.
 import { createHash } from 'node:crypto';
@@ -106,7 +106,7 @@ export async function intraday(raw: string) {
 }
 export async function history(raw: string, period: string) {
   const { symbol, wire } = chineseSymbol(raw);
-  if (!['week', 'month'].includes(period)) throw new Error('无效历史周期');
+  if (!['day','week', 'month'].includes(period)) throw new Error('无效历史周期');
   try {
   if(symbol.endsWith('.BJ'))throw new Error('使用北交所日线聚合');
   const url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + wire + ',' + period + ',,,500,qfq';
@@ -120,12 +120,13 @@ export async function history(raw: string, period: string) {
     return { time: date, open: Number(open), close: Number(close), high: Number(high), low: Number(low), volume: Number(volume) };
   }).sort((a, b) => a.time.localeCompare(b.time));
   if (candles.length < 2) throw new Error('来源历史样本不足');
-  return { ...stamp('腾讯财经'+(node?.['qfq'+period]?'前复权':'未复权') + (period === 'week' ? '周线' : '月线'), url), symbol, candles, period,volumeUnit:/^68[89]/.test(symbol)?'股':'手' };
+  return { ...stamp('腾讯财经'+(node?.['qfq'+period]?'前复权':'未复权') + (period === 'day'?'日线':period === 'week' ? '周线' : '月线'), url), symbol, candles, period,volumeUnit:/^68[89]/.test(symbol)?'股':'手' };
   }catch {
-    const daily=symbol.endsWith('.BJ')?await sinaBeijingDaily(symbol,1023):await sinaAdjustedDaily(symbol,1023);
-    const candles=aggregateDaily(daily.candles,period as 'week'|'month');
+    const isIndex=/^(?:000(?:001|300|688)\.SH|399(?:001|006)\.SZ)$/.test(symbol);
+    const daily=isIndex?await sinaIndexDaily(symbol,1023):symbol.endsWith('.BJ')?await sinaBeijingDaily(symbol,1023):await sinaAdjustedDaily(symbol,1023);
+    const candles=period==='day'?daily.candles:aggregateDaily(daily.candles,period as 'week'|'month');
     if(candles.length<2)throw new Error('备用源周期历史不足，请稍后刷新');
-    return {...stamp('新浪日线聚合 · '+(symbol.endsWith('.BJ')?'未复权':'前复权'),daily.url),symbol,candles,period,volumeUnit:'股',notice:'按实际交易日聚合，日期为周期最后交易日；当前周期可能尚未结束。'};
+    return {...stamp('新浪日线聚合 · '+(isIndex?'指数原值':symbol.endsWith('.BJ')?'未复权':'前复权'),daily.url),symbol,candles,period,volumeUnit:'股',notice:'按实际交易日聚合，日期为周期最后交易日；当前周期可能尚未结束。'};
   }
 }
 export function parseTickPage(text: string, wire: string, page: number): Tick[] {

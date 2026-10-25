@@ -1,3 +1,4 @@
+import {f10} from './f10';
 import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
 
@@ -29,9 +30,10 @@ export async function deskRoute(request: Request): Promise<Response | null> {
     if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) return respond({ available: false, reason: '此公开接口暂只覆盖沪深北市场，其他市场使用原有授权行情源。' }, 400);
     if (kind === 'history') {
       const period = url.searchParams.get('period') || '';
-      if (!['week', 'month'].includes(period)) return respond({ error: '周期须为 week 或 month' }, 400);
+      if (!['day','week', 'month'].includes(period)) return respond({ error: '周期须为 day、week 或 month' }, 400);
       return respond(await memo(kind + symbol + period, 600, () => history(symbol, period)));
     }
+    if(kind==='f10')return respond(await memo('f10'+symbol,1800,()=>f10(symbol)));
     if (kind === 'chips')return respond(await memo(kind+symbol,600,()=>chips(symbol)));
     if (kind === 'intraday') return respond(await memo(kind + symbol, 15, () => intraday(symbol)));
     if (kind === 'ticks') return respond(await memo(kind + symbol, 15, () => ticks(symbol)));

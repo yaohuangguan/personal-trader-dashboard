@@ -211,3 +211,5 @@ export async function sinaAdjustedDaily(symbol:string,count=500):Promise<{candle
  if(candles.length!==raw.candles.length)throw new Error('Adjustment produced invalid historical rows');
  return {candles,url:raw.url};
 }
+
+export async function sinaIndexDaily(symbol:string,count=500){if(!/^(?:000(?:001|300|688)\.SH|399(?:001|006)\.SZ)$/.test(symbol))throw new Error('Unsupported index');return sinaRawDaily(symbol,count);}
