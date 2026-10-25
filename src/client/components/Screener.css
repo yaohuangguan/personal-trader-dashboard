@@ -7,3 +7,5 @@
 .screen-pagination{display:flex;align-items:center;justify-content:center;gap:20px;padding:0 15px 18px;font-size:11px;color:#8a8a9b}.screen-pagination button{border:1px solid #3e3e49;background:#24242d;color:#bdbdcb;border-radius:4px;padding:6px 10px;font-size:11px}.screen-pagination button:disabled{opacity:.35;cursor:default}
 
 .screen-workspace-tabs{gap:28px;margin-bottom:18px;border-bottom:1px solid #303039;overflow:auto}.screen-workspace-tabs button{font-size:13px;white-space:nowrap}
+
+.screen-running-indicator{position:fixed;right:20px;bottom:88px;z-index:45;display:flex;align-items:center;gap:10px;background:#292c2e;border:1px solid #555e60;border-radius:6px;padding:11px 13px;box-shadow:0 8px 35px #0008;max-width:calc(100vw - 30px)}.screen-running-indicator button{border:0;background:none;color:#c8d0ce;padding:0;font-size:11px;text-align:left}.screen-running-indicator span{display:block;font-size:9px;color:#959f9b;margin-top:5px}

@@ -191,7 +191,7 @@ export default function App(){
     </div>
    </header>
    <main className={'main '+(view==='research'?'desk-main':'')}>
-    {view==='screener'&&<ScreenerWorkspace watchlist={watchlist} onStock={chooseSymbol} onWatch={toggleWatch}/>}
+    {<ScreenerWorkspace active={view==='screener'} onOpen={()=>changeView('screener')} watchlist={watchlist} onStock={chooseSymbol} onWatch={toggleWatch}/>}
     {view==='overview'&&<>
      <section className="page-heading">
       <div><div className="eyebrow"><span className="eyebrow-accent">●</span> YOUR GLOBAL INTELLIGENCE TERMINAL</div><h1>全局情报<span className="title-dim">，尽在掌握。</span></h1><p>从世界事件到产业链，从上市公司披露到股价信号。先看事实，再判断影响。</p></div>
