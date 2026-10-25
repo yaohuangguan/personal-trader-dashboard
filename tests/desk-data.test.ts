@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries } from '../src/worker/desk-data';
+import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries, memo } from '../src/worker/desk-data';
 import { marketSession, evaluateWatchRules } from '../src/shared/desk-types';
 import { deskRoute } from '../src/worker/desk-api';
 
@@ -91,4 +91,13 @@ test('Sina fallback preserves a distinct industry namespace and source classific
     assert.match(result.notice || '', /分类与成分不同/);
     assert.match(result.sourceUrl, /sina.com.cn/);
   } finally { globalThis.fetch = original; }
+});
+
+
+test('an abandoned in-flight request cannot trap a later request with the same cache key', async () => {
+  void memo('request-lifetime-test', 1, () => new Promise<number>(() => {}));
+  const fresh = memo('request-lifetime-test', 1, async () => 42);
+  const value = await Promise.race([fresh, new Promise((_, reject) => setTimeout(() => reject(new Error('cross-request promise was reused')), 50))]);
+  assert.equal(value, 42);
+  assert.equal(await memo('request-lifetime-test', 1, async () => 99), 42);
 });

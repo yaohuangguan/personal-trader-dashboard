@@ -9,16 +9,15 @@ import { marketSession, type Snapshot, type Tick, type IntradayPoint, type Secto
 type Row = Record<string, unknown>;
 const UA = 'Mozilla/5.0';
 const cache = new Map<string, { until: number; value: unknown }>();
-const pending = new Map<string, Promise<unknown>>();
+// Share completed values only. Live fetch promises belong to one Workers
+// request context and can be abandoned when that client cancels navigation.
 export async function memo<T>(key: string, seconds: number, action: () => Promise<T>): Promise<T> {
   const saved = cache.get(key);
   if (saved && saved.until > Date.now()) return saved.value as T;
-  if (pending.has(key)) return pending.get(key) as Promise<T>;
-  const work = action().then(value => {
-    if (cache.size > 300) cache.clear();
-    cache.set(key, { until: Date.now() + seconds * 1000, value }); return value;
-  }).finally(() => pending.delete(key));
-  pending.set(key, work); return work;
+  const value = await action();
+  if (cache.size > 300) cache.clear();
+  cache.set(key, { until: Date.now() + seconds * 1000, value });
+  return value;
 }
 export const num = (value: unknown): number | null => value === null || value === undefined || typeof value === 'boolean' || String(value).trim() === '' || !Number.isFinite(Number(value)) ? null : Number(value);
 const clean = (value: unknown) => String(value ?? '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
