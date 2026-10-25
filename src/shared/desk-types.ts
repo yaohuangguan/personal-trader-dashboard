@@ -1,6 +1,6 @@
 import type { NewsItem } from './types';
 
-export type SourceStamp = { source: string; sourceUrl: string; fetchedAt: string; available: boolean; reason?: string; delayMinutes?: number };
+export type SourceStamp = { source: string; sourceUrl: string; fetchedAt: string; available: boolean; reason?: string; delayMinutes?: number; classification?: string; notice?: string };
 export type BookLevel = { price: number | null; volume: number | null };
 export type Snapshot = {
   symbol: string; name: string; price: number; previous: number; open: number | null; high: number | null; low: number | null;

@@ -150,7 +150,34 @@ export async function sectors(raw: string) {
   if (!data.data) throw new Error('板块归属源暂未返回数据');
   return { ...stamp('东方财富板块归属', url), symbol, boards: rowList(data.data.diff).map(mapSector).filter(s => /^BK\d+$/.test(s.code)) };
 }
+export function parseSinaIndustries(text: string): Sector[] {
+  const begin = text.indexOf('{');
+  if (begin < 0) throw new Error('新浪行业格式异常');
+  const raw = JSON.parse(text.slice(begin).trim().replace(/;$/, '')) as Record<string, string>;
+  return Object.values(raw).map(value => {
+    const r = value.split(',');
+    if (!/^new_[a-z0-9]+$/.test(r[0]) || !r[1] || num(r[5]) === null) throw new Error('新浪行业记录异常');
+    return { code: 'SN:' + r[0], name: r[1], changePercent: num(r[5]), leader: r[12] || '', leaderSymbol: /^(sh|sz)\d{6}$/.test(r[8]) ? r[8].slice(2) + '.' + r[8].slice(0, 2).toUpperCase() : null };
+  }).sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0));
+}
+async function sinaRanks() {
+  const url = 'https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php';
+  const response = await request(url, 5000);
+  const items = parseSinaIndustries(new TextDecoder('gbk').decode(await response.arrayBuffer())).slice(0, 20);
+  if (!items.length) throw new Error('新浪行业暂无数据');
+  return { ...stamp('新浪行业公开行情（来源未提供交易日期）', url), items, classification: 'sina-industry', notice: '东方财富列表暂不可用，已切换新浪行业口径；两者分类与成分不同。' };
+}
+async function sinaPeers(code: string) {
+  if (!/^SN:new_[a-z0-9]{2,20}$/.test(code)) throw new Error('无效新浪行业代码');
+  const url = 'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?' + new URLSearchParams({ page: '1', num: '16', sort: 'changepercent', asc: '0', node: code.slice(3), symbol: '' });
+  const response = await request(url, 6000);
+  const raw = JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as Row[];
+  if (!Array.isArray(raw)) throw new Error('新浪行业成分格式异常');
+  const items: Peer[] = raw.filter(r => /^(sh|sz)\d{6}$/.test(String(r.symbol))).map(r => { const wire = String(r.symbol); return { symbol: wire.slice(2) + '.' + wire.slice(0, 2).toUpperCase(), name: clean(r.name), price: num(r.trade), changePercent: num(r.changepercent), mainNet: null }; });
+  return { ...stamp('新浪行业成分公开行情（来源未提供交易日期）', url), code, items, classification: 'sina-industry', notice: '当前是新浪行业成分，主力净额没有提供；不代替东方财富板块归属。' };
+}
 export async function peers(code: string) {
+  if (code.startsWith('SN:')) return sinaPeers(code);
   if (!/^BK\d{4,6}$/.test(code)) throw new Error('无效板块代码');
   const url = emUrl('clist/get', { fs: 'b:' + code, pn: '1', pz: '16', po: '1', np: '1', fid: 'f3', fields: 'f2,f3,f12,f13,f14,f62' });
   const data = await listData(url);
@@ -159,7 +186,8 @@ export async function peers(code: string) {
 }
 export async function ranks() {
   const url = emUrl('clist/get', { fs: 'm:90+t:2', pn: '1', pz: '20', po: '1', np: '1', fid: 'f3', fields: 'f12,f14,f3,f62,f128,f140,f141' });
-  const data = await listData(url);
+  let data;
+  try { data = await listData(url); } catch { return sinaRanks(); }
   return { ...stamp('东方财富行业涨幅排行' + (data.delayMinutes ? '（约15分钟延迟）' : ''), data.sourceUrl), delayMinutes: data.delayMinutes, items: rowList(data.data.diff).map(mapSector) };
 }
 export async function fundFlow(raw: string) {

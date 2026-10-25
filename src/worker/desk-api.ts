@@ -17,7 +17,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
     if (kind === 'ranks') return respond(await memo('ranks', 90, ranks));
     if (kind === 'peers') {
       const code = url.searchParams.get('code') || '';
-      if (!/^BK\d{4,6}$/.test(code)) return respond({ error: '无效板块代码' }, 400);
+      if (! /^(?:BK\d{4,6}|SN:new_[a-z0-9]{2,20})$/.test(code)) return respond({ error: '无效板块代码' }, 400);
       return respond(await memo('peers:' + code, 45, () => peers(code)));
     }
     if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) return respond({ available: false, reason: '此公开接口暂只覆盖沪深北市场，其他市场使用原有授权行情源。' }, 400);

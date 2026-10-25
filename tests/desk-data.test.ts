@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuotes, parseTickPage, num, peers } from '../src/worker/desk-data';
+import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries } from '../src/worker/desk-data';
 import { marketSession, evaluateWatchRules } from '../src/shared/desk-types';
 import { deskRoute } from '../src/worker/desk-api';
 
@@ -69,5 +69,26 @@ test('a failed primary sector list uses the documented delayed host and exposes 
     assert.match(result.source, /15分钟延迟/);
     assert.equal(new URL(result.sourceUrl).hostname, 'push2delay.eastmoney.com');
     assert.deepEqual(visited.map(url => new URL(url).hostname), ['push2.eastmoney.com', 'push2delay.eastmoney.com']);
+  } finally { globalThis.fetch = original; }
+});
+
+
+test('Sina fallback preserves a distinct industry namespace and source classification', async () => {
+  const text = 'var board = ' + JSON.stringify({new_blhy:'new_blhy,玻璃行业,19,14.7,0.1,1.05,100,200,sz300093,4.2,18.7,0.7,金刚光伏',new_dzxx:'new_dzxx,电子信息,200,15,0.5,3.45,100,200,sz300369,19.9,11.7,1.9,绿盟科技'}) + ';';
+  const items = parseSinaIndustries(text);
+  assert.equal(items[0].code, 'SN:new_dzxx'); assert.equal(items[0].leaderSymbol, '300369.SZ');
+  assert.equal(items[1].name, '玻璃行业');
+  assert.throws(() => parseSinaIndustries('var board = {} broken'));
+  const original = globalThis.fetch;
+  globalThis.fetch = async input => {
+    if (!String(input).includes('sina.com.cn')) return new Response('', { status: 502 });
+    return new Response('var board = {"new_test":"new_test,Industry,1,1,1,2.7,1,1,sz300545,1,1,1,Leader"};');
+  };
+  try {
+    const result = await ranks();
+    assert.equal(result.classification, 'sina-industry');
+    assert.equal(result.items[0].code, 'SN:new_test');
+    assert.match(result.notice || '', /分类与成分不同/);
+    assert.match(result.sourceUrl, /sina.com.cn/);
   } finally { globalThis.fetch = original; }
 });
