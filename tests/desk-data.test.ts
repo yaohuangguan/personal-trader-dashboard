@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries, memo } from '../src/worker/desk-data';
+import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries, memo, fundFlow } from '../src/worker/desk-data';
 import { marketSession, evaluateWatchRules } from '../src/shared/desk-types';
 import { deskRoute } from '../src/worker/desk-api';
 
@@ -100,4 +100,11 @@ test('an abandoned in-flight request cannot trap a later request with the same c
   const value = await Promise.race([fresh, new Promise((_, reject) => setTimeout(() => reject(new Error('cross-request promise was reused')), 50))]);
   assert.equal(value, 42);
   assert.equal(await memo('request-lifetime-test', 1, async () => 99), 42);
+});
+
+
+test('an unavailable intraday flow falls back to attributed daily values without claiming live data', async () => {
+ const original=globalThis.fetch;
+ globalThis.fetch=async input=>String(input).includes('push2delay')?Response.json({data:{code:'300545',klines:['2026-10-23,-3970612,7373320,-3402708,-4638945,668333']}}):new Response('',{status:502});
+ try{const result=await fundFlow('300545.SZ');assert.equal(result.period,'daily');assert.equal(result.points[0].time,'2026-10-23');assert.equal(result.points[0].main,result.points[0].large!+result.points[0].superLarge!);assert.match(result.notice||'',/非盘中实时/);assert.match(result.sourceUrl,/push2delay/);}finally{globalThis.fetch=original;}
 });

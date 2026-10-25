@@ -60,7 +60,7 @@ function FlowPanel({ state }: { state: ReturnType<typeof useLiveEndpoint<FlowPay
   if (!last) return <Empty loading={state.loading} text={state.error || '来源暂无资金流记录'} />;
   const items = [{ title: '主力净流入', value: last.main }, { title: '超大单', value: last.superLarge }, { title: '大单', value: last.large }, { title: '中单', value: last.medium }, { title: '小单', value: last.small }];
   const max = Math.max(1, ...items.map(i => Math.abs(i.value || 0)));
-  return <div className="desk-flow"><div className="desk-flow-overline">来源时点 {last.time} <Hint text="按成交单大小分类估算的资金流，不等于交易所主动买卖逐笔，也不是 Level-2。" /></div>{items.map(item => <div className="desk-flow-row" key={item.title}><span>{item.title}</span><div><i className={(item.value || 0) >= 0 ? 'flow-positive' : 'flow-negative'} style={{ width: Math.abs(item.value || 0) / max * 100 + '%' }} /></div><b className={tone(item.value)}>{amount(item.value)}</b></div>)}<Source text={state.data!.source} error={state.error} /></div>;
+  return <div className="desk-flow"><div className="desk-flow-overline">{state.data?.period === 'daily' ? '日度估算 · 交易日' : '来源时点'} {last.time} <Hint text="按成交单大小分类估算的资金流，不等于交易所主动买卖逐笔，也不是 Level-2。" /></div>{items.map(item => <div className="desk-flow-row" key={item.title}><span>{item.title}</span><div><i className={(item.value || 0) >= 0 ? 'flow-positive' : 'flow-negative'} style={{ width: Math.abs(item.value || 0) / max * 100 + '%' }} /></div><b className={tone(item.value)}>{amount(item.value)}</b></div>)}<Source text={state.data!.source} error={state.error} />{state.data?.notice && <Source text={state.data.notice} />}</div>;
 }
 function readRules(): WatchRule[] {
   try {

@@ -17,7 +17,7 @@ Public HTTP adapters are ported from the reviewed examples in [a-stock-data](htt
 | `/api/desk/sectors?symbol=...` | Eastmoney | Reported industry/concept/region memberships |
 | `/api/desk/peers?code=BK...` | Eastmoney | A sector's leading members, changes and estimated main fund flow |
 | `/api/desk/ranks` | Eastmoney | Top 20 industries by reported daily change |
-| `/api/desk/flow?symbol=...` | Eastmoney | Reported intraday fund-flow estimates by trade size |
+| `/api/desk/flow?symbol=...` | Eastmoney | Reported fund-flow estimates by trade size; explicitly dated daily fallback when the intraday source fails |
 | `/api/desk/stock-news?symbol=...` | Eastmoney | Company-code news search results with attributed excerpts |
 | `/api/desk/reports?symbol=...` | Eastmoney | Research report titles, publication dates, institutions and source ratings |
 | `/api/desk/flash` | CLS / Wallstreetcn | Deduplicated, attributed 7×24 financial news feed |

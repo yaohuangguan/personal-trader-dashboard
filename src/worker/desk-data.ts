@@ -194,9 +194,19 @@ export async function ranks() {
 export async function fundFlow(raw: string) {
   const { symbol, secid } = chineseSymbol(raw);
   const url = emUrl('stock/fflow/kline/get', { secid, klt: '1', fields1: 'f1,f2,f3,f7', fields2: 'f51,f52,f53,f54,f55,f56,f57' });
-  const payload = await (await eastmoney(url)).json() as { data?: { klines?: string[] } };
-  if (!payload.data?.klines?.length) throw new Error('该证券暂无资金流数据，ETF可能不受此接口覆盖');
-  return { ...stamp('东方财富资金流估算', url), symbol, points: payload.data.klines.map(row => { const r = row.split(','); return { time: r[0], main: num(r[1]), small: num(r[2]), medium: num(r[3]), large: num(r[4]), superLarge: num(r[5]) }; }) };
+  const parse = (payload: {data?:{code?:string;klines?:string[]}}, daily: boolean) => {
+    if(payload.data?.code && payload.data.code !== symbol.slice(0,6))throw new Error('资金流证券代码不一致');
+    if(!payload.data?.klines?.length)throw new Error('该证券暂无有效资金流数据，ETF可能不受覆盖');
+    return payload.data.klines.map(row=>{const r=row.split(',');if(daily&&!/^\d{4}-\d{2}-\d{2}$/.test(r[0]))throw new Error('日资金流缺少有效交易日期');if(r.length<6||num(r[1])===null)throw new Error('资金流字段不可用');return {time:r[0],main:num(r[1]),small:num(r[2]),medium:num(r[3]),large:num(r[4]),superLarge:num(r[5])};});
+  };
+  try {
+    const payload=await(await eastmoney(url,4000)).json() as {data?:{code?:string;klines?:string[]}};
+    return {...stamp('东方财富盘中资金流估算',url),symbol,period:'intraday' as const,points:parse(payload,false)};
+  }catch{
+    const fallback='https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get?'+new URLSearchParams({secid,klt:'101',lmt:'5',fields1:'f1,f2,f3,f7',fields2:'f51,f52,f53,f54,f55,f56'});
+    const payload=await(await eastmoney(fallback,6000)).json() as {data?:{code?:string;klines?:string[]}};
+    return {...stamp('东方财富日资金流估算（备用源）',fallback),symbol,period:'daily' as const,notice:'盘中资金源暂不可用，当前展示来源提供的最近交易日日度估算，非盘中实时。',points:parse(payload,true)};
+  }
 }
 export async function reports(raw: string) {
   const { code } = chineseSymbol(raw);
