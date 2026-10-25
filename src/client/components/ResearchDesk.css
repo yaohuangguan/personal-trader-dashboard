@@ -29,3 +29,5 @@
 @media(max-width:700px){.desk-news-page>header{align-items:flex-start;flex-direction:column;gap:12px}.desk-news-page h1{font-size:23px}.desk-news-page .desk-news-list{padding:0 13px}.desk-news-page .desk-news-title{font-size:12px}.desk-news-page .desk-news-item p{font-size:10px}}
 
 .desk-fallback-actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 20px}.desk-fallback-actions button{background:#232328;border:1px solid #42424b;border-radius:4px;color:#bfc0ca;padding:7px 10px;font-size:11px}
+
+@media(max-width:900px){.desk-watch>.desk-block-heading h2{white-space:nowrap}.desk-watch>.desk-block-heading h2 small{display:none}}
