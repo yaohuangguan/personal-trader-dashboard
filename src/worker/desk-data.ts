@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import { normalizeSymbol } from '../shared/catalog';
 import type { Candle } from '../shared/types';
+import { sectorBreadth, type SectorMember } from '../shared/screening';
 import { marketSession, type Snapshot, type Tick, type IntradayPoint, type Sector, type Peer, type FlashItem, type SourceStamp } from '../shared/desk-types';
 
 type Row = Record<string, unknown>;
@@ -160,12 +161,13 @@ export function parseSinaIndustries(text: string): Sector[] {
     return { code: 'SN:' + r[0], name: r[1], changePercent: num(r[5]), leader: r[12] || '', leaderSymbol: /^(sh|sz)\d{6}$/.test(r[8]) ? r[8].slice(2) + '.' + r[8].slice(0, 2).toUpperCase() : null };
   }).sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0));
 }
-async function sinaRanks() {
+export async function industryRanks(fallback = false) {
   const url = 'https://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php';
   const response = await request(url, 5000);
-  const items = parseSinaIndustries(new TextDecoder('gbk').decode(await response.arrayBuffer())).slice(0, 20);
+  const allItems = parseSinaIndustries(new TextDecoder('gbk').decode(await response.arrayBuffer()));
+  const items = fallback ? allItems.slice(0, 20) : allItems;
   if (!items.length) throw new Error('新浪行业暂无数据');
-  return { ...stamp('新浪行业公开行情（来源未提供交易日期）', url), items, classification: 'sina-industry', notice: '东方财富列表暂不可用，已切换新浪行业口径；两者分类与成分不同。' };
+  return { ...stamp('新浪行业公开行情（来源未提供交易日期）', url), items, classification: 'sina-industry', notice: (fallback ? '东方财富列表暂不可用，已切换新浪行业口径；' : '独立使用新浪行业口径；') + '两者分类与成分不同。' };
 }
 async function sinaPeers(code: string) {
   if (!/^SN:new_[a-z0-9]{2,20}$/.test(code)) throw new Error('无效新浪行业代码');
@@ -187,7 +189,7 @@ export async function peers(code: string) {
 export async function ranks() {
   const url = emUrl('clist/get', { fs: 'm:90+t:2', pn: '1', pz: '20', po: '1', np: '1', fid: 'f3', fields: 'f12,f14,f3,f62,f128,f140,f141' });
   let data;
-  try { data = await listData(url); } catch { return sinaRanks(); }
+  try { data = await listData(url); } catch { return industryRanks(true); }
   return { ...stamp('东方财富行业涨幅排行' + (data.delayMinutes ? '（约15分钟延迟）' : ''), data.sourceUrl), delayMinutes: data.delayMinutes, items: rowList(data.data.diff).map(mapSector) };
 }
 export async function fundFlow(raw: string) {
@@ -235,4 +237,40 @@ export async function stockNews(raw: string) {
   const data = JSON.parse(text.slice(begin + 1, end)) as { result?: { cmsArticleWebOld?: Row[] } };
   if (!Array.isArray(data.result?.cmsArticleWebOld)) throw new Error('来源未提供个股新闻，可能暂时限流');
   return { ...stamp('东方财富个股新闻检索', url), warnings: [], sources: ['东方财富'], items: data.result.cmsArticleWebOld.map(r => ({ id: 'em-' + String(r.code || r.url), title: clean(r.title), summary: clean(r.content).slice(0, 260), publishedAt: String(r.date || '').replace(' ', 'T') + '+08:00', source: clean(r.mediaName) || '东方财富', url: String(r.url || ''), category: 'all', originalTitle: clean(r.title) })) };
+}
+
+
+const SINA_API = 'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.';
+async function sinaJson(method: string, params: Record<string, string>) {
+  const url = SINA_API + method + '?' + new URLSearchParams(params);
+  const response = await request(url, 8000);
+  return { data: JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as unknown, url };
+}
+function sinaMembers(data: unknown): SectorMember[] {
+  if (!Array.isArray(data)) throw new Error('新浪证券列表格式异常');
+  return (data as Row[]).filter(r => /^(sh|sz|bj)\d{6}$/.test(String(r.symbol))).map(r => {const wire = String(r.symbol);return {symbol:wire.slice(2)+'.'+wire.slice(0,2).toUpperCase(),name:clean(r.name),price:num(r.trade),changePercent:num(r.changepercent),amount:num(r.amount)};});
+}
+export async function universe(page: number) {
+  if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('证券列表页码超出范围');
+  const total = await memo('sina-universe-count', 600, async () => {
+    const {data} = await sinaJson('getHQNodeStockCount', {node:'hs_a'});
+    const count = num(data);if(count === null || count < 1 || count > 8000)throw new Error('证券总数异常');return count;
+  });
+  const {data,url} = await sinaJson('getHQNodeData',{page:String(page),num:'80',sort:'symbol',asc:'1',node:'hs_a',symbol:''});
+  const rows = data as Row[], items = sinaMembers(data).map(item => ({...item,turnover:num(rows.find(r=>String(r.symbol).slice(2)===item.symbol.slice(0,6))?.turnoverratio)}));
+  if(!items.length && (page-1)*80<total)throw new Error('证券列表提前结束，未视为完整覆盖');
+  return {...stamp('新浪公开A股证券列表与快照（来源未提供交易日期）',url),total,page,pageSize:80,sourceRows:rows.length,items,tradingDate:null};
+}
+export async function sectorScenario(code: string) {
+  if(!/^SN:new_[a-z0-9]{2,20}$/.test(code))throw new Error('此观察使用独立新浪行业代码');
+  const node=code.slice(3),countResult=await sinaJson('getHQNodeStockCount',{node}),total=num(countResult.data);
+  if(total===null||total<1||total>8000)throw new Error('行业成分总数异常');
+  const members:SectorMember[]=[];let sourceEnded=false;
+  for(let page=1;page<=10;page++){
+    const result=await sinaJson('getHQNodeData',{page:String(page),num:'80',sort:'symbol',asc:'1',node,symbol:''});
+    const pageMembers=sinaMembers(result.data);members.push(...pageMembers);
+    if((result.data as unknown[]).length<80){sourceEnded=true;break;}
+  }
+  const unique=[...new Map(members.map(r=>[r.symbol,r])).values()],breadth=sectorBreadth(unique,total,sourceEnded);
+  return {...stamp('新浪行业全成分公开快照（来源未提供交易日期）',countResult.url),code,breadth,tradingDate:null,leaders:[...unique].filter(r=>r.changePercent!==null).sort((a,b)=>b.changePercent!-a.changePercent!).slice(0,12),conditions:{continuation:'若上涨家数占比保持65%以上、中位涨幅为正，且大盘未转弱，继续观察扩散；再核验资金与原始催化。',invalidation:'若上涨家数占比降至35%以下、中位涨幅转负，或只剩少数领涨股维持，降级为分歧/退潮观察。',verification:'65%/35%是本页观察阈值，不是预测概率。行业源缺少交易日期；未完成全成分覆盖时不输出整体强弱结论。'}};
 }

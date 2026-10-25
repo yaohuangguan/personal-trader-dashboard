@@ -3,6 +3,7 @@ import { Maximize2, Minimize2, RotateCcw, Settings2 } from 'lucide-react';
 import { createChart, ColorType, CrosshairMode, LineStyle, type IChartApi, type ISeriesApi, type LogicalRange, type Time, type LineData, type WhitespaceData, type SeriesMarker, type AutoscaleInfo } from 'lightweight-charts';
 import './MarketChart.css';
 import type { Candle } from '../../shared/types';
+import type { GuideEvent } from '../../shared/guide-analysis';
 import { chartIndicators, defaultMAs, validMAPreferences, type MAPreference, type Point } from '../../shared/chart-indicators';
 
 const UP = '#f04a55', DOWN = '#28cdb6';
@@ -25,7 +26,7 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: 'day' | 'week' | 'month') => range === 'ALL' ? length : ({day: [22,66,132,264],week: [4,13,26,52],month:[1,3,6,12]})[unit][['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: 'day' | 'week' | 'month' }) {
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: 'day' | 'week' | 'month'; guideEvents?: GuideEvent[] }) {
   const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const visibleRef = useRef<LogicalRange | null>(null);
@@ -107,6 +108,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
             color: signal.kind === 'bloom' ? '#f6cb70' : signal.kind === 'golden' ? UP : DOWN,
             text: signal.kind === 'bloom' ? '均线展开' : '', size: signal.kind === 'bloom' ? 1 : 0.7,
           }));
+          for (const event of guideEvents || []) {
+            points.push({ time: event.date as Time, position: 'belowBar', shape: 'circle', color: '#d9c89f', text: '指南启动', size: 1 });
+            if (event.state === 'confirmed' && event.confirmationDate) points.push({ time: event.confirmationDate as Time, position: 'belowBar', shape: 'arrowUp', color: '#b6d6ca', text: '开花确认', size: 1 });
+            if (event.invalidationDate) points.push({ time: event.invalidationDate as Time, position: 'aboveBar', shape: 'arrowDown', color: '#c99a9a', text: '确认失效', size: 1 });
+          }
+          points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
           prices.setMarkers(points);
         }
       }
@@ -193,7 +200,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [candles, compact, expanded, indicators, markers, panels, period, preferences, unit]);
+  }, [candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
@@ -250,7 +257,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{ color: '#ebedf1' }}>K <em>{number(currentKDJ?.k)}</em></span><span style={{ color: '#f1d55c' }}>D <em>{number(currentKDJ?.d)}</em></span><span style={{ color: '#d968e8' }}>J <em>{number(currentKDJ?.j)}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
       </section>}
       <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中'}</span><span>{candles.length} 根K线 · 拖动平移 / 滚轮缩放</span></div>
-      <details className="terminal-method"><summary>交叉和展开标记的口径</summary><p>金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；原有五线模型仍使用 MA5/10/20/60/120。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。</p></details>
+      <details className="terminal-method"><summary>交叉和展开标记的口径</summary><p>金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；“指南启动 / 开花确认”标记另按姚记指南固定MA5/10/20/30/60、粘合、放量穿线及后续3–5根确认计算，不随图表参数改变。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。</p></details>
     </>}
   </div>;
 }

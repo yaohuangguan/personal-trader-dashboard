@@ -1,4 +1,4 @@
-import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, flash, stockNews, reports } from './desk-data';
+import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
@@ -13,6 +13,9 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       if (!symbols.length || symbols.length > 60 || symbols.some(s => !/^\d{6}\.(SH|SZ|BJ)$/.test(s))) return respond({ error: '请提供1至60个带市场后缀的证券代码' }, 400);
       return respond(await memo('quotes:' + symbols.join(','), 3, () => quotes(symbols)));
     }
+    if (kind === 'universe') { const page = Number(url.searchParams.get('page') || '1'); if (!Number.isInteger(page) || page < 1 || page > 100) return respond({error:'无效证券列表页码'},400); return respond(await memo('universe:'+page,600,()=>universe(page))); }
+    if (kind === 'industries') return respond(await memo('industries',300,()=>industryRanks()));
+    if (kind === 'sector-scenario') { const code=url.searchParams.get('code')||'';if(!/^SN:new_[a-z0-9]{2,20}$/.test(code))return respond({error:'无效新浪行业代码'},400);return respond(await memo('scenario:'+code,300,()=>sectorScenario(code))); }
     if (kind === 'flash') return respond(await memo('flash', 45, flash));
     if (kind === 'ranks') return respond(await memo('ranks', 90, ranks));
     if (kind === 'peers') {

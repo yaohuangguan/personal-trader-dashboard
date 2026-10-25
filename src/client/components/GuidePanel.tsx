@@ -1,0 +1,39 @@
+import { Check, Circle, CircleHelp, BookOpen, ArrowRight, AlertTriangle } from 'lucide-react';
+import { analyzeGuideResonance, GUIDE_VERSION, GUIDE_URL, type GuideAnalysis } from '../../shared/guide-analysis';
+import type { Candle } from '../../shared/types';
+import { useReader } from './InAppReader';
+import './GuidePanel.css';
+
+const fmt = (v: number | null, suffix = '') => v === null ? '—' : v.toFixed(2) + suffix;
+export function GuideSummary({ data, onOpen }: { data: GuideAnalysis; onOpen: () => void }) {
+  return <button type="button" className="guide-summary" onClick={onOpen} aria-label="查看五线开花分析">
+    <div><span>姚记五线开花</span><strong>{data.stage}</strong></div>
+    <div><span>五线粘合系数</span><b>{fmt(data.adhesionPct, '%')}</b></div>
+    <div><span>当前 BIAS60</span><b>{fmt(data.bias60, '%')}</b></div>
+    <div><span>{data.event ? '启动观察日' : '历史日线'}</span><b>{data.event?.date || data.asOf || '—'}</b></div>
+    <ArrowRight size={15} />
+  </button>;
+}
+
+export default function GuidePanel({ data, weekly, monthly, weekError, monthError, loading }: { data: GuideAnalysis; weekly?: Candle[]; monthly?: Candle[]; weekError?: string; monthError?: string; loading?: boolean }) {
+  const { openNews } = useReader();
+  const resonance = analyzeGuideResonance(weekly || [], monthly || []);
+  const steps = ['粘合蓄势', '放量穿线', '3–5日确认', '周月共振'];
+  return <div className="guide-panel" data-testid="guide-panel">
+    <header><div><span>YOUR RESEARCH PLAYBOOK</span><h2>{GUIDE_VERSION}</h2><p>先找形成过程，再核验强度与后续确认。当前日线 {data.asOf || '—'}。</p></div><button type="button" onClick={() => openNews({ id: 'sam-five-line-guide', title: GUIDE_VERSION, source: '姚柏杨 · 原始指南', publishedAt: null, url: GUIDE_URL, category: 'all', summary: '规则依据：第02/03/04/05/08/09/14/23章。粘合 → 放量一阳穿线 → 3–5日回踩和排列确认 → 周月共振。下方计算口径区分指南给定阈值与具体化参数。', originalTitle: GUIDE_VERSION })}><BookOpen size={14} />指南来源</button></header>
+    <div className="guide-sequence">{steps.map((text, i) => <div key={text}><span>{i + 1}</span><b>{text}</b>{i < 3 && <ArrowRight size={14} />}</div>)}</div>
+    <div className="guide-verdict"><div><span>当前观察状态</span><strong>{data.stage}</strong><p>{data.event ? `${data.event.date} 启动观察 · 已取得 ${data.event.observedBars} 根确认窗口日线` : data.ready ? '尚未检出满足完整启动条件的近期形态；多头排列单独出现不等同于开花。' : `有效样本 ${data.available} / ${data.required}，先补足日线。`}</p></div><div><span>结构背景</span><b>{data.adhesionLabel}</b><small>系数 {fmt(data.adhesionPct, '%')} · BIAS60 {fmt(data.bias60, '%')}</small><small>实体穿线 {data.crossedLines}/5 · 长期七线 {data.sevenLineCrosses === null ? '未齐备' : data.sevenLineCrosses + '/7'}</small></div></div>
+    <div className="guide-core-mas" aria-label="指南核心均线数值">{[5,10,20,30,60].map(period => <div key={period}><span>MA{period}</span><b>{fmt(data.ma[period])}</b></div>)}</div>
+    <div className="guide-dimensions">{data.dimensions.map(d=><article key={d.title}><span>{d.title}</span><b>{d.value}</b><p>{d.detail}</p></article>)}</div>
+    {data.provisional && <p className="guide-notice">当前日线尚未收盘，盘中满足条件仍只是候选。</p>}
+    <div className="guide-section-heading"><h3>一阳穿线 · 强度清单</h3><span>{data.event ? '核验启动日 ' + data.event.date : '核验末根日线'}</span></div>
+    <div className="guide-rule-list">{data.rules.map(r => <div className={'guide-rule ' + r.state} key={r.id}><span className="guide-rule-icon">{r.state === 'pass' ? <Check size={14} /> : r.state === 'unknown' ? <CircleHelp size={14} /> : <Circle size={12} />}</span><div><b>{r.title}{!r.required && <small>优选</small>}</b><p>{r.rule}</p></div><div><strong>{r.value}</strong><small>指南 §{r.chapter} · {r.state === 'pass' ? '满足' : r.state === 'fail' ? '未满足' : '待核验'}</small></div></div>)}</div>
+    <div className="guide-confirmation"><h3>后续确认</h3>{data.event ? <><div><b>{data.event.state === 'confirmed' ? '确认成立' : data.event.state === 'failed' ? '确认失败' : '观察窗口尚未完成'}</b><span>实体中点 {data.event.midpoint.toFixed(2)} · 启动最低 {data.event.low.toFixed(2)}</span></div><p>{data.event.reason}</p>{data.event.confirmationDate && <small>首次确认 {data.event.confirmationDate}</small>}{data.event.invalidationDate && <small>失守日期 {data.event.invalidationDate}</small>}</> : <p>先出现已收盘的启动阳线，再观察后续3–5根；不会把未来确认条件提前算入当日。</p>}</div>
+    <div className="guide-section-heading"><h3>全周期共振</h3><span>仅用已收盘周期</span></div>
+    <div className="guide-resonance">{([{ key: 'weekly', title: '周线 · 屠龙刀', error: weekError, data: resonance.weekly, rule: '近5根周线出现5/10金叉，30/60接近走平并粘合' }, { key: 'monthly', title: '月线 · 30月线回踩', error: monthError, data: resonance.monthly, rule: '前月放量上破30月线，次月缩量回踩不破' }] as const).map(r => <div key={r.key}><div><h4>{r.title}</h4><b>{r.error ? '来源不可用' : loading && !r.data.bars ? '正在读取' : !r.data.ready ? '样本不足' : r.data.matched ? '条件满足' : '未满足'}</b></div><p>{r.rule}</p><small>{r.error || r.data.detail}</small><small>{r.data.bars} 根已收盘周期 · {r.data.asOf || '—'}</small></div>)}</div>
+    <div className="guide-section-heading"><h3>指标协同与人工证据</h3><span>辅助验证，分别呈现</span></div>
+    <div className="guide-supporting">{data.supporting.map(r => <div key={r.title}><b>{r.title}</b><span>{r.state === 'pass' ? '满足' : r.state === 'unknown' ? '待核验' : '未满足'}</span><p>{r.detail}</p></div>)}</div>
+    <div className="guide-risk"><h3><AlertTriangle size={15} />风险与失效观察</h3>{data.risks.length ? data.risks.map(r => <p key={r}>{r}</p>) : <p>当前未命中已实现的风险条件；仍需核验行情时效、消息与筹码。</p>}</div>
+    <details className="guide-method"><summary>计算口径与指南对应</summary><p>核心五线固定为 MA5/10/20/30/60。长期120/250用于背景观察，图表的八条可调均线独立保留。粘合系数严格采用指南计算器：(最高均线−最低均线)/最低均线；小于2%/5%/10%分别对应极致/紧密/松散粘合。</p><p>指南明确给定：涨幅&gt;5%、突破量&gt;粘合期均量2倍、收盘高于MA60、后续3–5日确认、BIAS60&gt;20%风险提示、J从高位跌破80复核。具体化参数：连续粘合至少5根、最多20根；30/60线用5根斜率且容许−0.1%；收盘在振幅上方10%；中轴允许偏离实体中点25%，作为优选项。后续用最低价检验阳线半位，采用严格口径。</p><p>量价时空页把当前量与前20根均量比较；价平具体化为涨跌幅绝对值&lt;0.5%，量缩平价为相对量≤0.8倍，滞涨放量为相对量≥2倍。该观察不归因于主力。周线金叉近5根、30/60粘合&lt;2%及斜率容差沿用上述参数；月线只检验相邻已收盘月份。尚未完成的周/月不参加确认，月线保守排除当前自然月。筹码、队列及主力意图不从OHLCV代填。指南中的胜率说法没有转成系统胜率或置信度。</p>{data.warnings.map(w => <p key={w}>{w}</p>)}</details>
+  </div>;
+}

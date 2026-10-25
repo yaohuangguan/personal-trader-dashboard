@@ -3,7 +3,7 @@ import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
-import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews } from './research';
+import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
 interface Env { ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
@@ -100,6 +100,14 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
    provider='腾讯财经公开日线（非授权接口，前复权）';
    notice='500根左右的前复权日线；成交量使用原始接口单位（通常为手）。研究使用，非交易所实时或受保证的授权数据。';
   }catch(e){failure+=' Tencent CN: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source&&cn&&!symbol.endsWith('.BJ')){
+  try{source=await sinaAdjustedDaily(symbol);provider='新浪公开日线（前复权因子校正，成交量为股）';notice='公开原始日线按新浪逐日有效前复权因子校正OHLC，成交量保持原始股数；非授权实时行情。';}
+  catch(e){failure+=' Sina adjusted CN: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source&&symbol.endsWith('.BJ')){
+  try{source=await sinaBeijingDaily(symbol);provider='新浪公开日线（北交所，不复权）';notice='公开日线，不复权；送转和除权可能影响均线结构，需复核。成交量为股。';}
+  catch(e){failure+=' Sina BJ: '+(e instanceof Error?e.message:String(e));}
  }
  if(!source){
   try{

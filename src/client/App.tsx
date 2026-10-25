@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import ScreenerWorkspace from './components/ScreenerWorkspace';
 import ResearchDesk, { FlashNewsDesk } from './components/ResearchDesk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -12,13 +13,13 @@ import TradingViewWidget from './components/TradingViewWidget';
 import {useReader} from './components/InAppReader';
 import PWAControls from './components/PWAControls';
 import { OverviewIntelStrip, IntelHistory, StockResearchExtras } from './components/IntelPanels';
-import { analyzeCandles } from '../shared/analysis';
+import { analyzeGuide } from '../shared/guide-analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
 import type { MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
 
-type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved';
+type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved'|'screener';
 const NAV:[View,string,typeof Globe2][]=[
- ['research','个股工作台',Target],['markets','自选市场',LineChart],['news','7×24 快讯',Globe2],
+ ['research','个股工作台',Target],['screener','五线选股器',SlidersHorizontal],['markets','自选市场',LineChart],['news','7×24 快讯',Globe2],
  ['overview','情报总览',LayoutDashboard],['radar','产业联动',Radar],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
 ];
 function readStored<T>(key:string,fallback:T):T{
@@ -82,7 +83,7 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
  </button>;
 }
 export default function App(){
- const [view,setView]=useState<View>('research');
+ const [view,setView]=useState<View>(()=>new URLSearchParams(window.location.search).get('view')==='screener'?'screener':'research');
  const [mobileNav,setMobileNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
  const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[]));
@@ -103,7 +104,8 @@ export default function App(){
  const savedIds=useMemo(()=>new Set(saved.map(x=>x.url)),[saved]);
  const selectedData=markets[selected];
  const activeWatch=useMemo(()=>Array.from(new Set([selected,...watchlist])).slice(0,14),[selected,watchlist]);
- const analysis=useMemo(()=>selectedData?analyzeCandles(selectedData.candles):null,[selectedData]);
+ const analysis=useMemo(()=>selectedData?analyzeGuide(selectedData.candles):null,[selectedData]);
+ const watchAnalyses=useMemo<Record<string,ReturnType<typeof analyzeGuide>>>(()=>view==='markets'?Object.fromEntries(watchlist.filter(symbol=>markets[symbol]).map(symbol=>[symbol,analyzeGuide(markets[symbol].candles)])):{},[view,watchlist,markets]);
  useEffect(()=>{localStorage.setItem('atlas.watchlist.v1',JSON.stringify(watchlist));},[watchlist]);
  useEffect(()=>{localStorage.setItem('atlas.bookmarks.v1',JSON.stringify(saved));},[saved]);
  useEffect(()=>{const t=setInterval(()=>setClock(new Date()),60000);return ()=>clearInterval(t);},[]);
@@ -128,7 +130,7 @@ export default function App(){
   return ()=>ac.abort();
  },[activeWatch,refreshKey]);
  useEffect(()=>{
-  if(view==='research'||view==='news'&&newsCategory==='all')return;
+  if(view==='research'||view==='screener'||view==='news'&&newsCategory==='all')return;
   const ac=new AbortController();setNewsLoading(true);setNewsError('');setNewsData(null);
   api<NewsPayload>('/api/news?category='+encodeURIComponent(newsCategory),ac.signal)
    .then(data=>{if(!ac.signal.aborted)setNewsData(data);})
@@ -153,7 +155,7 @@ export default function App(){
  },[]);
  const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):[symbol,...prev].slice(0,30)),[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
- const changeView=useCallback((v:View)=>{setView(v);setMobileNav(false);window.scrollTo({top:0,behavior:'smooth'});},[]);
+ const changeView=useCallback((v:View)=>{setView(v);setMobileNav(false);const url=new URL(window.location.href);if(v==='screener')url.searchParams.set('view','screener');else url.searchParams.delete('view');window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
  const searchOptions=useMemo(()=>{
   const list=remoteResults.length?remoteResults:searchLocal(searchQuery);
   const seen=new Set<string>();return list.filter(x=>{if(seen.has(x.symbol))return false;seen.add(x.symbol);return true;}).slice(0,12);
@@ -189,6 +191,7 @@ export default function App(){
     </div>
    </header>
    <main className={'main '+(view==='research'?'desk-main':'')}>
+    {view==='screener'&&<ScreenerWorkspace watchlist={watchlist} onStock={chooseSymbol} onWatch={toggleWatch}/>}
     {view==='overview'&&<>
      <section className="page-heading">
       <div><div className="eyebrow"><span className="eyebrow-accent">●</span> YOUR GLOBAL INTELLIGENCE TERMINAL</div><h1>全局情报<span className="title-dim">，尽在掌握。</span></h1><p>从世界事件到产业链，从上市公司披露到股价信号。先看事实，再判断影响。</p></div>
@@ -272,8 +275,8 @@ export default function App(){
      <div className="market-grid">{watchlist.map(symbol=><QuoteCard key={symbol} symbol={symbol} data={markets[symbol]} onClick={()=>chooseSymbol(symbol)}/>)}</div>
      <div className="panel table-panel"><div className="panel-heading"><div><span className="eyebrow">DAILY EQUITY MONITOR</span><h2>行情与技术观察</h2></div><span className="small-metadata">最近交易日日线收盘</span></div>
       <div className="table-scroll"><table className="equity-table"><thead><tr><th>标的</th><th>市场</th><th>最近价格</th><th>日变化</th><th>五线结构</th><th>更新交易日</th><th></th></tr></thead><tbody>
-       {watchlist.map(symbol=>{const d=markets[symbol],a=d?analyzeCandles(d.candles):null;return <tr key={symbol} onClick={()=>chooseSymbol(symbol)}>
-        <td><b>{symbol}</b><small>{d?.name||CATALOG.find(x=>x.symbol===symbol)?.name}</small></td><td>{d?.exchange||'—'}</td><td><b>{money(d?.last)}</b></td><td className={changeClass(d?.changePercent)}>{percent(d?.changePercent)}</td><td><span className={'table-status '+(a?.bloom?'good':'')}>{a?.stage||'等待数据'}</span></td><td>{d?.asOf||'—'}</td><td><button className="icon-button" title="从自选移除" onClick={e=>{e.stopPropagation();toggleWatch(symbol);}}><X size={14}/></button></td>
+       {watchlist.map(symbol=>{const d=markets[symbol],a=watchAnalyses[symbol];return <tr key={symbol} onClick={()=>chooseSymbol(symbol)}>
+        <td><b>{symbol}</b><small>{d?.name||CATALOG.find(x=>x.symbol===symbol)?.name}</small></td><td>{d?.exchange||'—'}</td><td><b>{money(d?.last)}</b></td><td className={changeClass(d?.changePercent)}>{percent(d?.changePercent)}</td><td><span className={'table-status '+(a?.stage==='开花确认'?'good':'')}>{a?.stage||'等待数据'}</span></td><td>{d?.asOf||'—'}</td><td><button className="icon-button" title="从自选移除" onClick={e=>{e.stopPropagation();toggleWatch(symbol);}}><X size={14}/></button></td>
        </tr>;})}
       </tbody></table></div>
       {Object.entries(marketErrors).filter(([key])=>watchlist.includes(key)&&!markets[key]).map(([key,message])=><StatusNote key={key}>{key} 数据不可用：{message}</StatusNote>)}
