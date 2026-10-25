@@ -1,3 +1,6 @@
+import {t as uiText} from '../preferences';
+import ChipProfile from './ChipProfile';
+import {usePreferences} from '../preferences';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minimize2, RotateCcw, Settings2 } from 'lucide-react';
 import { createChart, ColorType, CrosshairMode, LineStyle, type IChartApi, type ISeriesApi, type LogicalRange, type Time, type LineData, type WhitespaceData, type SeriesMarker, type AutoscaleInfo } from 'lightweight-charts';
@@ -26,7 +29,9 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: 'day' | 'week' | 'month') => range === 'ALL' ? length : ({day: [22,66,132,264],week: [4,13,26,52],month:[1,3,6,12]})[unit][['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: 'day' | 'week' | 'month'; guideEvents?: GuideEvent[] }) {
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: 'day' | 'week' | 'month'; chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+  const display=usePreferences();
+  const [chipsOpen,setChipsOpen]=useState(false);
   const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const visibleRef = useRef<LogicalRange | null>(null);
@@ -72,7 +77,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     const makeChart = (el: HTMLDivElement, height: number, bottomAxis: boolean) => {
       const chart = createChart(el, {
         width: el.clientWidth, height: paneHeight(el.clientWidth, height),
-        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: '#0c0c0d' }, textColor: '#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: 11 },
+        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: '#0c0c0d' }, textColor: '#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: Math.round(display.fontSize*.82) },
         grid: { vertLines: { visible: false }, horzLines: { color: '#222225' } },
         leftPriceScale: { visible: true, borderVisible: false, entireTextOnly: true, minimumWidth: compact ? 55 : 68, scaleMargins: { top: 0.12, bottom: 0.08 } },
         rightPriceScale: { visible: false },
@@ -80,7 +85,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         crosshair: { mode: CrosshairMode.Normal, vertLine: { color: '#878b92', labelBackgroundColor: '#3e4146' }, horzLine: { color: '#878b92', labelBackgroundColor: '#3e4146' } },
         handleScroll: { mouseWheel: !compact, pressedMouseMove: !compact, horzTouchDrag: !compact, vertTouchDrag: false },
         handleScale: { mouseWheel: !compact, pinch: !compact, axisPressedMouseMove: !compact },
-        localization: { locale: 'zh-CN' },
+        localization: { locale: display.locale },
       });
       instances.push(chart);
       resizeTargets.push({ chart, element: el, height });
@@ -106,12 +111,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
             time: signal.time as Time, position: signal.kind === 'death' ? 'aboveBar' : 'belowBar',
             shape: signal.kind === 'bloom' ? 'circle' : signal.kind === 'golden' ? 'arrowUp' : 'arrowDown',
             color: signal.kind === 'bloom' ? '#f6cb70' : signal.kind === 'golden' ? UP : DOWN,
-            text: signal.kind === 'bloom' ? '均线展开' : '', size: signal.kind === 'bloom' ? 1 : 0.7,
+            text: signal.kind === 'bloom' ? uiText('均线展开') : '', size: signal.kind === 'bloom' ? 1 : 0.7,
           }));
           for (const event of guideEvents || []) {
-            points.push({ time: event.date as Time, position: 'belowBar', shape: 'circle', color: '#d9c89f', text: '指南启动', size: 1 });
-            if (event.state === 'confirmed' && event.confirmationDate) points.push({ time: event.confirmationDate as Time, position: 'belowBar', shape: 'arrowUp', color: '#b6d6ca', text: '开花确认', size: 1 });
-            if (event.invalidationDate) points.push({ time: event.invalidationDate as Time, position: 'aboveBar', shape: 'arrowDown', color: '#c99a9a', text: '确认失效', size: 1 });
+            points.push({ time: event.date as Time, position: 'belowBar', shape: 'circle', color: '#d9c89f', text: uiText('指南启动'), size: 1 });
+            if (event.state === 'confirmed' && event.confirmationDate) points.push({ time: event.confirmationDate as Time, position: 'belowBar', shape: 'arrowUp', color: '#b6d6ca', text: uiText('开花确认'), size: 1 });
+            if (event.invalidationDate) points.push({ time: event.invalidationDate as Time, position: 'aboveBar', shape: 'arrowDown', color: '#c99a9a', text: uiText('确认失效'), size: 1 });
           }
           points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
           prices.setMarkers(points);
@@ -200,7 +205,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents]);
+  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
@@ -212,52 +217,53 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     setDraft(preferences.map(p => ({ ...p, period: String(p.period) })));
     setSettingsError(''); setSettingsOpen(value => !value);
   }
-  if (!candles.length) return <div className="chart-empty">暂无可绘制的真实 K 线</div>;
-  return <div className={'terminal-chart ' + (compact ? 'terminal-compact ' : '') + (expanded ? 'terminal-expanded' : '')} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={expanded ? '展开的 K 线图表' : undefined}>
-    {!compact && <>
+  if (!candles.length) return <div className="chart-empty">{uiText("暂无可绘制的真实 K 线")}</div>;
+  return <div className={'terminal-chart ' + (compact ? 'terminal-compact ' : '') + (expanded ? 'terminal-expanded' : '')} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={uiText(expanded ? '展开的 K 线图表' : undefined)}>
+    {uiText(!compact && <>
       <div className="terminal-toolbar">
-        <div className="terminal-range" aria-label="图表显示范围">{([['1M', '1个月'], ['3M', '3个月'], ['6M', '6个月'], ['1Y', '1年'], ['ALL', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => chooseRange(value)}>{label}</button>)}</div>
-        <div className="terminal-tools"><span className="terminal-frequency">{unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : '日 K'}{symbol ? ' · ' + symbol : ''}</span>
-          <button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />均线参数</button>
-          <button type="button" onClick={resetView} aria-label="重置缩放"><RotateCcw size={14} /></button>
-          <button type="button" onClick={() => setExpanded(value => !value)} aria-label={expanded ? '收起图表' : '展开图表'}>{expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
+        <div className="terminal-range" aria-label={uiText("图表显示范围")}>{uiText(([['1M', '1个月'], ['3M', '3个月'], ['6M', '6个月'], ['1Y', '1年'], ['ALL', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => chooseRange(value)}>{uiText(label)}</button>))}</div>
+        <div className="terminal-tools"><span className="terminal-frequency">{uiText(unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : '日 K')}{uiText(symbol ? ' · ' + symbol : '')}</span>
+          <button type="button" aria-pressed={chipsOpen} onClick={()=>setChipsOpen(v=>!v)} disabled={unit!=='day'||!symbol||!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)}>{uiText("筹码峰")}</button><button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />{uiText("均线参数")}</button>
+          <button type="button" onClick={resetView} aria-label={uiText("重置缩放")}><RotateCcw size={14} /></button>
+          <button type="button" onClick={() => setExpanded(value => !value)} aria-label={uiText(expanded ? '收起图表' : '展开图表')}>{uiText(expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />)}</button>
         </div>
       </div>
-      {settingsOpen && <form className="terminal-settings" aria-label="均线参数设置" onSubmit={event => {
+      {uiText(settingsOpen && <form className="terminal-settings" aria-label={uiText("均线参数设置")} onSubmit={event => {
         event.preventDefault();
         const next = draft.map(p => ({ ...p, period: Number(p.period) }));
         if (!validMAPreferences(next)) { setSettingsError('周期须为 1–500 的整数，已启用的周期不能重复。'); return; }
         setPreferences(next); setSettingsOpen(false);
       }}>
-        <div className="terminal-settings-heading"><b>自定义均线</b><span>按交易日计算 · 参数保存在本机</span></div>
-        <div className="terminal-settings-grid">{draft.map((line, i) => <div className="terminal-ma-setting" key={i}>
-          <input type="checkbox" aria-label={'启用第' + (i + 1) + '条均线'} checked={line.enabled} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, enabled: event.target.checked } : p))} />
-          <label htmlFor={'ma-period-' + i}>MA</label><input id={'ma-period-' + i} aria-label={'第' + (i + 1) + '条均线周期'} type="number" min="1" max="500" step="1" required value={line.period} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, period: event.target.value } : p))} />
-          <input type="color" aria-label={'第' + (i + 1) + '条均线颜色'} value={line.color} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, color: event.target.value } : p))} />
-        </div>)}</div>
-        <div className="terminal-settings-actions"><span role="alert">{settingsError}</span><button type="button" onClick={() => setDraft(defaultMAs().map(p => ({ ...p, period: String(p.period) })))}>恢复默认</button><button className="terminal-apply" type="submit">应用参数</button></div>
-      </form>}
-      <div className="terminal-ma-legend" aria-label="均线数值">{preferences.map((line, i) => <button type="button" key={i} aria-label={(line.enabled ? '隐藏' : '显示') + ' MA' + line.period} aria-pressed={line.enabled} style={{ color: line.color }} className={line.enabled ? '' : 'is-hidden'} onClick={() => setPreferences(old => {
+        <div className="terminal-settings-heading"><b>{uiText("自定义均线")}</b><span>{uiText("按交易日计算 · 参数保存在本机")}</span></div>
+        <div className="terminal-settings-grid">{uiText(draft.map((line, i) => <div className="terminal-ma-setting" key={i}>
+          <input type="checkbox" aria-label={uiText('启用第' + (i + 1) + '条均线')} checked={line.enabled} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, enabled: event.target.checked } : p))} />
+          <label htmlFor={'ma-period-' + i}>MA</label><input id={'ma-period-' + i} aria-label={uiText('第' + (i + 1) + '条均线周期')} type="number" min="1" max="500" step="1" required value={line.period} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, period: event.target.value } : p))} />
+          <input type="color" aria-label={uiText('第' + (i + 1) + '条均线颜色')} value={line.color} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, color: event.target.value } : p))} />
+        </div>))}</div>
+        <div className="terminal-settings-actions"><span role="alert">{uiText(settingsError)}</span><button type="button" onClick={() => setDraft(defaultMAs().map(p => ({ ...p, period: String(p.period) })))}>{uiText("恢复默认")}</button><button className="terminal-apply" type="submit">{uiText("应用参数")}</button></div>
+      </form>)}
+      <div className="terminal-ma-legend" aria-label={uiText("均线数值")}>{uiText(preferences.map((line, i) => <button type="button" key={i} aria-label={uiText((line.enabled ? '隐藏' : '显示') + ' MA' + line.period)} aria-pressed={line.enabled} style={{ color: line.color }} className={line.enabled ? '' : 'is-hidden'} onClick={() => setPreferences(old => {
         const next = old.map((p, n) => n === i ? { ...p, enabled: !p.enabled } : p);
         return validMAPreferences(next) ? next : old;
-      })}><i style={{ background: line.color }} /><span>MA{line.period}</span><b>{line.enabled && current ? number(maMaps[line.period]?.get(current.time)) : '—'}</b></button>)}</div>
-      <div className="terminal-ohlc" aria-live="off"><strong>{current?.time}</strong>{current && <><span>开 <b>{number(current.open)}</b></span><span>高 <b className="terminal-up">{number(current.high)}</b></span><span>低 <b className="terminal-down">{number(current.low)}</b></span><span>收 <b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{number(current.close)}</b></span></>}</div>
-    </>}
-    {chartError && <div className="terminal-error" role="alert">图表无法显示：{chartError}</div>}
-    <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label="K线与可调整均线主图" />
-    {!compact && <>
-      <div className="terminal-panel-controls"><div>{(['VOL', 'MACD', 'KDJ'] as const).map(panel => <button type="button" key={panel} aria-label={'显示 ' + panel} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{panel}</button>)}</div><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />交叉 / 展开标记</label></div>
-      {panels.VOL && <section className="terminal-indicator" aria-label="VOL 成交量副图">
-        <div className="terminal-indicator-heading"><b>VOL <small>{volumeUnit ? '(' + volumeUnit + ')' : ''}</small></b><span>VOLUME <em>{volumeNumber(current?.volume)}</em></span><span style={{ color: '#f1d55c' }}>MA5 <em>{volumeNumber(current && volume5.get(current.time))}</em></span><span style={{ color: '#d968e8' }}>MA20 <em>{volumeNumber(current && volume20.get(current.time))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
-      </section>}
-      {panels.MACD && <section className="terminal-indicator" aria-label="MACD 指标副图">
-        <div className="terminal-indicator-heading"><b>MACD <small>(12,26,9)</small></b><span style={{ color: '#ebedf1' }}>DIF <em>{number(currentMACD?.dif)}</em></span><span style={{ color: '#f1d55c' }}>DEA <em>{number(currentMACD?.dea)}</em></span><span className={(currentMACD?.histogram ?? 0) >= 0 ? 'terminal-up' : 'terminal-down'}>MACD <em>{number(currentMACD?.histogram)}</em></span></div><div ref={macdRef} data-testid="macd-pane" />
-      </section>}
-      {panels.KDJ && <section className="terminal-indicator" aria-label="KDJ 指标副图">
-        <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{ color: '#ebedf1' }}>K <em>{number(currentKDJ?.k)}</em></span><span style={{ color: '#f1d55c' }}>D <em>{number(currentKDJ?.d)}</em></span><span style={{ color: '#d968e8' }}>J <em>{number(currentKDJ?.j)}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
-      </section>}
-      <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中'}</span><span>{candles.length} 根K线 · 拖动平移 / 滚轮缩放</span></div>
-      <details className="terminal-method"><summary>交叉和展开标记的口径</summary><p>金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；“指南启动 / 开花确认”标记另按姚记指南固定MA5/10/20/30/60、粘合、放量穿线及后续3–5根确认计算，不随图表参数改变。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。</p></details>
-    </>}
+      })}><i style={{ background: line.color }} /><span>MA{uiText(line.period)}</span><b>{uiText(line.enabled && current ? number(maMaps[line.period]?.get(current.time)) : '—')}</b></button>))}</div>
+      <div className="terminal-ohlc" aria-live="off"><strong>{uiText(current?.time)}</strong>{uiText(current && <><span>{uiText("开")}<b>{uiText(number(current.open))}</b></span><span>{uiText("高")}<b className="terminal-up">{uiText(number(current.high))}</b></span><span>{uiText("低")}<b className="terminal-down">{uiText(number(current.low))}</b></span><span>{uiText("收")}<b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{uiText(number(current.close))}</b></span></>)}</div>
+    </>)}
+    {uiText(chartError && <div className="terminal-error" role="alert">{uiText("图表无法显示：")}{uiText(chartError)}</div>)}
+    <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
+    {uiText(!compact && chipsOpen && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
+    {uiText(!compact && <>
+      <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("交叉 / 展开标记")}</label></div>
+      {uiText(panels.VOL && <section className="terminal-indicator" aria-label={uiText("VOL 成交量副图")}>
+        <div className="terminal-indicator-heading"><b>VOL <small>{uiText(volumeUnit ? '(' + volumeUnit + ')' : '')}</small></b><span>VOLUME <em>{uiText(volumeNumber(current?.volume))}</em></span><span style={{ color: '#f1d55c' }}>MA5 <em>{uiText(volumeNumber(current && volume5.get(current.time)))}</em></span><span style={{ color: '#d968e8' }}>MA20 <em>{uiText(volumeNumber(current && volume20.get(current.time)))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
+      </section>)}
+      {uiText(panels.MACD && <section className="terminal-indicator" aria-label={uiText("MACD 指标副图")}>
+        <div className="terminal-indicator-heading"><b>MACD <small>(12,26,9)</small></b><span style={{ color: '#ebedf1' }}>DIF <em>{uiText(number(currentMACD?.dif))}</em></span><span style={{ color: '#f1d55c' }}>DEA <em>{uiText(number(currentMACD?.dea))}</em></span><span className={(currentMACD?.histogram ?? 0) >= 0 ? 'terminal-up' : 'terminal-down'}>MACD <em>{uiText(number(currentMACD?.histogram))}</em></span></div><div ref={macdRef} data-testid="macd-pane" />
+      </section>)}
+      {uiText(panels.KDJ && <section className="terminal-indicator" aria-label={uiText("KDJ 指标副图")}>
+        <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{ color: '#ebedf1' }}>K <em>{uiText(number(currentKDJ?.k))}</em></span><span style={{ color: '#f1d55c' }}>D <em>{uiText(number(currentKDJ?.d))}</em></span><span style={{ color: '#d968e8' }}>J <em>{uiText(number(currentKDJ?.j))}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
+      </section>)}
+      <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{uiText(activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中')}</span><span>{uiText(candles.length)} {uiText("根K线 · 拖动平移 / 滚轮缩放")}</span></div>
+      <details className="terminal-method"><summary>{uiText("交叉和展开标记的口径")}</summary><p>{uiText("金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；“指南启动 / 开花确认”标记另按姚记指南固定MA5/10/20/30/60、粘合、放量穿线及后续3–5根确认计算，不随图表参数改变。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。")}</p></details>
+    </>)}
   </div>;
 }

@@ -1,3 +1,5 @@
+import {aggregateDaily} from '../shared/market-models';
+import {sinaAdjustedDaily,sinaBeijingDaily} from './research';
 // HTTP adapters ported from a-stock-data v3.10.3 (Apache-2.0).
 // https://github.com/simonlin1212/a-stock-data -- public snapshots are NOT exchange Level-2.
 import { createHash } from 'node:crypto';
@@ -104,18 +106,27 @@ export async function intraday(raw: string) {
 }
 export async function history(raw: string, period: string) {
   const { symbol, wire } = chineseSymbol(raw);
-  if (!['week', 'month'].includes(period) || symbol.endsWith('.BJ')) throw new Error('此历史接口支持沪深周线和月线');
+  if (!['week', 'month'].includes(period)) throw new Error('无效历史周期');
+  try {
+  if(symbol.endsWith('.BJ'))throw new Error('使用北交所日线聚合');
   const url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + wire + ',' + period + ',,,500,qfq';
-  const payload = await (await request(url)).json() as { data?: Record<string, Record<string, string[][]>> };
+  const payload = await (await request(url,4000)).json() as { data?: Record<string, Record<string, string[][]>> };
   const node = payload.data?.[wire], rows = node?.['qfq' + period] ?? node?.[period];
   if (!Array.isArray(rows)) throw new Error('历史周期响应格式变化');
   const candles: Candle[] = rows.map(r => {
     const [date, open, close, high, low, volume] = r;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || [open, close, high, low, volume].some(v => num(v) === null) || Math.min(Number(open), Number(close), Number(high), Number(low)) <= 0) throw new Error('来源含无效或非正复权价格');
+    if(Number(high)<Math.max(Number(open),Number(close))||Number(low)>Math.min(Number(open),Number(close))||Number(volume)<0)throw new Error('来源历史OHLCV范围异常');
     return { time: date, open: Number(open), close: Number(close), high: Number(high), low: Number(low), volume: Number(volume) };
   }).sort((a, b) => a.time.localeCompare(b.time));
   if (candles.length < 2) throw new Error('来源历史样本不足');
-  return { ...stamp('腾讯财经前复权' + (period === 'week' ? '周线' : '月线'), url), symbol, candles, period };
+  return { ...stamp('腾讯财经'+(node?.['qfq'+period]?'前复权':'未复权') + (period === 'week' ? '周线' : '月线'), url), symbol, candles, period,volumeUnit:/^68[89]/.test(symbol)?'股':'手' };
+  }catch {
+    const daily=symbol.endsWith('.BJ')?await sinaBeijingDaily(symbol,1023):await sinaAdjustedDaily(symbol,1023);
+    const candles=aggregateDaily(daily.candles,period as 'week'|'month');
+    if(candles.length<2)throw new Error('备用源周期历史不足，请稍后刷新');
+    return {...stamp('新浪日线聚合 · '+(symbol.endsWith('.BJ')?'未复权':'前复权'),daily.url),symbol,candles,period,volumeUnit:'股',notice:'按实际交易日聚合，日期为周期最后交易日；当前周期可能尚未结束。'};
+  }
 }
 export function parseTickPage(text: string, wire: string, page: number): Tick[] {
   const match = new RegExp('^v_detail_data_' + wire + '=\\[(\\d+),"([^"]*)"\\];?$').exec(text.trim());

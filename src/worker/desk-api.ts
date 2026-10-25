@@ -1,3 +1,4 @@
+import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
@@ -13,6 +14,8 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       if (!symbols.length || symbols.length > 60 || symbols.some(s => !/^\d{6}\.(SH|SZ|BJ)$/.test(s))) return respond({ error: '请提供1至60个带市场后缀的证券代码' }, 400);
       return respond(await memo('quotes:' + symbols.join(','), 3, () => quotes(symbols)));
     }
+    if(kind==='gainers')return respond(await memo('gainers',45,gainers));
+    if(['market-pools','dragon'].includes(kind)){const date=url.searchParams.get('date')||'';if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date)))return respond({error:'无效交易日期'},400);return respond(await memo<unknown>(kind+date,90,()=>kind==='dragon'?dragon(date):marketPools(date)));}
     if (kind === 'universe') { const page = Number(url.searchParams.get('page') || '1'); if (!Number.isInteger(page) || page < 1 || page > 100) return respond({error:'无效证券列表页码'},400); return respond(await memo('universe:'+page,600,()=>universe(page))); }
     if (kind === 'industries') return respond(await memo('industries',300,()=>industryRanks()));
     if (kind === 'sector-scenario') { const code=url.searchParams.get('code')||'';if(!/^SN:new_[a-z0-9]{2,20}$/.test(code))return respond({error:'无效新浪行业代码'},400);return respond(await memo('scenario:'+code,300,()=>sectorScenario(code))); }
@@ -29,6 +32,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       if (!['week', 'month'].includes(period)) return respond({ error: '周期须为 week 或 month' }, 400);
       return respond(await memo(kind + symbol + period, 600, () => history(symbol, period)));
     }
+    if (kind === 'chips')return respond(await memo(kind+symbol,600,()=>chips(symbol)));
     if (kind === 'intraday') return respond(await memo(kind + symbol, 15, () => intraday(symbol)));
     if (kind === 'ticks') return respond(await memo(kind + symbol, 15, () => ticks(symbol)));
     if (kind === 'sectors') return respond(await memo(kind + symbol, 300, () => sectors(symbol)));

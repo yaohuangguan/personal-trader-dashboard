@@ -110,7 +110,7 @@ export function analyzeGuide(input: Candle[], options: { now?: Date; settings?: 
     { title: 'MACD 水上结构', state: !m ? 'unknown' : m.dif > 0 && m.dea > 0 && m.dif > m.dea ? 'pass' : 'fail', detail: m ? `DIF ${fmt(m.dif)} / DEA ${fmt(m.dea)}；${m.histogram > 0 && pm && m.histogram > pm.histogram ? '红柱增强' : '未见红柱增强'}` : 'MACD预热不足' },
     { title: 'KDJ 强势钝化', state: !k ? 'unknown' : k.j >= 100 ? 'pass' : 'fail', detail: k ? `J ${fmt(k.j)}；高位钝化单独出现不作为卖出信号` : 'KDJ历史不足' },
     { title: 'BBI 多空分界', state: !last || bbi === null ? 'unknown' : last.close > bbi ? 'pass' : 'fail', detail: `BBI(3/6/12/24等权均值) ${fmt(bbi)}` },
-    { title: '筹码与盘口验证', state: 'unknown', detail: '90%筹码集中度、逐笔委托和队列未接授权数据，保持待核验' },
+    { title: '筹码与盘口验证', state: 'unknown', detail: '筹码峰与集中度可查看量价模型估算；真实持仓、逐笔委托和队列保持待核验' },
     { title: '消息与板块风口', state: 'unknown', detail: '结合市场、行业和原始消息人工复核；标题不自动等同于业绩或订单' },
   ];
   const pullback = n >= 65 && ordered(n - 1) && [n - 2, n - 1].every(i => candles[i].close <= candles[i - 1].close && candles[i].volume > 0 && candles[i].volume < candles[i - 1].volume && at(10, i) !== null && candles[i].low >= at(10, i)!) && at(5, n - 1)! >= at(5, n - 3)! && at(10, n - 1)! >= at(10, n - 3)!;

@@ -4,6 +4,7 @@ import App from './App';
 import {InAppReaderProvider} from './components/InAppReader';
 import './styles.css';
 import './neutral.css';
+import './readability.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode><InAppReaderProvider><App /></InAppReaderProvider></React.StrictMode>

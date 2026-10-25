@@ -1,9 +1,10 @@
+import type {StockCharacter} from './stock-character';
 import type { GuideAnalysis } from './guide-analysis';
 import type { SourceStamp, Sector } from './desk-types';
 export type UniverseItem = { symbol: string; name: string; price: number | null; changePercent: number | null; amount: number | null; turnover: number | null };
 export type UniversePage = SourceStamp & { total: number; page: number; pageSize: number; sourceRows: number; items: UniverseItem[]; tradingDate: null };
 export type CandidateBucket = '粘合蓄势' | '启动待确认' | '开花确认' | '回踩观察';
-export type ScreenCandidate = UniverseItem & { bucket: CandidateBucket; stage: string; asOf: string; provider: string; adhesion: number | null; bias60: number | null; volumeRatio: number | null; passed: number; required: number; risks: string[]; reasons: string[]; eventDate: string | null; provisional: boolean };
+export type ScreenCandidate = UniverseItem & { bucket: CandidateBucket; stage: string; asOf: string; provider: string; adhesion: number | null; bias60: number | null; volumeRatio: number | null; passed: number; required: number; risks: string[]; reasons: string[]; eventDate: string | null; provisional: boolean; character?:StockCharacter|null };
 export function screenCandidate(stock: UniverseItem, guide: GuideAnalysis, provider: string): ScreenCandidate | null {
   if (!guide.ready || !guide.asOf || !guide.latestVolume) return null;
   let bucket: CandidateBucket | null = null;
