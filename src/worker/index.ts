@@ -1,3 +1,4 @@
+import { deskRoute } from './desk-api';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
@@ -457,6 +458,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
 export default {
  async fetch(request:Request,env:Env):Promise<Response>{
   try {
+   const desk=await deskRoute(request);if(desk)return desk;
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
   }catch(e){return json({error:'Unexpected server error',details:e instanceof Error?e.message:String(e)},500);}

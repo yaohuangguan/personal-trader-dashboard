@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": {"jsx": "preserve", "types": [], "noEmit": true},
+  "compilerOptions": {"jsx": "preserve", "types": ["node"], "noEmit": true},
   "include": ["src/worker", "src/shared"]
 }

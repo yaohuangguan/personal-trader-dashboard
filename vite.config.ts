@@ -39,5 +39,5 @@ export default defineConfig({
   })
  ],
  server:{port:5173,proxy:{'/api':'http://127.0.0.1:8787'}},
- build:{target:'es2022'}
+ build:{target:'es2022',rollupOptions:{output:{manualChunks:{charts:['lightweight-charts'],primitives:['@radix-ui/react-tabs','@radix-ui/react-tooltip','@radix-ui/react-dialog']}}}}
 });

@@ -23,9 +23,9 @@ function timeKey(time: Time): string {
   if (typeof time === 'number') return new Date(time * 1000).toISOString().slice(0, 10);
   return time.year + '-' + String(time.month).padStart(2, '0') + '-' + String(time.day).padStart(2, '0');
 }
-const rangeSize = (range: Range, length: number) => range === '1M' ? 22 : range === '3M' ? 66 : range === '6M' ? 132 : range === '1Y' ? 264 : length;
+const rangeSize = (range: Range, length: number, unit: 'day' | 'week' | 'month') => range === 'ALL' ? length : ({day: [22,66,132,264],week: [4,13,26,52],month:[1,3,6,12]})[unit][['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string }) {
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: 'day' | 'week' | 'month' }) {
   const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const visibleRef = useRef<LogicalRange | null>(null);
@@ -71,8 +71,8 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     const makeChart = (el: HTMLDivElement, height: number, bottomAxis: boolean) => {
       const chart = createChart(el, {
         width: el.clientWidth, height: paneHeight(el.clientWidth, height),
-        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: '#151617' }, textColor: '#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: 11 },
-        grid: { vertLines: { visible: false }, horzLines: { color: '#252729' } },
+        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: '#0c0c0d' }, textColor: '#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: 11 },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#222225' } },
         leftPriceScale: { visible: true, borderVisible: false, entireTextOnly: true, minimumWidth: compact ? 55 : 68, scaleMargins: { top: 0.12, bottom: 0.08 } },
         rightPriceScale: { visible: false },
         timeScale: { visible: bottomAxis, borderVisible: false, timeVisible: false, lockVisibleTimeRangeOnResize: true, rightOffset: 4, barSpacing: 9, minBarSpacing: 2, fixLeftEdge: false },
@@ -145,7 +145,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         for (const level of [20, 80]) lines[0].createPriceLine({ price: level, color: '#35373b', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         panes.push({ chart, anchor: lines[0], values: new Map(indicators.kdj.map(p => [p.time, p.k])) });
       }
-      const count = rangeSize(period, candles.length);
+      const count = rangeSize(period, candles.length, unit);
       const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + 3 };
       for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(initial);
       for (const pane of panes) {
@@ -193,11 +193,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [candles, compact, expanded, indicators, markers, panels, period, preferences]);
+  }, [candles, compact, expanded, indicators, markers, panels, period, preferences, unit]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
-    const range = { from: Math.max(-1, candles.length - rangeSize(period, candles.length) - 1), to: candles.length + 3 };
+    const range = { from: Math.max(-1, candles.length - rangeSize(period, candles.length, unit) - 1), to: candles.length + 3 };
     visibleRef.current = range as LogicalRange;
     chartsRef.current.forEach(chart => chart.timeScale().setVisibleLogicalRange(range));
   }
@@ -210,7 +210,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     {!compact && <>
       <div className="terminal-toolbar">
         <div className="terminal-range" aria-label="图表显示范围">{([['1M', '1个月'], ['3M', '3个月'], ['6M', '6个月'], ['1Y', '1年'], ['ALL', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => chooseRange(value)}>{label}</button>)}</div>
-        <div className="terminal-tools"><span className="terminal-frequency">日 K{symbol ? ' · ' + symbol : ''}</span>
+        <div className="terminal-tools"><span className="terminal-frequency">{unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : '日 K'}{symbol ? ' · ' + symbol : ''}</span>
           <button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />均线参数</button>
           <button type="button" onClick={resetView} aria-label="重置缩放"><RotateCcw size={14} /></button>
           <button type="button" onClick={() => setExpanded(value => !value)} aria-label={expanded ? '收起图表' : '展开图表'}>{expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
@@ -249,8 +249,8 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       {panels.KDJ && <section className="terminal-indicator" aria-label="KDJ 指标副图">
         <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{ color: '#ebedf1' }}>K <em>{number(currentKDJ?.k)}</em></span><span style={{ color: '#f1d55c' }}>D <em>{number(currentKDJ?.d)}</em></span><span style={{ color: '#d968e8' }}>J <em>{number(currentKDJ?.j)}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
       </section>}
-      <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根日线' : indicators.expanded ? '均线多头展开' : '均线结构观察中'}</span><span>{candles.length} 根日线 · 拖动平移 / 滚轮缩放</span></div>
-      <details className="terminal-method"><summary>交叉和展开标记的口径</summary><p>金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 个交易日前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；原有五线模型仍使用 MA5/10/20/60/120。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。</p></details>
+      <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中'}</span><span>{candles.length} 根K线 · 拖动平移 / 滚轮缩放</span></div>
+      <details className="terminal-method"><summary>交叉和展开标记的口径</summary><p>金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；原有五线模型仍使用 MA5/10/20/60/120。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。</p></details>
     </>}
   </div>;
 }

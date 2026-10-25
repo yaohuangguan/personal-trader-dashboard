@@ -1,3 +1,5 @@
+import * as Dialog from '@radix-ui/react-dialog';
+import ResearchDesk, { FlashNewsDesk } from './components/ResearchDesk';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Bookmark, BookmarkCheck, CalendarDays,
@@ -12,12 +14,12 @@ import PWAControls from './components/PWAControls';
 import { OverviewIntelStrip, IntelHistory, StockResearchExtras } from './components/IntelPanels';
 import { analyzeCandles } from '../shared/analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
-import type { FundamentalsPayload, MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
+import type { MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
 
 type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved';
 const NAV:[View,string,typeof Globe2][]=[
- ['overview','情报总览',LayoutDashboard],['news','全球快讯',Globe2],['radar','产业催化',Radar],
- ['markets','市场观察',LineChart],['research','个股研究',Target],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
+ ['research','个股工作台',Target],['markets','自选市场',LineChart],['news','7×24 快讯',Globe2],
+ ['overview','情报总览',LayoutDashboard],['radar','产业联动',Radar],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
 ];
 function readStored<T>(key:string,fallback:T):T{
  try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw) as T:fallback;}catch{return fallback;}
@@ -79,65 +81,18 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
   <small>{data?.asOf?'日线 '+data.asOf:'等待真实报价'}</small>
  </button>;
 }
-function FinanceSection({data,loading}:{data:FundamentalsPayload|null;loading:boolean}){
- const {openFinance}=useReader();
- if(loading)return <Blank loading title="正在读取财务披露" detail="优先读取 SEC 官方数据，不生成推测财务数值"/>;
- if(!data)return <Blank title="财报尚未加载" detail="选择一只股票以查看相关官方披露"/>;
- return <div className="finance-wrap">
-  <p className="helper-text">{data.notice}</p>
-  {data.available&&<>
-   <div className="finance-metrics">
-    {([{title:'年度营收',list:data.revenue},{title:'年度净利润',list:data.netIncome}] as const).map(x=><div className="finance-block" key={x.title}>
-     <div className="block-subtitle">{x.title} <span>USD · 10-K</span></div>
-     {(x.list?.length??0)>0?<div className="finance-bars">
-      {x.list!.map(item=><div className="finance-bar-line" key={item.year}>
-       <span>{item.year}</span><div className="finance-track"><i style={{width:Math.max(2,Math.round(Math.abs(item.value)/Math.max(...x.list!.map(v=>Math.abs(v.value)),1)*100))+'%'}}/></div>
-       <strong>{(item.value/1e9).toFixed(2)}B</strong>
-      </div>)}
-     </div>:<div className="subdued-panel">该公司未以当前支持的 XBRL 科目报告此项指标。</div>}
-    </div>)}
-   </div>
-  </>}
-  <button type="button" className="outline-link" onClick={()=>openFinance(data)}>查看财务数据口径与站内披露入口 <BookOpen size={13}/></button>
- </div>;
-}
-function AnalysisPanel({data}:{data:MarketPayload}){
- const a=useMemo(()=>analyzeCandles(data.candles),[data.candles]);
- return <div className="analysis-panel">
-  <div className="analysis-top">
-   <div><div className="eyebrow">TECHNICAL FRAMEWORK</div><h3>五线开花 <span>×</span> 量价时空</h3><p>先判断趋势结构，再拆分量、价、时、空的证据。</p></div>
-   <div className={'stage-chip '+(a.bloom?'bloom':'')}>{a.stage}</div>
-  </div>
-  {a.ready?<div className="model-strip">
-   <div className="model-stat"><small>模型观察分</small><strong>{a.score}<em> / 100</em></strong></div>
-   <div className="model-stat"><small>五线排列</small><strong className={a.aligned?'positive':'muted'}>{a.aligned?'多头':'未齐整'}</strong></div>
-   <div className="model-stat"><small>五线斜率</small><strong className={a.rising?'positive':'muted'}>{a.rising?'全部向上':'混合方向'}</strong></div>
-   <div className="model-stat"><small>MACD</small><strong className={a.macdBull?'positive':'muted'}>{a.macdBull?'多头':'未确认'}</strong></div>
-  </div>:<StatusNote>日K样本不足：{a.available} / {a.required}，不能计算完整五线开花模型。</StatusNote>}
-  <div className="dimension-grid">{a.dimensions.map(d=><div className="dimension-card" key={d.title}>
-   <div className="dimension-head"><h4>{d.title}</h4><b>{a.ready?d.score:'—'}</b></div>
-   <div className="dimension-status">{d.status}</div>
-   <div className="dimension-evidence">{d.evidence.map((e,i)=><p key={i}><span className="bullet-tiny"/> {e}</p>)}</div>
-  </div>)}</div>
-  <div className="model-footer"><div><span className="eyebrow">MODEL RULES</span><p>五线开花采用 MA5 / 10 / 20 / 60 / 120，多头排列、均线斜率与 MACD 同时确认。分数是观察指标，不是收益概率。</p></div><div><span className="eyebrow">DATA QUALITY</span><p>最后交易日 {a.asOf||'未知'} · OHLCV 日线 · 样本 {a.available} 根</p></div></div>
-  {a.warnings.map((w,i)=><StatusNote key={i}>{w}</StatusNote>)}
- </div>;
-}
 export default function App(){
- const {openMarket}=useReader();
- const [view,setView]=useState<View>('overview');
+ const [view,setView]=useState<View>('research');
  const [mobileNav,setMobileNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
  const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[]));
- const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):'NVDA';});
+ const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):readStored('atlas.last-symbol.v1','300545.SZ');});
  const [markets,setMarkets]=useState<Record<string,MarketPayload>>({});
  const [marketErrors,setMarketErrors]=useState<Record<string,string>>({});
  const [newsCategory,setNewsCategory]=useState('all');
  const [newsData,setNewsData]=useState<NewsPayload|null>(null);
  const [newsLoading,setNewsLoading]=useState(true);
  const [newsError,setNewsError]=useState('');
- const [fundamentals,setFundamentals]=useState<FundamentalsPayload|null>(null);
- const [financeLoading,setFinanceLoading]=useState(false);
  const [searchQuery,setSearchQuery]=useState('');
  const [searchOpen,setSearchOpen]=useState(false);
  const [remoteResults,setRemoteResults]=useState<SearchItem[]>([]);
@@ -156,7 +111,7 @@ export default function App(){
   const handler=(e:KeyboardEvent)=>{
    const target=e.target as HTMLElement;
    const editing=['INPUT','TEXTAREA'].includes(target?.tagName)||target?.isContentEditable;
-   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'||(e.key==='/'&&!editing)){e.preventDefault();setSearchOpen(true);searchRef.current?.focus();}
+   if(((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k')||(e.key==='/'&&!editing)){e.preventDefault();setSearchOpen(true);searchRef.current?.focus();}
    if(e.key==='Escape')setSearchOpen(false);
   };
   window.addEventListener('keydown',handler);return ()=>window.removeEventListener('keydown',handler);
@@ -173,25 +128,17 @@ export default function App(){
   return ()=>ac.abort();
  },[activeWatch,refreshKey]);
  useEffect(()=>{
+  if(view==='research'||view==='news'&&newsCategory==='all')return;
   const ac=new AbortController();setNewsLoading(true);setNewsError('');setNewsData(null);
   api<NewsPayload>('/api/news?category='+encodeURIComponent(newsCategory),ac.signal)
    .then(data=>{if(!ac.signal.aborted)setNewsData(data);})
    .catch(e=>{if(!ac.signal.aborted)setNewsError(e instanceof Error?e.message:String(e));})
    .finally(()=>{if(!ac.signal.aborted)setNewsLoading(false);});
   return ()=>ac.abort();
- },[newsCategory,refreshKey]);
- useEffect(()=>{
-  if(view!=='research')return;
-  const ac=new AbortController();setFinanceLoading(true);setFundamentals(null);
-  api<FundamentalsPayload>('/api/fundamentals?symbol='+encodeURIComponent(selected),ac.signal)
-   .then(data=>{if(!ac.signal.aborted)setFundamentals(data);})
-   .catch(e=>{if(!ac.signal.aborted)setFundamentals({symbol:selected,available:false,provider:'SEC EDGAR',sourceUrl:'https://www.sec.gov/edgar/search/',notice:e instanceof Error?e.message:String(e)});})
-   .finally(()=>{if(!ac.signal.aborted)setFinanceLoading(false);});
-  return ()=>ac.abort();
- },[view,selected]);
+ },[newsCategory,refreshKey,view]);
  useEffect(()=>{
   if(!searchQuery.trim()){setRemoteResults([]);return;}
-  const ac=new AbortController();
+  const ac=new AbortController();setRemoteResults([]);
   const timeout=setTimeout(()=>{
    api<{items:SearchItem[]}>('/api/search?q='+encodeURIComponent(searchQuery),ac.signal)
     .then(data=>{if(!ac.signal.aborted)setRemoteResults(data.items);}).catch(()=>{});
@@ -200,6 +147,7 @@ export default function App(){
  },[searchQuery]);
  const chooseSymbol=useCallback((symbol:string)=>{
   const normalized=normalizeSymbol(symbol);setSelected(normalized);setView('research');setSearchOpen(false);setSearchQuery('');
+  try{localStorage.setItem('atlas.last-symbol.v1',JSON.stringify(normalized));}catch{/* storage unavailable */}
   window.history.replaceState(null,'','?symbol='+encodeURIComponent(normalized));
   window.scrollTo({top:0,behavior:'smooth'});
  },[]);
@@ -219,28 +167,28 @@ export default function App(){
 
  return <div className="app-shell">
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
-   <div className="brand"><Logo/><div className="brand-copy"><strong>MARKET ATLAS</strong><span>PERSONAL INTELLIGENCE</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
+   <div className="brand"><Logo/><div className="brand-copy"><strong>MARKET ATLAS</strong><span>PERSONAL MARKET DESK</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
    <div className="nav-label">WORKSPACE</div>
-   <nav className="nav-list">{NAV.map(([id,label,Icon])=><button key={id} onClick={()=>changeView(id)} className={'nav-item '+(view===id?'active':'')}><Icon size={17}/><span>{label}</span>{id==='saved'&&saved.length>0&&<small className="nav-count">{saved.length}</small>}</button>)}</nav>
+   <nav className="nav-list">{NAV.map(([id,label,Icon])=><button key={id} onClick={()=>{if(id==='news')setNewsCategory('all');changeView(id);}} className={'nav-item '+(view===id?'active':'')}><Icon size={17}/><span>{label}</span>{id==='saved'&&saved.length>0&&<small className="nav-count">{saved.length}</small>}</button>)}</nav>
    <div className="sidebar-section">
     <div className="sidebar-section-head">SECTOR WATCH <Radar size={13}/></div>
     {SECTORS.map((s,i)=><button key={s.id} className="sector-nav-item" onClick={()=>showNews(s.id)}><span className="sector-index">0{i+1}</span><span>{s.name}</span><ChevronRight size={13}/></button>)}
    </div>
-   <div className="sidebar-bottom"><div className="connection-icon"><span className="pulse-dot"/> RESEARCH FEEDS</div><p>全球情报 · A股 / 美股 · 原始资料核验</p><small>行情按数据源交易日更新，并非实时盘口</small></div>
+   <div className="sidebar-bottom"><div className="connection-icon"><span className="pulse-dot"/> RESEARCH FEEDS</div><p>全球情报 · A股 / 美股 · 原始资料核验</p><small>公开快照 · 五档 / 分笔 · 非授权Level-2</small></div>
   </aside>
   {mobileNav&&<button className="mobile-shade" aria-label="关闭导航" onClick={()=>setMobileNav(false)}/>}
   <div className="workspace">
    <header className="topbar">
-    <div className="top-left"><button className="icon-button mobile-menu" aria-label="打开导航" onClick={()=>setMobileNav(true)}><Menu size={20}/></button><span className="crumb">RESEARCH DESK</span><ChevronRight size={14}/><strong>{NAV.find(n=>n[0]===view)?.[1]}</strong></div>
+    <div className="top-left"><button className="icon-button mobile-menu" aria-label="打开导航" onClick={()=>setMobileNav(true)}><Menu size={20}/></button><span className="crumb">MARKET DESK</span><ChevronRight size={14}/><strong>{NAV.find(n=>n[0]===view)?.[1]}</strong></div>
     <div className="top-right">
      <span className="time-label"><span className="pulse-dot"/> AKL {currentTime}</span>
      <PWAControls/>
-     <button onClick={()=>setRefreshKey(v=>v+1)} className="icon-button" aria-label="刷新所有数据" title="刷新数据"><RefreshCw size={17}/></button>
+     <button onClick={()=>{setRefreshKey(v=>v+1);window.dispatchEvent(new Event('atlas:refresh'));}} className="icon-button" aria-label="刷新所有数据" title="刷新数据"><RefreshCw size={17}/></button>
      <span className="top-divider"/>
      <button className="search-trigger" onClick={()=>{setSearchOpen(true);searchRef.current?.focus();}}><Search size={16}/><span>搜索全球股票 / 代码</span><kbd>⌘ K</kbd></button>
     </div>
    </header>
-   <main className="main">
+   <main className={'main '+(view==='research'?'desk-main':'')}>
     {view==='overview'&&<>
      <section className="page-heading">
       <div><div className="eyebrow"><span className="eyebrow-accent">●</span> YOUR GLOBAL INTELLIGENCE TERMINAL</div><h1>全局情报<span className="title-dim">，尽在掌握。</span></h1><p>从世界事件到产业链，从上市公司披露到股价信号。先看事实，再判断影响。</p></div>
@@ -292,7 +240,8 @@ export default function App(){
       </div>
      </div>
     </>}
-    {view==='news'&&<>
+    {view==='news'&&newsCategory==='all'&&<FlashNewsDesk/>}
+    {view==='news'&&newsCategory!=='all'&&<>
      <SectionHeading eyebrow="GLOBAL EVENTS / LIVE FEEDS" title="全球事件情报" right={<span className="small-metadata"><Clock3 size={14}/> {newsData?'最后抓取 '+dateTime(newsData.fetchedAt):'尚未获取'}</span>}/>
      <p className="section-subtitle">从全球宏观、政策、科技突破到产业订单线索。按时间排序的原始报道，并非自动确认的投资结论。</p>
      <div className="chip-row">{NEWS_CATEGORIES.map(c=><button key={c.id} className={'chip '+(newsCategory===c.id?'selected':'')} onClick={()=>setNewsCategory(c.id)}>{c.name}</button>)}</div>
@@ -330,37 +279,7 @@ export default function App(){
       {Object.entries(marketErrors).filter(([key])=>watchlist.includes(key)&&!markets[key]).map(([key,message])=><StatusNote key={key}>{key} 数据不可用：{message}</StatusNote>)}
      </div>
     </>}
-    {view==='research'&&<>
-     <div className="stock-header">
-      <div className="stock-id"><div className="eyebrow">SECURITY RESEARCH / {selectedData?.exchange||'GLOBAL'}</div><div className="stock-heading"><h1>{selectedData?.name||selected}</h1><span>{selected}</span></div><p>{selectedData?.provider||'等待市场数据提供方'} · {selectedData?.currency||'—'} {selectedData?.stale?'· 历史快照（刷新失败）':''}</p></div>
-      <div className="stock-price-wrap"><div className="stock-price"><strong>{money(selectedData?.last)}</strong><span>{selectedData?.currency||''}</span></div><div className={'stock-delta '+changeClass(selectedData?.changePercent)}>{selectedData?.changePercent!=null?(selectedData.changePercent>=0?<ArrowUpRight size={16}/>:<ArrowDownRight size={16}/>):null}{percent(selectedData?.changePercent)} <span>最近交易日</span></div></div>
-      <button className={'outline-button watch-toggle '+(watchlist.includes(selected)?'in-watch':'')} onClick={()=>toggleWatch(selected)}>{watchlist.includes(selected)?<Check size={15}/>:<Plus size={15}/>} {watchlist.includes(selected)?'已在关注':'加入关注'}</button>
-     </div>
-     <div className="research-layout">
-      <div className="research-primary">
-       <div className="panel candle-panel"><div className="panel-heading"><div><span className="eyebrow">OHLCV / HISTORICAL DATA</span><h2>价格走势与均线结构</h2></div><span className="date-chip"><Clock3 size={13}/> {selectedData?.asOf||'等待数据'}</span></div>
-        {selectedData?<MarketChart candles={selectedData.candles} symbol={selected} volumeUnit={selectedData.provider.startsWith('腾讯')?(/^68[89]/.test(selected)?'股':'手'):undefined}/>:<div className="chart-fallback">{!marketErrors[selected]&&<p className="widget-loading">正在尝试获取可分析的 OHLCV 数据…</p>}<TradingViewWidget symbol={selected}/><StatusNote>以下是 TradingView 官方嵌入图表；它不向本系统提供原始 K 线，暂不能计算五线开花。{marketErrors[selected]||'如需本地技术分析请配置行情 API。'}</StatusNote></div>}
-        <div className="chart-disclaimer">{selectedData?.notice||'尚未获得报价'} {selectedData?.sourceUrl&&<button type="button" className="inline-source-button" onClick={()=>openMarket(selectedData)}>查看数据来源与口径 <BookOpen size={12}/></button>}</div>
-       </div>
-       {selectedData?<div className="panel analysis-box"><AnalysisPanel data={selectedData}/></div>:<div className="panel"><Blank title="技术分析等待行情" detail={marketErrors[selected]||'请先选择能提供日线历史数据的股票'}/></div>}
-       <div className="panel"><div className="panel-heading"><div><span className="eyebrow">OFFICIAL DISCLOSURE / FINANCIALS</span><h2>财务披露与业绩</h2></div><FileText size={18} className="panel-heading-icon"/></div><FinanceSection data={fundamentals} loading={financeLoading}/></div>
-      </div>
-      <div className="research-aside">
-       <div className="panel snapshot-panel"><div className="panel-heading compact"><div><span className="eyebrow">DATA PROFILE</span><h2>证券概览</h2></div></div>
-        {([{label:'市场',value:selectedData?.exchange||'—'},{label:'交易币种',value:selectedData?.currency||'—'},{label:'历史数据源',value:selectedData?.provider||'—'},{label:'最后交易日',value:selectedData?.asOf||'—'},{label:'K线样本',value:selectedData?.candles.length.toString()||'—'},{label:'报价类型',value:'历史日线 / 非实时'}]).map(x=><div className="snapshot-line" key={x.label}><span>{x.label}</span><b>{x.value}</b></div>)}
-       </div>
-       <div className="panel"><div className="panel-heading compact"><div><span className="eyebrow">RELEVANT COVERAGE</span><h2>相关产业与事件</h2></div></div>
-        {SECTORS.filter(s=>s.tickers.some(t=>t===selected)).map(s=><button key={s.id} className="related-sector" onClick={()=>showNews(s.id)}><Layers3 size={15}/>{s.name}<ChevronRight size={14}/></button>)}
-        {!SECTORS.some(s=>s.tickers.some(t=>t===selected))&&<p className="helper-text">当前没有将该标的映射到七条追踪产业链，可从全球新闻和独立公告继续研究。</p>}
-        <button className="primary-action subdued" onClick={()=>{setSearchQuery(selected);setNewsCategory('all');changeView('news');}}>搜索相关最新新闻 <ArrowRight size={15}/></button>
-       </div>
-       <div className="panel"><div className="panel-heading compact"><div><span className="eyebrow">MODEL DISCIPLINE</span><h2>反方检查</h2></div></div>
-        <div className="audit-points"><p><span>01</span> 股价上涨 ≠ 订单已经落地</p><p><span>02</span> 均线多头 ≠ 未来一定上涨</p><p><span>03</span> 放量需要观察后续承接</p><p><span>04</span> 财报数据需要核实会计口径</p><p><span>05</span> 技术结构需结合市场与行业条件</p></div>
-       </div>
-      </div>
-     </div>
-     <StockResearchExtras symbol={selected} onStock={chooseSymbol}/>
-    </>}
+    {view==='research'&&<ResearchDesk symbol={selected} market={selectedData} marketError={marketErrors[selected]} markets={markets} watchlist={watchlist} onSelect={chooseSymbol} onToggleWatch={toggleWatch} onSearch={()=>{setSearchOpen(true);searchRef.current?.focus();}} onRefresh={()=>setRefreshKey(v=>v+1)}/>}
     {view==='history'&&<IntelHistory onStock={chooseSymbol}/>}
     {view==='saved'&&<>
      <SectionHeading eyebrow="PRIVATE RESEARCH LIBRARY" title="收藏情报" right={<span className="small-metadata">{saved.length} 条已保存</span>}/>
@@ -370,14 +289,14 @@ export default function App(){
     <footer className="app-footer"><span>MARKET ATLAS <i>·</i> PERSONAL RESEARCH SYSTEM</span><span>公开来源研究 · 非实时交易数据 · 非投资建议</span></footer>
    </main>
   </div>
-  {searchOpen&&<div className="search-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setSearchOpen(false);}}>
-   <div className="command-modal" role="dialog" aria-modal="true" aria-label="股票搜索">
+  <Dialog.Root open={searchOpen} onOpenChange={setSearchOpen}><Dialog.Portal><Dialog.Overlay className="search-overlay"/>
+   <Dialog.Content className="command-modal" aria-label="股票搜索"><Dialog.Title className="sr-only">搜索股票</Dialog.Title><Dialog.Description className="sr-only">输入股票代码或名称，选择结果后打开个股工作台。</Dialog.Description>
     <div className="command-head"><Search size={20}/><input ref={searchRef} autoFocus placeholder="搜索股票名称、代码，例如 NVDA / 300308 / 中际旭创" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&searchOptions[0])chooseSymbol(searchOptions[0].symbol);}}/><button className="command-esc" onClick={()=>setSearchOpen(false)}>ESC</button></div>
     <div className="command-options"><div className="eyebrow">SECURITIES / {searchQuery?'SEARCH RESULTS':'QUICK ACCESS'}</div>
      {searchOptions.length?searchOptions.map(x=><button key={x.symbol} className="command-result" onClick={()=>chooseSymbol(x.symbol)}><span className="command-symbol">{x.symbol}</span><span className="command-name">{x.name}<small>{x.exchange} {x.sector?'· '+x.sector:''}</small></span><ArrowRight size={15}/></button>):<p className="helper-text">未找到匹配标的。可输入交易所代码并按回车尝试获取行情。</p>}
     </div>
     <div className="command-footer"><span><kbd>↵</kbd> 进入个股</span><span><kbd>ESC</kbd> 退出搜索</span><span><kbd>⌘ K</kbd> 快速打开</span></div>
-   </div>
-  </div>}
+   </Dialog.Content>
+  </Dialog.Portal></Dialog.Root>
  </div>;
 }

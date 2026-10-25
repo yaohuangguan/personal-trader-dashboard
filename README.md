@@ -6,6 +6,8 @@
 
 This is the only supported deployment. `wrangler.toml` pins the production Worker and Cloudflare account.
 
+The default view is now the neutral-black individual-stock workspace. Open [300545.SZ](https://personal-market-atlas.nzs.workers.dev/?symbol=300545.SZ), search any supported security, or keep a browser-local watchlist. See [workspace data sources and limits](docs/desk-workspace.md).
+
 ## What is implemented
 
 | Workspace | Capabilities | Data limitations |
@@ -14,7 +16,8 @@ This is the only supported deployment. `wrangler.toml` pins the production Worke
 | Event history | D1-backed deduplicated article keys; first seen, last seen, sightings, topic and deterministic ticker/sector matches; 24h filters | Classification is based on feed topic/headline keywords, not an AI-confirmed business relationship. |
 | Catalyst radar | Seven sector lines, related companies, news/timeline navigation | Revenue, orders and margins are **not** inferred from media headlines. |
 | Markets | Browser-local watchlists; A-share OHLCV; U.S. fallback TradingView official embed | Unlicensed endpoints can rate-limit; quotes are never represented as real-time exchange feeds. |
-| Individual stock | Actual 5/10/20/60/120 MA analysis, volume/price/time/space, MACD, RSI, ATR; primary disclosure timeline; news/event links | Full technical analysis requires >=121 valid historical candles. |
+| Individual stock | Adjustable MA5/13/20/30/60/120/144/250, VOL/MACD/KDJ, intraday/day/week/month views, public five-level snapshots and aggregated ticks, local price reminders, sector peers/industry rotation/fund flow, company news/reports/disclosures | Public five-level/aggregated data is not licensed exchange Level-2. Provider coverage and freshness are explicit; reminders require an open page. |
+| 7×24 newsroom | Attributed CLS + Wallstreetcn source feeds, important/source filters, 60-second browser refresh and in-app reading | No server archive or background push is configured. Source outages remain visible. |
 | A-share announcements | Eastmoney index titles/dates/categories; fetch original indexed notice body and PDF link on demand; title-keyword event tags; CNINFO official verification link | Third-party index can fail. Extracted text and tags are **not** audited or financial statement extraction. |
 | US filings | SEC EDGAR official 10-K/10-Q/8-K list and XBRL annual revenue / income when SEC_USER_AGENT is configured | Filing dates are historical, not earnings predictions. |
 | Earnings calendar | Scheduled and reported EPS/date via optional authorized FMP account | With no entitlement, the UI explicitly says unavailable rather than guessing dates. |
