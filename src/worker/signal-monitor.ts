@@ -1,3 +1,4 @@
+import {sendNativePush} from './native-push';
 import {scannerCall} from './full-market-scanner';
 import type {FullMarketStatus} from '../shared/full-market';
 import {buildPushPayload,type VapidKeys,type PushSubscription} from '@block65/webcrypto-web-push';
@@ -19,11 +20,11 @@ export async function generateVapid():Promise<VapidKeys>{
 }
 export class SignalMonitor {
  private busy=false;
- constructor(private state:State,private env?:{MARKET_SCANNER?:MonitorNamespace}){}
+ constructor(private state:State,private env?:{MARKET_SCANNER?:MonitorNamespace;FIREBASE_SERVICE_ACCOUNT?:string}){}
  private async keys(){let keys=await this.state.storage.get<VapidKeys>('vapid');if(!keys){keys=await generateVapid();await this.state.storage.put('vapid',keys);}return keys;}
  private async status():Promise<MonitorStatus>{
   const s=this.state.storage,config=await s.get<MonitorConfig>('config')||defaults(),events=await s.get<SignalEvent[]>('events')||[],run=await s.get<Partial<MonitorStatus>>('run');
-  return {available:true,configured:!!config.updatedAt,config,subscribed:!!await s.get('subscription'),events,lastRun:null,nextRun:await s.getAlarm(),checked:0,ready:0,failures:[],pending:events.filter(e=>e.delivery==='pending').length,...run,status:!config.enabled?config.updatedAt?'已暂停后台盯盘':'尚未开启':run?.status||'等待后台扫描'};
+  return {available:true,configured:!!config.updatedAt,config,subscribed:!!await s.get('subscription'),events,nativeAvailable:!!this.env?.FIREBASE_SERVICE_ACCOUNT,nativeSubscribed:!!await s.get('native-token'),lastRun:null,nextRun:await s.getAlarm(),checked:0,ready:0,failures:[],pending:events.filter(e=>e.delivery==='pending').length,...run,status:!config.enabled?config.updatedAt?'已暂停后台盯盘':'尚未开启':run?.status||'等待后台扫描'};
  }
  async fetch(req:Request){
   const action=new URL(req.url).pathname.split('/').at(-1),s=this.state.storage;
@@ -39,6 +40,12 @@ export class SignalMonitor {
    const previous=await s.get<MonitorConfig>('config')||defaults(),config:MonitorConfig={enabled:body.enabled,scope:body.scope==='all'?'all':'selected',symbols:body.scope==='all'?[]:body.enabled?body.symbols as string[]:previous.symbols,activityFilter:body.activityFilter!==false,locale:body.locale==='en'?'en':'zh-CN',updatedAt:Date.now(),expiresAt:Date.now()+30*86400000};
    await s.put('config',config);if(previous.scope==='all'&&(!config.enabled||config.scope!=='all'))await this.lease(false,previous.expiresAt);if(config.enabled&&config.scope==='all')await this.lease(true,config.expiresAt);if(config.enabled)await s.setAlarm(Date.now()+1000);else await s.deleteAlarm();return response(await this.status());
   }
+  if(action==='native-subscribe'){
+   if(!this.env?.FIREBASE_SERVICE_ACCOUNT)return response({error:'Firebase 原生推送尚未配置'},503);
+   if(typeof body.token!=='string'||!/^[A-Za-z0-9_:.-]{20,4096}$/.test(body.token))return response({error:'无效设备令牌'},400);
+   await s.put('native-token',body.token);return response({subscribed:true});
+  }
+  if(action==='native-unsubscribe'){await s.delete('native-token');return response({subscribed:false});}
   if(action==='subscribe'){
    const sub=body.subscription as PushSubscription|undefined;
    if(!sub||!validPushEndpoint(sub.endpoint)||!sub.keys||!/^[a-zA-Z0-9_-]{87}$/.test(sub.keys.p256dh)||!/^[a-zA-Z0-9_-]{22}$/.test(sub.keys.auth))return response({error:'无效浏览器通知订阅'},400);
@@ -53,7 +60,7 @@ export class SignalMonitor {
   return response({error:'Unknown action'},404);
  }
  private async push(data:{title:string;body:string;url:string;tag:string}){
-  const sub=await this.state.storage.get<PushSubscription>('subscription');if(!sub)throw new Error('尚未订阅设备通知');
+  const sub=await this.state.storage.get<PushSubscription>('subscription'),native=await this.state.storage.get<string>('native-token');if(!sub){if(native&&this.env?.FIREBASE_SERVICE_ACCOUNT){await sendNativePush(this.env.FIREBASE_SERVICE_ACCOUNT,native,data,this.state.storage);return;}throw new Error('尚未订阅设备通知');}
   if(!validPushEndpoint(sub.endpoint))throw new Error('通知服务地址无效');
   const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl:300}},sub,await this.keys());
   const r=await fetch(sub.endpoint,{...payload,redirect:'error',signal:AbortSignal.timeout(7000)});
@@ -75,7 +82,7 @@ export class SignalMonitor {
  private async deliver(config:MonitorConfig,events:SignalEvent[],fresh:SignalEvent[],run:Partial<MonitorStatus>){
   const s=this.state.storage;
    const latestConfig=await s.get<MonitorConfig>('config');if(!latestConfig?.enabled||latestConfig.updatedAt!==config.updatedAt)return;
-   const subscribed=!!await s.get('subscription');for(const event of fresh)if(!subscribed)event.delivery='none';
+   const subscribed=!!await s.get('subscription')||!!this.env?.FIREBASE_SERVICE_ACCOUNT&&!!await s.get('native-token');for(const event of fresh)if(!subscribed)event.delivery='none';
    // Persist detections before network delivery. Alarms are at-least-once: IDs prevent duplicate events.
    await s.put('events',events.slice(0,200));
    let deliveryError='';const pending=events.filter(e=>e.delivery==='pending'&&Date.now()-Date.parse(e.asOf)<5*60000);
@@ -138,6 +145,6 @@ export async function monitorRoute(req:Request,namespace?:MonitorNamespace){
  if(!namespace)return response({available:false,error:'后台监控尚未部署'},503);
  const token=(req.headers.get('Authorization')||'').replace(/^Bearer /,'');if(!/^[a-f0-9]{64}$/.test(token))return response({error:'缺少设备监控凭证'},401);
  const origin=req.headers.get('Origin');if(origin&&origin!==new URL(req.url).origin)return response({error:'Invalid origin'},403);
- if(!['status','public-key','config','subscribe','unsubscribe','test','check','global'].includes(path.split('/').at(-1)||''))return response({error:'Unknown action'},404);
+ if(!['status','public-key','config','subscribe','unsubscribe','test','check','global','native-subscribe','native-unsubscribe'].includes(path.split('/').at(-1)||''))return response({error:'Unknown action'},404);
  return namespace.get(namespace.idFromName(token)).fetch(req);
 }

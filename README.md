@@ -131,3 +131,8 @@ All symbols with valid OHLCV data share the same chart component; it is independ
 - Averages are computed on the complete provider history before applying the visible date range. A newly listed symbol can display a partial history while long-period averages remain unavailable.
 - Cross markers use the two shortest enabled periods. An expansion marker requires all enabled periods in bullish order, higher averages than five sessions earlier, close above the shortest average and positive MACD histogram. It marks the first qualifying session. Fixed-guide launch/confirmation/failure markers are computed separately from the displayed MA preferences; see docs/guide-and-screener.md.
 - Public Chinese-market code/name search supplements the local catalog. Shanghai ETF, explicit exchange/index prefixes and Beijing symbol normalization are recognized. Actual coverage and history remain dependent on the configured provider; no missing candles or averages are synthesized.
+
+## Flutter mobile app
+
+The native Android / iOS client is in [mobile](mobile/README.md), with mobile navigation, touch charts, the same guide-analysis API and full-market signal service. Firebase / APNs delivery is optional and disabled until configured. CI builds an Android sideload preview and validates an unsigned iOS app; store distribution requires your own signing.
+

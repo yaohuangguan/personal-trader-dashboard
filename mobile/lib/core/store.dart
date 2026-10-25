@@ -1,0 +1,232 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'api.dart';
+
+class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
+  AtlasStore(this.api, this.prefs, this.english) {
+    watchlist =
+        prefs.getStringList('watchlist') ??
+        ['300545.SZ', '300308.SZ', '300502.SZ'];
+    locale = prefs.getString('locale') ?? 'zh-CN';
+    fontSize = prefs.getDouble('fontSize') ?? 18;
+    bookmarks = rows(_decode(prefs.getString('bookmarks')));
+    alerts = rows(_decode(prefs.getString('alerts')));
+    deviceToken =
+        prefs.getString('deviceToken') ??
+        List.generate(
+          32,
+          (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
+        ).join();
+    prefs.setString('deviceToken', deviceToken);
+    WidgetsBinding.instance.addObserver(this);
+  }
+  final AtlasApi api;
+  final SharedPreferences prefs;
+  final Map<String, dynamic> english;
+  late List<String> watchlist;
+  late String locale;
+  late double fontSize;
+  late List<Json> bookmarks, alerts;
+  late String deviceToken;
+  final Map<String, Json> quotes = {};
+  Json catalog = {};
+  String? quoteError;
+  DateTime? quoteReadAt;
+  bool foreground = true;
+  Timer? _timer;
+  bool _running = false;
+  final StreamController<String> messages = StreamController.broadcast();
+  static dynamic _decode(String? s) {
+    try {
+      return s == null ? null : jsonDecode(s);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String t(String key) =>
+      locale == 'en' ? (english[key]?.toString() ?? key) : key;
+  static Future<AtlasStore> load({
+    AtlasApi? api,
+    SharedPreferences? prefs,
+  }) async {
+    final data = jsonDecode(
+      await rootBundle.loadString('assets/strings_en.json'),
+    );
+    return AtlasStore(
+      api ?? AtlasApi(),
+      prefs ?? await SharedPreferences.getInstance(),
+      Map<String, dynamic>.from(data),
+    );
+  }
+
+  void start() {
+    refreshQuotes();
+    api
+        .get('/api/catalog')
+        .then((data) {
+          catalog = data;
+          notifyListeners();
+        })
+        .catchError((Object _) {});
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (foreground) refreshQuotes();
+    });
+  }
+
+  Future<void> refreshQuotes() async {
+    if (_running) return;
+    final symbols = watchlist.where(cnStock).toList();
+    if (symbols.isEmpty) return;
+    _running = true;
+    try {
+      final data = await api.get(
+        '/api/desk/quotes',
+        parameters: {'symbols': symbols.join(',')},
+      );
+      for (final q in rows(data['items'])) {
+        quotes[str(q['symbol'])] = q;
+      }
+      quoteError = null;
+      quoteReadAt = DateTime.now();
+      _evaluateAlerts();
+    } catch (e) {
+      quoteError = e.toString();
+    } finally {
+      _running = false;
+      notifyListeners();
+    }
+  }
+
+  void _evaluateAlerts() {
+    var changed = false;
+    for (final rule in alerts) {
+      if (rule['firedAt'] != null) continue;
+      final q = quotes[rule['symbol']];
+      if (q == null || q['stale'] == true || q['session'] != 'trading') {
+        continue;
+      }
+      final timestamp = DateTime.tryParse(str(q['asOf']));
+      if (timestamp == null ||
+          DateTime.now().difference(timestamp).inSeconds > 120) {
+        continue;
+      }
+      final price = numOf(q['price']), target = numOf(rule['value']);
+      if (price == null || target == null) continue;
+      if (rule['direction'] == 'above' ? price >= target : price <= target) {
+        rule['firedAt'] = DateTime.now().toIso8601String();
+        if (!_disposed) messages.add('${rule['symbol']} ${t('价格提醒')} $price');
+        changed = true;
+      }
+    }
+    if (changed) prefs.setString('alerts', jsonEncode(alerts));
+  }
+
+  Future<void> toggleWatch(String symbol) async {
+    symbol = normalize(symbol);
+    if (watchlist.contains(symbol)) {
+      watchlist.remove(symbol);
+    } else {
+      watchlist.add(symbol);
+    }
+    await prefs.setStringList('watchlist', watchlist);
+    notifyListeners();
+    refreshQuotes();
+  }
+
+  Future<void> reorderWatch(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    final s = watchlist.removeAt(oldIndex);
+    watchlist.insert(newIndex, s);
+    await prefs.setStringList('watchlist', watchlist);
+    notifyListeners();
+  }
+
+  Future<void> setLocale(String value) async {
+    locale = value;
+    await prefs.setString('locale', value);
+    notifyListeners();
+  }
+
+  Future<void> setFont(double value) async {
+    fontSize = value;
+    await prefs.setDouble('fontSize', value);
+    notifyListeners();
+  }
+
+  bool saved(Json item) => bookmarks.any((r) => r['url'] == item['url']);
+  Future<void> toggleSaved(Json item) async {
+    if (saved(item)) {
+      bookmarks.removeWhere((r) => r['url'] == item['url']);
+    } else {
+      bookmarks.insert(0, item);
+    }
+    await prefs.setString(
+      'bookmarks',
+      jsonEncode(bookmarks.take(200).toList()),
+    );
+    notifyListeners();
+  }
+
+  Future<void> addAlert(String symbol, double value, String direction) async {
+    alerts.add({
+      'id': DateTime.now().microsecondsSinceEpoch.toString(),
+      'symbol': symbol,
+      'value': value,
+      'direction': direction,
+    });
+    await prefs.setString('alerts', jsonEncode(alerts));
+    notifyListeners();
+  }
+
+  Future<void> removeAlert(Json rule) async {
+    alerts.removeWhere((r) => r['id'] == rule['id']);
+    await prefs.setString('alerts', jsonEncode(alerts));
+    notifyListeners();
+  }
+
+  Future<void> importWatch(String text) async {
+    final raw = jsonDecode(text);
+    final list = raw is List ? raw : obj(raw)['watchlist'];
+    if (list is! List) throw const FormatException('需要股票代码 JSON 数组');
+    final next = list
+        .map((v) => normalize('$v'))
+        .where((s) => RegExp(r'^[A-Z0-9.^-]{1,18}(\.(SH|SZ|BJ))?$').hasMatch(s))
+        .toSet()
+        .take(60)
+        .toList();
+    if (next.isEmpty) throw const FormatException('没有有效代码');
+    watchlist = next;
+    await prefs.setStringList('watchlist', watchlist);
+    notifyListeners();
+    refreshQuotes();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    foreground = state == AppLifecycleState.resumed;
+    if (foreground) refreshQuotes();
+  }
+
+  bool _disposed = false;
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    messages.close();
+    api.dispose();
+    super.dispose();
+  }
+}
