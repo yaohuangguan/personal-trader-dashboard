@@ -1,0 +1,11 @@
+import {useState} from 'react';
+import {Star,Plus,Search,LayoutGrid,X} from 'lucide-react';
+import {t} from '../preferences';
+import {useLiveEndpoint} from '../hooks/useLiveEndpoint';
+import type {QuotesPayload} from '../../shared/desk-types';
+import type {MarketPayload} from '../../shared/types';
+export default function WatchSidebar({watchlist,markets,selected,onStock,onSearch,onRemove,onWorkspace,onClose}:{watchlist:string[];markets:Record<string,MarketPayload>;selected:string;onStock:(s:string)=>void;onSearch:()=>void;onRemove:(s:string)=>void;onWorkspace:()=>void;onClose:()=>void}){
+ const [filter,setFilter]=useState('');const cn=watchlist.filter(s=>/^\d{6}\.(SH|SZ|BJ)$/.test(s));
+ const feed=useLiveEndpoint<QuotesPayload>(cn.length?'/api/desk/quotes?symbols='+cn.join(','):null,5000);
+ return <><div className="watch-sidebar-heading"><h2><Star size={18}/>{t('我的自选')} <small>{watchlist.length}</small></h2><button className="icon-button" onClick={onSearch} aria-label={t('搜索并添加自选')}><Plus size={20}/></button><button className="icon-button mobile-close" onClick={onClose} aria-label={t('关闭导航')}><X size={20}/></button></div><label className="watch-sidebar-search"><Search size={16}/><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder={t('筛选名称或代码')}/></label><div className="watch-sidebar-list">{watchlist.map(symbol=>{const q=feed.data?.items.find(q=>q.symbol===symbol),m=markets[symbol],name=q?.name||m?.name||symbol,price=q?.price??m?.last,change=q?.changePercent??m?.changePercent;if(filter&&!name.includes(filter)&&!symbol.toLowerCase().includes(filter.toLowerCase()))return null;return <div className={'watch-sidebar-row '+(selected===symbol?'active':'')} key={symbol}><button onClick={()=>{onStock(symbol);onClose();}}><span><b>{name}</b><small>{symbol}</small></span><span><strong>{price==null?'—':price.toFixed(2)}</strong><small className={change==null?'':change>=0?'positive':'negative'}>{change==null?'—':(change>=0?'+':'')+change.toFixed(2)+'%'}</small></span></button><button className="watch-remove" onClick={()=>onRemove(symbol)} aria-label={t('移出自选')+' '+symbol}><X size={13}/></button></div>;})}{!watchlist.length&&<p>{t('暂无自选，点击 + 添加')}</p>}</div><button className="watch-workspace-button" onClick={onWorkspace}><LayoutGrid size={19}/>{t('返回工作区导航')}</button></>;
+}

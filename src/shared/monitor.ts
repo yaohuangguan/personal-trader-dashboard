@@ -3,9 +3,9 @@ import type {Snapshot} from './desk-types';
 import {analyzeGuide} from './guide-analysis';
 import {stockCharacter} from './stock-character';
 export type SignalKind='intraday'|'launch-close'|'confirmed'|'invalidated';
-export type SignalEvent={id:string;symbol:string;name:string;date:string;asOf:string;kind:SignalKind;price:number;gain:number|null;volumeRatio:number|null;launchDate:string|null;delivery:'pending'|'sent'|'failed'|'none';deliveryError?:string};
-export type MonitorConfig={enabled:boolean;symbols:string[];activityFilter:boolean;locale:'zh-CN'|'en';updatedAt:number;expiresAt:number};
-export type MonitorStatus={available:boolean;configured:boolean;config:MonitorConfig;subscribed:boolean;events:SignalEvent[];lastRun:number|null;nextRun:number|null;checked:number;ready:number;failures:{symbol:string;reason:string}[];status:string;deliveryError?:string;pending:number};
+export type SignalEvent={id:string;symbol:string;name:string;date:string;asOf:string;kind:SignalKind;price:number;gain:number|null;volumeRatio:number|null;launchDate:string|null;delivery:'pending'|'sent'|'failed'|'none';deliveryError?:string;observedAt?:number;activityEligible?:boolean};
+export type MonitorConfig={enabled:boolean;scope?:'all'|'selected';symbols:string[];activityFilter:boolean;locale:'zh-CN'|'en';updatedAt:number;expiresAt:number};
+export type MonitorStatus={available:boolean;configured:boolean;config:MonitorConfig;subscribed:boolean;events:SignalEvent[];lastRun:number|null;nextRun:number|null;checked:number;ready:number;failures:{symbol:string;reason:string}[];status:string;deliveryError?:string;pending:number;market?:import('./full-market').FullMarketStatus};
 export function beijingParts(now=new Date()){
  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now),get=(s:string)=>p.find(v=>v.type===s)!.value;
  return {date:get('year')+'-'+get('month')+'-'+get('day'),minute:Number(get('hour'))*60+Number(get('minute')),weekday:get('weekday')};

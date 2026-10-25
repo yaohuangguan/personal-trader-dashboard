@@ -23,3 +23,11 @@ class_name = "SignalMonitor"
 [[migrations]]
 tag = "signal-monitor-v1"
 new_sqlite_classes = ["SignalMonitor"]
+
+[[durable_objects.bindings]]
+name = "MARKET_SCANNER"
+class_name = "MarketScanner"
+
+[[migrations]]
+tag = "full-market-v1"
+new_sqlite_classes = ["MarketScanner"]

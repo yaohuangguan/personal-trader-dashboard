@@ -1,3 +1,4 @@
+import WatchSidebar from './components/WatchSidebar';
 import SignalCenter from './components/SignalCenter';
 import {t as uiText} from './preferences';
 import Settings from './components/Settings';
@@ -11,7 +12,7 @@ import {
  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Bookmark, BookmarkCheck, CalendarDays,
  Check, ChevronRight, Clock3, Command, ExternalLink, FileText, Globe2, Layers3, BookOpen,
  LayoutDashboard, LineChart, LoaderCircle, Menu, Newspaper, Plus, Radar, RefreshCw,
- Search, ShieldAlert, SlidersHorizontal, Target, TrendingUp, X, Zap
+ Star, Search, ShieldAlert, SlidersHorizontal, Target, TrendingUp, X, Zap
 } from 'lucide-react';
 import MarketChart from './components/MarketChart';
 import TradingViewWidget from './components/TradingViewWidget';
@@ -90,7 +91,7 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
 export default function App(){
  usePreferences();
  const [view,setView]=useState<View>(()=>(['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(new URLSearchParams(window.location.search).get('view')||'')?new URLSearchParams(window.location.search).get('view') as View:'research');
- const [mobileNav,setMobileNav]=useState(false);
+ const [mobileNav,setMobileNav]=useState(false);const [workspaceNav,setWorkspaceNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
  const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[]));
  const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):readStored('atlas.last-symbol.v1','300545.SZ');});
@@ -154,14 +155,14 @@ export default function App(){
   return ()=>{clearTimeout(timeout);ac.abort();};
  },[searchQuery]);
  const chooseSymbol=useCallback((symbol:string)=>{
-  const normalized=normalizeSymbol(symbol);setSelected(normalized);setView('research');setSearchOpen(false);setSearchQuery('');
+  setWorkspaceNav(false);const normalized=normalizeSymbol(symbol);setSelected(normalized);setView('research');setSearchOpen(false);setSearchQuery('');
   try{localStorage.setItem('atlas.last-symbol.v1',JSON.stringify(normalized));}catch{/* storage unavailable */}
   window.history.replaceState(null,'','?symbol='+encodeURIComponent(normalized));
   window.scrollTo({top:0,behavior:'smooth'});
  },[]);
  const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):[symbol,...prev].slice(0,30)),[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
- const changeView=useCallback((v:View)=>{setView(v);setMobileNav(false);const url=new URL(window.location.href);if(v!=='research')url.searchParams.set('view',v);else url.searchParams.delete('view');window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
+ const changeView=useCallback((v:View)=>{if(v==='research')setWorkspaceNav(false);setView(v);setMobileNav(false);const url=new URL(window.location.href);if(v!=='research')url.searchParams.set('view',v);else url.searchParams.delete('view');window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
  useEffect(()=>{const open=()=>changeView('signals');window.addEventListener('atlas:monitor-pool',open);return()=>window.removeEventListener('atlas:monitor-pool',open);},[changeView]);
  const searchOptions=useMemo(()=>{
   const list=remoteResults.length?remoteResults:searchLocal(searchQuery);
@@ -174,16 +175,17 @@ export default function App(){
  const focusedThemes=SECTORS.map(sector=>({sector,items:news.filter(n=>n.category===sector.id || sector.words.some(w=>n.title.toLowerCase().includes(w.toLowerCase())))}));
  const showNews=(category:string)=>{setNewsCategory(category);changeView('news');};
 
- return <div className="app-shell">
+ return <div className={'app-shell '+(view==='research'?'stock-workspace-shell':'')}>
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
    <div className="brand"><Logo/><div className="brand-copy"><strong>MARKET ATLAS</strong><span>PERSONAL MARKET DESK</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
-   <div className="nav-label">WORKSPACE</div>
+   {view==='research'&&!workspaceNav?<WatchSidebar watchlist={watchlist} markets={markets} selected={selected} onStock={chooseSymbol} onSearch={()=>setSearchOpen(true)} onRemove={toggleWatch} onWorkspace={()=>setWorkspaceNav(true)} onClose={()=>setMobileNav(false)}/>:<><div className="nav-label">WORKSPACE</div>
    <nav className="nav-list">{uiText(NAV.map(([id,label,Icon])=><button key={id} onClick={()=>{if(id==='news')setNewsCategory('all');changeView(id);}} className={'nav-item '+(view===id?'active':'')}><Icon size={17}/><span>{uiText(label)}</span>{uiText(id==='saved'&&saved.length>0&&<small className="nav-count">{uiText(saved.length)}</small>)}</button>))}</nav>
    <div className="sidebar-section">
     <div className="sidebar-section-head">SECTOR WATCH <Radar size={13}/></div>
     {uiText(SECTORS.map((s,i)=><button key={s.id} className="sector-nav-item" onClick={()=>showNews(s.id)}><span className="sector-index">0{uiText(i+1)}</span><span>{uiText(s.name)}</span><ChevronRight size={13}/></button>))}
    </div>
    <div className="sidebar-bottom"><div className="connection-icon"><span className="pulse-dot"/> RESEARCH FEEDS</div><p>{uiText("全球情报 · A股 / 美股 · 原始资料核验")}</p><small>{uiText("公开快照 · 五档 / 分笔 · 非授权Level-2")}</small></div>
+{view==='research'&&<button className="watch-workspace-button" onClick={()=>setWorkspaceNav(false)}><Star size={18}/>{uiText('返回自选列表')}</button>}</>}
   </aside>
   {uiText(mobileNav&&<button className="mobile-shade" aria-label={uiText("关闭导航")} onClick={()=>setMobileNav(false)}/>)}
   <div className="workspace">

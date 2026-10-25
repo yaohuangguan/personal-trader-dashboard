@@ -1,3 +1,5 @@
+import {scannerCall} from './full-market-scanner';
+import type {FullMarketStatus} from '../shared/full-market';
 import {buildPushPayload,type VapidKeys,type PushSubscription} from '@block65/webcrypto-web-push';
 import {quotes} from './desk-data';
 import {tencentAshares,sinaAdjustedDaily,sinaBeijingDaily} from './research';
@@ -8,7 +10,7 @@ type State={storage:Storage;blockConcurrencyWhile<T>(fn:()=>Promise<T>):Promise<
 export type MonitorNamespace={idFromName(name:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}};
 type Baseline={candles:Candle[];volumeUnit:'股'|'手';loaded:number;date:string;source:string};
 const response=(value:unknown,status=200)=>Response.json(value,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});
-const defaults=():MonitorConfig=>({enabled:false,symbols:[],activityFilter:true,locale:'zh-CN',updatedAt:0,expiresAt:0});
+const defaults=():MonitorConfig=>({enabled:false,scope:'all',symbols:[],activityFilter:true,locale:'zh-CN',updatedAt:0,expiresAt:0});
 const base64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
 export async function generateVapid():Promise<VapidKeys>{
  const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
@@ -17,7 +19,7 @@ export async function generateVapid():Promise<VapidKeys>{
 }
 export class SignalMonitor {
  private busy=false;
- constructor(private state:State){}
+ constructor(private state:State,private env?:{MARKET_SCANNER?:MonitorNamespace}){}
  private async keys(){let keys=await this.state.storage.get<VapidKeys>('vapid');if(!keys){keys=await generateVapid();await this.state.storage.put('vapid',keys);}return keys;}
  private async status():Promise<MonitorStatus>{
   const s=this.state.storage,config=await s.get<MonitorConfig>('config')||defaults(),events=await s.get<SignalEvent[]>('events')||[],run=await s.get<Partial<MonitorStatus>>('run');
@@ -27,14 +29,15 @@ export class SignalMonitor {
   const action=new URL(req.url).pathname.split('/').at(-1),s=this.state.storage;
   if(req.method==='GET'&&action==='status')return response(await this.status());
   if(req.method==='GET'&&action==='public-key'){const keys=await this.state.blockConcurrencyWhile(()=>this.keys());return response({publicKey:keys.publicKey});}
+  if(req.method==='GET'&&action==='global'){if(!this.env?.MARKET_SCANNER)return response({error:'全市场扫描尚未部署'},503);return response(await scannerCall(this.env.MARKET_SCANNER,'status'));}
   if(req.method!=='POST')return response({error:'Method not allowed'},405);
   if(Number(req.headers.get('content-length')||0)>16000)return response({error:'请求过大'},413);
   const raw=await req.text();if(raw.length>16000)return response({error:'请求过大'},413);
   let body:Record<string,unknown>;try{body=JSON.parse(raw||'{}');}catch{return response({error:'无效请求'},400);}
   if(action==='config'){
-   if(typeof body.enabled!=='boolean'||body.enabled&&!validMonitorSymbols(body.symbols))return response({error:'请选择1至60只不重复的沪深北个股'},400);
-   const previous=await s.get<MonitorConfig>('config')||defaults(),config:MonitorConfig={enabled:body.enabled,symbols:body.enabled?body.symbols as string[]:previous.symbols,activityFilter:body.activityFilter!==false,locale:body.locale==='en'?'en':'zh-CN',updatedAt:Date.now(),expiresAt:Date.now()+30*86400000};
-   await s.put('config',config);if(config.enabled)await s.setAlarm(Date.now()+1000);else await s.deleteAlarm();return response(await this.status());
+   if(typeof body.enabled!=='boolean'||body.enabled&&body.scope!=='all'&&!validMonitorSymbols(body.symbols))return response({error:'请选择1至60只不重复的沪深北个股'},400);
+   const previous=await s.get<MonitorConfig>('config')||defaults(),config:MonitorConfig={enabled:body.enabled,scope:body.scope==='all'?'all':'selected',symbols:body.scope==='all'?[]:body.enabled?body.symbols as string[]:previous.symbols,activityFilter:body.activityFilter!==false,locale:body.locale==='en'?'en':'zh-CN',updatedAt:Date.now(),expiresAt:Date.now()+30*86400000};
+   await s.put('config',config);if(previous.scope==='all'&&(!config.enabled||config.scope!=='all'))await this.lease(false,previous.expiresAt);if(config.enabled&&config.scope==='all')await this.lease(true,config.expiresAt);if(config.enabled)await s.setAlarm(Date.now()+1000);else await s.deleteAlarm();return response(await this.status());
   }
   if(action==='subscribe'){
    const sub=body.subscription as PushSubscription|undefined;
@@ -45,6 +48,7 @@ export class SignalMonitor {
   if(action==='test'){
    const config=await s.get<MonitorConfig>('config')||defaults();try{await this.push({title:config.locale==='en'?'Market Atlas · Test':'Market Atlas · 通知测试',body:config.locale==='en'?'Background browser notifications are connected.':'后台浏览器通知已接通。这是测试，不是股票信号。',url:'/?view=signals',tag:'atlas-test'});return response({sent:true});}catch(e){return response({error:e instanceof Error?e.message:'推送失败'},502);}
   }
+  if(action==='global'){if(!this.env?.MARKET_SCANNER)return response({error:'全市场扫描尚未部署'},503);return response(await scannerCall(this.env.MARKET_SCANNER,'status'));}
   if(action==='check'){if(this.busy)return response({error:'后台扫描进行中'},409);const status=await this.status();if(status.lastRun&&Date.now()-status.lastRun<55000)return response({error:'每分钟最多检查一次'},429);await this.run();return response(await this.status());}
   return response({error:'Unknown action'},404);
  }
@@ -63,12 +67,45 @@ export class SignalMonitor {
   catch{data=symbol.endsWith('.BJ')?await sinaBeijingDaily(symbol):await sinaAdjustedDaily(symbol);volumeUnit='股';source=symbol.endsWith('.BJ')?'新浪北交所未复权日线':'新浪前复权日线';}
   return {candles:data.candles.slice(-270),volumeUnit,loaded:Date.now(),date:day,source};
  }
+ private async lease(enabled:boolean,until:number){
+  if(!this.env?.MARKET_SCANNER){if(enabled)throw new Error('全市场扫描尚未部署');return;}
+  let id=await this.state.storage.get<string>('leaseId');if(!id){id=crypto.randomUUID();await this.state.storage.put('leaseId',id);}
+  await scannerCall(this.env.MARKET_SCANNER,enabled?'ensure':'release',{id,until});
+ }
+ private async deliver(config:MonitorConfig,events:SignalEvent[],fresh:SignalEvent[],run:Partial<MonitorStatus>){
+  const s=this.state.storage;
+   const latestConfig=await s.get<MonitorConfig>('config');if(!latestConfig?.enabled||latestConfig.updatedAt!==config.updatedAt)return;
+   const subscribed=!!await s.get('subscription');for(const event of fresh)if(!subscribed)event.delivery='none';
+   // Persist detections before network delivery. Alarms are at-least-once: IDs prevent duplicate events.
+   await s.put('events',events.slice(0,200));
+   let deliveryError='';const pending=events.filter(e=>e.delivery==='pending'&&Date.now()-Date.parse(e.asOf)<5*60000);
+   if(pending.length&&subscribed){
+    const english=config.locale==='en',labels={intraday:english?'Intraday candidate':'盘中候选','launch-close':english?'Closed launch':'收盘启动',confirmed:english?'Confirmed bloom':'开花确认',invalidated:english?'Invalidated':'确认失效'};
+    const first=pending[0],body=pending.slice(0,5).map(e=>`${e.name} ${e.symbol} · ${labels[e.kind]} · ${e.price.toFixed(2)}`).join('\n');
+    try{await this.push({title:`Market Atlas · ${pending.length}${english?' signals':'个信号'}`,body,url:pending.length===1?'/?symbol='+first.symbol:'/?view=signals',tag:first.id});for(const e of pending)e.delivery='sent';}
+    catch(e){deliveryError=e instanceof Error?e.message:'推送失败';for(const e of pending){e.delivery='failed';e.deliveryError=deliveryError;}}
+   }
+   for(const event of events)if(event.delivery==='pending'&&Date.now()-Date.parse(event.asOf)>=5*60000){event.delivery='failed';event.deliveryError='超过5分钟通知时效，保留记录';}
+   await s.put('events',events.slice(0,200));
+   await s.put('run',{...run,lastRun:Date.now(),deliveryError,pending:events.filter(e=>e.delivery==='pending').length});
+ }
+ private async runAll(config:MonitorConfig){
+  if(!this.env?.MARKET_SCANNER)throw new Error('全市场扫描尚未部署');
+  await this.lease(true,config.expiresAt);const market=await scannerCall(this.env.MARKET_SCANNER,'status') as FullMarketStatus;
+  const events=await this.state.storage.get<SignalEvent[]>('events')||[],known=new Set(events.map(e=>e.id));
+  const fresh=market.events.filter(e=>(e.observedAt||0)>=config.updatedAt&&!known.has(e.id)&&(!config.activityFilter||e.activityEligible!==false)).map(e=>({...e,delivery:'pending' as const}));
+  events.unshift(...fresh);
+  const status=market.phase==='universe'?'正在读取全市场名单':market.phase==='warming'?'全市场历史底稿准备中':market.phase==='closed'?'全市场休市等待':market.phase==='partial'?'全市场部分分片待恢复':'全市场分片扫描中';
+  await this.deliver(config,events,fresh,{checked:market.checked,ready:market.ready,failures:market.failureSample,status,market});
+  const current=await this.state.storage.get<MonitorConfig>('config');if(current?.enabled)await this.state.storage.setAlarm(Date.now()+60000);
+ }
  private async run(){
   if(this.busy)return;this.busy=true;const s=this.state.storage;
   try{
    let config=await s.get<MonitorConfig>('config');if(!config?.enabled)return;
    const now=new Date(),day=beijingParts(now).date;
-   if(config.expiresAt<=Date.now()){config={...config,enabled:false};await s.put('config',config);await s.deleteAlarm();await s.put('run',{status:'监控已到期，请续期开启'});return;}
+   if(config.expiresAt<=Date.now()){if(config.scope==='all')await this.lease(false,config.expiresAt);config={...config,enabled:false};await s.put('config',config);await s.deleteAlarm();await s.put('run',{status:'监控已到期，请续期开启'});return;}
+   if(config.scope==='all'){await this.runAll(config);return;}
    const baselines=new Map<string,Baseline>(),failures:{symbol:string;reason:string}[]=[],missing:string[]=[];
    for(const symbol of config.symbols){const baseline=await s.get<Baseline>('baseline:'+symbol);if(baseline&&baseline.date===day)baselines.set(symbol,baseline);else missing.push(symbol);}
    // Four histories per invocation keep cold starts bounded. Completed values only are persisted.
@@ -90,20 +127,7 @@ export class SignalMonitor {
      status=beijingParts(now).minute>=900?'收盘核验中':'盘中分钟轮询';
     }
    }else status=baselines.size===config.symbols.length?'休市，等待下一交易时段':'休市，准备历史底稿';
-   const latestConfig=await s.get<MonitorConfig>('config');if(!latestConfig?.enabled||latestConfig.updatedAt!==config.updatedAt)return;
-   const subscribed=!!await s.get('subscription');for(const event of fresh)if(!subscribed)event.delivery='none';
-   // Persist detections before network delivery. Alarms are at-least-once: IDs prevent duplicate events.
-   await s.put('events',events.slice(0,200));
-   let deliveryError='';const pending=events.filter(e=>e.delivery==='pending'&&Date.now()-Date.parse(e.asOf)<5*60000);
-   if(pending.length&&subscribed){
-    const english=config.locale==='en',labels={intraday:english?'Intraday candidate':'盘中候选','launch-close':english?'Closed launch':'收盘启动',confirmed:english?'Confirmed bloom':'开花确认',invalidated:english?'Invalidated':'确认失效'};
-    const first=pending[0],body=pending.slice(0,5).map(e=>`${e.name} ${e.symbol} · ${labels[e.kind]} · ${e.price.toFixed(2)}`).join('\n');
-    try{await this.push({title:`Market Atlas · ${pending.length}${english?' signals':'个信号'}`,body,url:pending.length===1?'/?symbol='+first.symbol:'/?view=signals',tag:first.id});for(const e of pending)e.delivery='sent';}
-    catch(e){deliveryError=e instanceof Error?e.message:'推送失败';for(const e of pending){e.delivery='failed';e.deliveryError=deliveryError;}}
-   }
-   for(const event of events)if(event.delivery==='pending'&&Date.now()-Date.parse(event.asOf)>=5*60000){event.delivery='failed';event.deliveryError='超过5分钟通知时效，保留记录';}
-   await s.put('events',events.slice(0,200));
-   await s.put('run',{lastRun:Date.now(),checked,ready:baselines.size,failures,status,deliveryError,pending:events.filter(e=>e.delivery==='pending').length});
+   await this.deliver(config,events,fresh,{checked,ready:baselines.size,failures,status});
    // A stop or configuration change while fetching must not revive an old alarm.
    const current=await s.get<MonitorConfig>('config');if(current?.enabled){const warm=ordered.length>4;await s.setAlarm(warm?Date.now()+30000:nextMonitorRun());}
   }finally{this.busy=false;}
@@ -114,6 +138,6 @@ export async function monitorRoute(req:Request,namespace?:MonitorNamespace){
  if(!namespace)return response({available:false,error:'后台监控尚未部署'},503);
  const token=(req.headers.get('Authorization')||'').replace(/^Bearer /,'');if(!/^[a-f0-9]{64}$/.test(token))return response({error:'缺少设备监控凭证'},401);
  const origin=req.headers.get('Origin');if(origin&&origin!==new URL(req.url).origin)return response({error:'Invalid origin'},403);
- if(!['status','public-key','config','subscribe','unsubscribe','test','check'].includes(path.split('/').at(-1)||''))return response({error:'Unknown action'},404);
+ if(!['status','public-key','config','subscribe','unsubscribe','test','check','global'].includes(path.split('/').at(-1)||''))return response({error:'Unknown action'},404);
  return namespace.get(namespace.idFromName(token)).fetch(req);
 }
