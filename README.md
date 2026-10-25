@@ -119,3 +119,14 @@ The site is now an installable **Progressive Web App** (PWA): manifest, installa
 **Offline behavior is intentionally conservative:** UI assets and on-device saved articles are accessible as stored; API calls are \`NetworkOnly\` to ensure the UI does not silently claim stale quotes and articles are live. Opening a detail page with no source-provided excerpt will not manufacture a summary. Chrome third-party widgets and official PDF assets require connectivity.
 
 To test locally, run \`npm run build\` and inspect \`dist/manifest.webmanifest\`, \`dist/sw.js\`, offline service-worker behavior and the \`/api/announcement-pdf\` response. Tests assert that app-owned article elements do not open new tabs.
+
+## Configurable chart terminal
+
+All symbols with valid OHLCV data share the same chart component; it is independent of the built-in example catalog.
+
+- Default moving averages: MA5 / MA13 / MA20 / MA30 / MA60 / MA120 / MA144 / MA250. Each period, color and visibility can be changed; settings persist in the current browser.
+- Separate, synchronized VOL (MA5/20), MACD (12/26/9) and KDJ (9/3/3) panels. MACD histogram is 2 × (DIF − DEA); KDJ uses recursive smoothing seeded at 50, retaining J outside 0–100.
+- Main candles and volume use red for up and teal for down. Date presets, pan/zoom, expanded view and crosshairs are linked across panels.
+- Averages are computed on the complete provider history before applying the visible date range. A newly listed symbol can display a partial history while long-period averages remain unavailable.
+- Cross markers use the two shortest enabled periods. An expansion marker requires all enabled periods in bullish order, higher averages than five sessions earlier, close above the shortest average and positive MACD histogram. It marks the first qualifying session. The separate existing Five-Line analysis model still uses MA5/10/20/60/120.
+- Public Chinese-market code/name search supplements the local catalog. Shanghai ETF, explicit exchange/index prefixes and Beijing symbol normalization are recognized. Actual coverage and history remain dependent on the configured provider; no missing candles or averages are synthesized.

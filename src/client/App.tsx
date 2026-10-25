@@ -339,7 +339,7 @@ export default function App(){
      <div className="research-layout">
       <div className="research-primary">
        <div className="panel candle-panel"><div className="panel-heading"><div><span className="eyebrow">OHLCV / HISTORICAL DATA</span><h2>价格走势与均线结构</h2></div><span className="date-chip"><Clock3 size={13}/> {selectedData?.asOf||'等待数据'}</span></div>
-        {selectedData?<MarketChart candles={selectedData.candles}/>:<div className="chart-fallback">{!marketErrors[selected]&&<p className="widget-loading">正在尝试获取可分析的 OHLCV 数据…</p>}<TradingViewWidget symbol={selected}/><StatusNote>以下是 TradingView 官方嵌入图表；它不向本系统提供原始 K 线，暂不能计算五线开花。{marketErrors[selected]||'如需本地技术分析请配置行情 API。'}</StatusNote></div>}
+        {selectedData?<MarketChart candles={selectedData.candles} symbol={selected} volumeUnit={selectedData.provider.startsWith('腾讯')?(/^68[89]/.test(selected)?'股':'手'):undefined}/>:<div className="chart-fallback">{!marketErrors[selected]&&<p className="widget-loading">正在尝试获取可分析的 OHLCV 数据…</p>}<TradingViewWidget symbol={selected}/><StatusNote>以下是 TradingView 官方嵌入图表；它不向本系统提供原始 K 线，暂不能计算五线开花。{marketErrors[selected]||'如需本地技术分析请配置行情 API。'}</StatusNote></div>}
         <div className="chart-disclaimer">{selectedData?.notice||'尚未获得报价'} {selectedData?.sourceUrl&&<button type="button" className="inline-source-button" onClick={()=>openMarket(selectedData)}>查看数据来源与口径 <BookOpen size={12}/></button>}</div>
        </div>
        {selectedData?<div className="panel analysis-box"><AnalysisPanel data={selectedData}/></div>:<div className="panel"><Blank title="技术分析等待行情" detail={marketErrors[selected]||'请先选择能提供日线历史数据的股票'}/></div>}

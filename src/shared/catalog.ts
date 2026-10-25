@@ -39,7 +39,12 @@ export const NEWS_CATEGORIES = [
 ];
 export function normalizeSymbol(raw:string):string {
   const input = raw.toUpperCase().trim();
-  if (/^\d{6}$/.test(input)) return input + (input.startsWith('6') || input.startsWith('9') ? '.SH' : '.SZ');
+  const explicit=/^(SH|SZ|BJ)(\d{6})$/.exec(input);
+  if(explicit)return explicit[2]+'.'+explicit[1];
+  if (/^\d{6}$/.test(input)) {
+    if (/^(4|8|92)/.test(input)) return input+'.BJ';
+    return input + (/^[569]/.test(input) ? '.SH' : '.SZ');
+  }
   return input.replace(/\.SS$/, '.SH');
 }
 export function searchLocal(query:string, max=12): SearchItem[] {
@@ -47,6 +52,6 @@ export function searchLocal(query:string, max=12): SearchItem[] {
   const results = CATALOG.filter(x=>[x.name,x.symbol,x.sector].some(y=>y?.toLowerCase().includes(q)));
   const symbol = normalizeSymbol(query);
   if (/^[A-Z0-9^.-]{1,18}$/.test(symbol) && !results.some(x=>x.symbol===symbol))
-    results.push({symbol,name:'自定义代码 · 尝试加载行情',exchange:/\.(SH|SZ)$/.test(symbol)?'CN':'US'});
+    results.push({symbol,name:'自定义代码 · 尝试加载行情',exchange:/\.(SH|SZ|BJ)$/.test(symbol)?'CN':'US'});
   return results.slice(0,max);
 }

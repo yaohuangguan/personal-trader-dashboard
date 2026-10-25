@@ -124,16 +124,16 @@ export async function companyNews(symbol:string,items:NewsItem[]):Promise<{items
  return {items:narrow.slice(0,25),source:'stored',notice:'只匹配已入库标题中的证券代码/公司名称；可能漏报，同名公司需要手动核验。'};
 }
 
-export async function tencentAshares(symbol:string):Promise<{candles:Candle[];url:string}>{
+export async function tencentAshares(symbol:string):Promise<{candles:Candle[];url:string;name?:string}>{
  if(!/^\d{6}\.(SH|SZ)$/.test(symbol))throw new Error('Tencent adapter supports A shares only');
  const code=(symbol.endsWith('.SH')?'sh':'sz')+symbol.slice(0,6);
  const endpoint='https://web.ifzq.gtimg.cn/appstock/app/fqkline/get';
  const url=endpoint+'?param='+code+',day,,,500,qfq';
- const data=await requestData(url,{},10000) as {data?:Record<string,{qfqday?:string[][];day?:string[][]}>};
+ const data=await requestData(url,{},10000) as {data?:Record<string,{qfqday?:string[][];day?:string[][];qt?:Record<string,string[]>}>};
  const rows=data.data?.[code]?.qfqday||data.data?.[code]?.day||[];
  const bars=validateDailyBars(rows.map(r=>({time:r[0],open:numeric(r[1]),close:numeric(r[2]),high:numeric(r[3]),low:numeric(r[4]),volume:numeric(r[5])})));
- if(bars.length<121)throw new Error('Tencent returned fewer than 121 valid daily bars');
- return {candles:bars,url:'https://gu.qq.com/'+code};
+ if(bars.length<2)throw new Error('Tencent returned fewer than 2 valid daily bars');
+ return {candles:bars,url:'https://gu.qq.com/'+code,name:data.data?.[code]?.qt?.[code]?.[1]};
 }
 
 export function headlineRiskTags(title:string):string[]{

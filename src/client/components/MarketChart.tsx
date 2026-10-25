@@ -1,52 +1,256 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createChart, ColorType, type IChartApi, type Time } from 'lightweight-charts';
+import { Maximize2, Minimize2, RotateCcw, Settings2 } from 'lucide-react';
+import { createChart, ColorType, CrosshairMode, LineStyle, type IChartApi, type ISeriesApi, type LogicalRange, type Time, type LineData, type WhitespaceData, type SeriesMarker, type AutoscaleInfo } from 'lightweight-charts';
+import './MarketChart.css';
 import type { Candle } from '../../shared/types';
-import { analyzeCandles } from '../../shared/analysis';
+import { chartIndicators, defaultMAs, validMAPreferences, type MAPreference, type Point } from '../../shared/chart-indicators';
 
-const colors:Record<number,string>={5:'#f6c064',10:'#e787a3',20:'#58bdcb',60:'#9b8df3',120:'#b6c97f'};
-export default function MarketChart({candles,compact=false}:{candles:Candle[];compact?:boolean}){
- const ref=useRef<HTMLDivElement>(null);
- const [period,setPeriod]=useState<'3M'|'6M'|'1Y'|'ALL'>(compact?'3M':'1Y');
- const [showMA,setShowMA]=useState(!compact);
- const analysis=useMemo(()=>analyzeCandles(candles),[candles]);
- useEffect(()=>{
-  const el=ref.current;if(!el||!candles.length)return;
-  let chart:IChartApi|undefined;
+const UP = '#f04a55', DOWN = '#28cdb6';
+const SETTINGS_KEY = 'atlas.chart.ma.v2';
+type Range = '1M' | '3M' | '6M' | '1Y' | 'ALL';
+type Panel = 'VOL' | 'MACD' | 'KDJ';
+type Pane = { chart: IChartApi; anchor: ISeriesApi<'Candlestick'> | ISeriesApi<'Histogram'> | ISeriesApi<'Line'>; values: Map<string, number> };
+const number = (value: number | undefined, digits = 2) => value === undefined ? '—' : value.toFixed(digits);
+const volumeNumber = (value: number | undefined) => value === undefined ? '—' : value >= 1e8 ? (value / 1e8).toFixed(2) + '亿' : value >= 1e4 ? (value / 1e4).toFixed(2) + '万' : value.toFixed(0);
+function readPreferences() {
   try {
-   chart=createChart(el,{
-    width:el.clientWidth,height:compact?210:380,
-    layout:{background:{type:ColorType.Solid,color:'#101b2a'},textColor:'#8797ac',fontFamily:'Inter, system-ui, sans-serif',fontSize:11},
-    grid:{vertLines:{color:'#1d2a3a'},horzLines:{color:'#1d2a3a'}},
-    rightPriceScale:{borderColor:'#2c3a4b',scaleMargins:{top:0.09,bottom:0.23}},
-    timeScale:{borderColor:'#2c3a4b',timeVisible:false,rightOffset:5,fixLeftEdge:false},
-    crosshair:{vertLine:{color:'#587289',labelBackgroundColor:'#22374a'},horzLine:{color:'#587289',labelBackgroundColor:'#22374a'}},
-    handleScroll:{mouseWheel:!compact,pressedMouseMove:!compact},handleScale:{mouseWheel:!compact,axisPressedMouseMove:!compact}
-   });
-   const prices=chart.addCandlestickSeries({upColor:'#36c9a9',downColor:'#f07883',borderUpColor:'#36c9a9',borderDownColor:'#f07883',wickUpColor:'#36c9a9',wickDownColor:'#f07883',priceLineVisible:false});
-   const duration=period==='3M'?66:period==='6M'?132:period==='1Y'?264:candles.length;
-   const current=candles.slice(-duration);
-   prices.setData(current.map(c=>({time:c.time as Time,open:c.open,high:c.high,low:c.low,close:c.close})));
-   const volume=chart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'',priceLineVisible:false,lastValueVisible:false});
-   volume.priceScale().applyOptions({scaleMargins:{top:0.81,bottom:0.01}});
-   volume.setData(current.map(c=>({time:c.time as Time,value:c.volume,color:c.close>=c.open?'#246d64aa':'#804c5a99'})));
-   if(showMA)for(const p of [5,10,20,60,120]){
-    const line=chart.addLineSeries({color:colors[p],lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
-    const oldest=current[0]?.time;
-    line.setData((analysis.maSeries[p]??[]).filter(x=>x.time>=oldest).map(x=>({time:x.time as Time,value:x.value})));
-   }
-   chart.timeScale().fitContent();
-   const resize=new ResizeObserver(()=>chart?.applyOptions({width:el.clientWidth}));
-   resize.observe(el);
-   return ()=>{resize.disconnect();chart?.remove();};
-  }catch(e){console.error('MarketChart',e);chart?.remove();}
- },[candles,period,showMA,compact,analysis]);
- if(!candles.length)return <div className="chart-empty">暂无可绘制的真实 K 线</div>;
- return <div className="chart-shell">
-  {!compact&&<div className="chart-controls">
-   <div className="time-buttons">{(['3M','6M','1Y','ALL'] as const).map(p=><button type="button" className={period===p?'active':''} key={p} onClick={()=>setPeriod(p)}>{p}</button>)}</div>
-   <button type="button" className={'ma-toggle '+(showMA?'active':'')} onClick={()=>setShowMA(v=>!v)}>五线均线 {showMA?'ON':'OFF'}</button>
-  </div>}
-  {showMA&&!compact&&<div className="ma-legend">{[5,10,20,60,120].map(p=><span key={p}><i style={{background:colors[p]}}/> MA{p} <b>{analysis.ma[p]===null?'—':analysis.ma[p]?.toFixed(2)}</b></span>)}</div>}
-  <div className="trading-chart" ref={ref} aria-label="K线、成交量与五条移动均线可交互图表"/>
- </div>;
+    const saved: unknown = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    return validMAPreferences(saved) ? saved : defaultMAs();
+  } catch { return defaultMAs(); }
+}
+function timeKey(time: Time): string {
+  if (typeof time === 'string') return time;
+  if (typeof time === 'number') return new Date(time * 1000).toISOString().slice(0, 10);
+  return time.year + '-' + String(time.month).padStart(2, '0') + '-' + String(time.day).padStart(2, '0');
+}
+const rangeSize = (range: Range, length: number) => range === '1M' ? 22 : range === '3M' ? 66 : range === '6M' ? 132 : range === '1Y' ? 264 : length;
+
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string }) {
+  const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null);
+  const chartsRef = useRef<IChartApi[]>([]);
+  const visibleRef = useRef<LogicalRange | null>(null);
+  const [period, setPeriod] = useState<Range>('3M');
+  const [preferences, setPreferences] = useState<MAPreference[]>(readPreferences);
+  const [draft, setDraft] = useState(() => preferences.map(p => ({ ...p, period: String(p.period) })));
+  const [settingsOpen, setSettingsOpen] = useState(false), [settingsError, setSettingsError] = useState('');
+  const [panels, setPanels] = useState<Record<Panel, boolean>>({ VOL: true, MACD: true, KDJ: true });
+  const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
+  const [hoverTime, setHoverTime] = useState<string | null>(null), [chartError, setChartError] = useState('');
+  const indicators = useMemo(() => chartIndicators(candles, preferences), [candles, preferences]);
+  const candleByTime = useMemo(() => new Map(candles.map(c => [c.time, c])), [candles]);
+  const maMaps = useMemo(() => Object.fromEntries(Object.entries(indicators.ma).map(([p, values]) => [p, new Map(values.map(v => [v.time, v.value]))])) as Record<number, Map<string, number>>, [indicators]);
+  const macdByTime = useMemo(() => new Map(indicators.macd.map(p => [p.time, p])), [indicators]);
+  const kdjByTime = useMemo(() => new Map(indicators.kdj.map(p => [p.time, p])), [indicators]);
+  const volume5 = useMemo(() => new Map(indicators.volume5.map(p => [p.time, p.value])), [indicators]);
+  const volume20 = useMemo(() => new Map(indicators.volume20.map(p => [p.time, p.value])), [indicators]);
+  const current = (hoverTime && candleByTime.get(hoverTime)) || candles.at(-1);
+  const currentMACD = current && macdByTime.get(current.time), currentKDJ = current && kdjByTime.get(current.time);
+  const activePeriods = preferences.filter(p => p.enabled).map(p => p.period).sort((a, b) => a - b);
+  const maxPeriod = Math.max(0, ...activePeriods);
+
+  useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(preferences)); } catch { /* storage can be disabled */ } }, [preferences]);
+  useEffect(() => { visibleRef.current = null; setHoverTime(null); }, [symbol, candles]);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpanded(false); };
+    window.addEventListener('keydown', escape);
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', escape); };
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!priceRef.current || !candles.length) return;
+    const panes: Pane[] = [], instances: IChartApi[] = [], observers: ResizeObserver[] = [], removers: (() => void)[] = [];
+    let syncingCrosshair = false, syncingRange = false;
+    const resizeTargets: { chart: IChartApi; element: HTMLDivElement; height: number }[] = [];
+    const paneHeight = (width: number, height: number) => !compact && width < 600 ? (height > 300 ? 280 : Math.round(height * 0.82)) : height;
+    setChartError('');
+    const visiblePanels = compact ? [] : (['VOL', 'MACD', 'KDJ'] as const).filter(p => panels[p]);
+    const lastPanel = visiblePanels.at(-1);
+    const makeChart = (el: HTMLDivElement, height: number, bottomAxis: boolean) => {
+      const chart = createChart(el, {
+        width: el.clientWidth, height: paneHeight(el.clientWidth, height),
+        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: '#151617' }, textColor: '#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: 11 },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#252729' } },
+        leftPriceScale: { visible: true, borderVisible: false, entireTextOnly: true, minimumWidth: compact ? 55 : 68, scaleMargins: { top: 0.12, bottom: 0.08 } },
+        rightPriceScale: { visible: false },
+        timeScale: { visible: bottomAxis, borderVisible: false, timeVisible: false, lockVisibleTimeRangeOnResize: true, rightOffset: 4, barSpacing: 9, minBarSpacing: 2, fixLeftEdge: false },
+        crosshair: { mode: CrosshairMode.Normal, vertLine: { color: '#878b92', labelBackgroundColor: '#3e4146' }, horzLine: { color: '#878b92', labelBackgroundColor: '#3e4146' } },
+        handleScroll: { mouseWheel: !compact, pressedMouseMove: !compact, horzTouchDrag: !compact, vertTouchDrag: false },
+        handleScale: { mouseWheel: !compact, pinch: !compact, axisPressedMouseMove: !compact },
+        localization: { locale: 'zh-CN' },
+      });
+      instances.push(chart);
+      resizeTargets.push({ chart, element: el, height });
+      return chart;
+    };
+    const padded = (points: Point[]): (LineData<Time> | WhitespaceData<Time>)[] => {
+      const map = new Map(points.map(p => [p.time, p.value]));
+      return candles.map(c => map.has(c.time) ? { time: c.time as Time, value: map.get(c.time)! } : { time: c.time as Time });
+    };
+    const addLine = (chart: IChartApi, points: Point[], color: string, width: 1 | 2 = 1) => {
+      const line = chart.addLineSeries({ priceScaleId: 'left', color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      line.setData(padded(points));
+      return line;
+    };
+    try {
+      const main = makeChart(priceRef.current, compact ? 210 : expanded ? 480 : 390, !lastPanel);
+      const prices = main.addCandlestickSeries({ priceScaleId: 'left', upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, priceLineVisible: false, lastValueVisible: true });
+      prices.setData(candles.map(c => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close })));
+      if (!compact) {
+        for (const line of preferences.filter(p => p.enabled)) addLine(main, indicators.ma[line.period] || [], line.color);
+        if (markers) {
+          const points: SeriesMarker<Time>[] = indicators.signals.map(signal => ({
+            time: signal.time as Time, position: signal.kind === 'death' ? 'aboveBar' : 'belowBar',
+            shape: signal.kind === 'bloom' ? 'circle' : signal.kind === 'golden' ? 'arrowUp' : 'arrowDown',
+            color: signal.kind === 'bloom' ? '#f6cb70' : signal.kind === 'golden' ? UP : DOWN,
+            text: signal.kind === 'bloom' ? '均线展开' : '', size: signal.kind === 'bloom' ? 1 : 0.7,
+          }));
+          prices.setMarkers(points);
+        }
+      }
+      panes.push({ chart: main, anchor: prices, values: new Map(candles.map(c => [c.time, c.close])) });
+      if (!compact && panels.VOL && volumeRef.current) {
+        const chart = makeChart(volumeRef.current, 106, lastPanel === 'VOL');
+        chart.priceScale('left').applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } });
+        const bars = chart.addHistogramSeries({ priceScaleId: 'left', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
+        bars.setData(candles.map(c => ({ time: c.time as Time, value: c.volume, color: c.close >= c.open ? UP : DOWN })));
+        addLine(chart, indicators.volume5, '#f1d55c'); addLine(chart, indicators.volume20, '#d968e8');
+        panes.push({ chart, anchor: bars, values: new Map(candles.map(c => [c.time, c.volume])) });
+      }
+      if (!compact && panels.MACD && macdRef.current) {
+        const chart = makeChart(macdRef.current, 122, lastPanel === 'MACD');
+        const bars = chart.addHistogramSeries({ priceScaleId: 'left', priceLineVisible: false, lastValueVisible: false });
+        const lookup = new Map(indicators.macd.map(p => [p.time, p]));
+        bars.setData(candles.map(c => {
+          const p = lookup.get(c.time);
+          return p ? { time: c.time as Time, value: p.histogram, color: p.histogram >= 0 ? UP : DOWN } : { time: c.time as Time };
+        }));
+        bars.createPriceLine({ price: 0, color: '#505256', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+        const line = addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dif })), '#ebedf1');
+        addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dea })), '#f1d55c');
+        panes.push({ chart, anchor: line, values: new Map(indicators.macd.map(p => [p.time, p.dif])) });
+      }
+      if (!compact && panels.KDJ && kdjRef.current) {
+        const chart = makeChart(kdjRef.current, 140, lastPanel === 'KDJ');
+        const lines = (['k', 'd', 'j'] as const).map((key, i) => {
+          const line = addLine(chart, indicators.kdj.map(p => ({ time: p.time, value: p[key] })), ['#ebedf1', '#f1d55c', '#d968e8'][i]);
+          line.applyOptions({ autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+            const base = original();
+            return base ? { ...base, priceRange: { minValue: Math.min(0, base.priceRange.minValue), maxValue: Math.max(100, base.priceRange.maxValue) } } : null;
+          } });
+          return line;
+        });
+        for (const level of [20, 80]) lines[0].createPriceLine({ price: level, color: '#35373b', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+        panes.push({ chart, anchor: lines[0], values: new Map(indicators.kdj.map(p => [p.time, p.k])) });
+      }
+      const count = rangeSize(period, candles.length);
+      const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + 3 };
+      for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(initial);
+      for (const pane of panes) {
+        const onRange = (range: LogicalRange | null) => {
+          if (!range || syncingRange) return;
+          visibleRef.current = range;
+          for (const target of panes) {
+            if (target === pane) continue;
+            const existing = target.chart.timeScale().getVisibleLogicalRange();
+            if (!existing || Math.abs(existing.from - range.from) > 0.001 || Math.abs(existing.to - range.to) > 0.001) target.chart.timeScale().setVisibleLogicalRange(range);
+          }
+        };
+        pane.chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+        removers.push(() => pane.chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange));
+        const onCrosshair: Parameters<IChartApi['subscribeCrosshairMove']>[0] = param => {
+          if (syncingCrosshair) return;
+          syncingCrosshair = true;
+          try {
+            const key = param.time ? timeKey(param.time) : null;
+            setHoverTime(key);
+            for (const target of panes) {
+              if (target === pane) continue;
+              const value = key ? target.values.get(key) : undefined;
+              if (param.time && value !== undefined) target.chart.setCrosshairPosition(value, param.time, target.anchor);
+              else target.chart.clearCrosshairPosition();
+            }
+          } finally { syncingCrosshair = false; }
+        };
+        pane.chart.subscribeCrosshairMove(onCrosshair);
+        removers.push(() => pane.chart.unsubscribeCrosshairMove(onCrosshair));
+      }
+      const observer = new ResizeObserver(() => {
+        const range = visibleRef.current || panes[0]?.chart.timeScale().getVisibleLogicalRange();
+        syncingRange = true;
+        try {
+          for (const target of resizeTargets) target.chart.applyOptions({ width: target.element.clientWidth, height: paneHeight(target.element.clientWidth, target.height) });
+          if (range) for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(range);
+        } finally { syncingRange = false; }
+      });
+      observer.observe(priceRef.current);
+      observers.push(observer);
+      chartsRef.current = instances;
+    } catch (error) { setChartError(error instanceof Error ? error.message : '图表加载失败'); }
+    return () => {
+      removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
+      instances.forEach(chart => chart.remove()); chartsRef.current = [];
+    };
+  }, [candles, compact, expanded, indicators, markers, panels, period, preferences]);
+
+  function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
+  function resetView() {
+    const range = { from: Math.max(-1, candles.length - rangeSize(period, candles.length) - 1), to: candles.length + 3 };
+    visibleRef.current = range as LogicalRange;
+    chartsRef.current.forEach(chart => chart.timeScale().setVisibleLogicalRange(range));
+  }
+  function openSettings() {
+    setDraft(preferences.map(p => ({ ...p, period: String(p.period) })));
+    setSettingsError(''); setSettingsOpen(value => !value);
+  }
+  if (!candles.length) return <div className="chart-empty">暂无可绘制的真实 K 线</div>;
+  return <div className={'terminal-chart ' + (compact ? 'terminal-compact ' : '') + (expanded ? 'terminal-expanded' : '')} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={expanded ? '展开的 K 线图表' : undefined}>
+    {!compact && <>
+      <div className="terminal-toolbar">
+        <div className="terminal-range" aria-label="图表显示范围">{([['1M', '1个月'], ['3M', '3个月'], ['6M', '6个月'], ['1Y', '1年'], ['ALL', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => chooseRange(value)}>{label}</button>)}</div>
+        <div className="terminal-tools"><span className="terminal-frequency">日 K{symbol ? ' · ' + symbol : ''}</span>
+          <button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />均线参数</button>
+          <button type="button" onClick={resetView} aria-label="重置缩放"><RotateCcw size={14} /></button>
+          <button type="button" onClick={() => setExpanded(value => !value)} aria-label={expanded ? '收起图表' : '展开图表'}>{expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>
+        </div>
+      </div>
+      {settingsOpen && <form className="terminal-settings" aria-label="均线参数设置" onSubmit={event => {
+        event.preventDefault();
+        const next = draft.map(p => ({ ...p, period: Number(p.period) }));
+        if (!validMAPreferences(next)) { setSettingsError('周期须为 1–500 的整数，已启用的周期不能重复。'); return; }
+        setPreferences(next); setSettingsOpen(false);
+      }}>
+        <div className="terminal-settings-heading"><b>自定义均线</b><span>按交易日计算 · 参数保存在本机</span></div>
+        <div className="terminal-settings-grid">{draft.map((line, i) => <div className="terminal-ma-setting" key={i}>
+          <input type="checkbox" aria-label={'启用第' + (i + 1) + '条均线'} checked={line.enabled} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, enabled: event.target.checked } : p))} />
+          <label htmlFor={'ma-period-' + i}>MA</label><input id={'ma-period-' + i} aria-label={'第' + (i + 1) + '条均线周期'} type="number" min="1" max="500" step="1" required value={line.period} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, period: event.target.value } : p))} />
+          <input type="color" aria-label={'第' + (i + 1) + '条均线颜色'} value={line.color} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, color: event.target.value } : p))} />
+        </div>)}</div>
+        <div className="terminal-settings-actions"><span role="alert">{settingsError}</span><button type="button" onClick={() => setDraft(defaultMAs().map(p => ({ ...p, period: String(p.period) })))}>恢复默认</button><button className="terminal-apply" type="submit">应用参数</button></div>
+      </form>}
+      <div className="terminal-ma-legend" aria-label="均线数值">{preferences.map((line, i) => <button type="button" key={i} aria-label={(line.enabled ? '隐藏' : '显示') + ' MA' + line.period} aria-pressed={line.enabled} style={{ color: line.color }} className={line.enabled ? '' : 'is-hidden'} onClick={() => setPreferences(old => {
+        const next = old.map((p, n) => n === i ? { ...p, enabled: !p.enabled } : p);
+        return validMAPreferences(next) ? next : old;
+      })}><i style={{ background: line.color }} /><span>MA{line.period}</span><b>{line.enabled && current ? number(maMaps[line.period]?.get(current.time)) : '—'}</b></button>)}</div>
+      <div className="terminal-ohlc" aria-live="off"><strong>{current?.time}</strong>{current && <><span>开 <b>{number(current.open)}</b></span><span>高 <b className="terminal-up">{number(current.high)}</b></span><span>低 <b className="terminal-down">{number(current.low)}</b></span><span>收 <b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{number(current.close)}</b></span></>}</div>
+    </>}
+    {chartError && <div className="terminal-error" role="alert">图表无法显示：{chartError}</div>}
+    <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label="K线与可调整均线主图" />
+    {!compact && <>
+      <div className="terminal-panel-controls"><div>{(['VOL', 'MACD', 'KDJ'] as const).map(panel => <button type="button" key={panel} aria-label={'显示 ' + panel} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{panel}</button>)}</div><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />交叉 / 展开标记</label></div>
+      {panels.VOL && <section className="terminal-indicator" aria-label="VOL 成交量副图">
+        <div className="terminal-indicator-heading"><b>VOL <small>{volumeUnit ? '(' + volumeUnit + ')' : ''}</small></b><span>VOLUME <em>{volumeNumber(current?.volume)}</em></span><span style={{ color: '#f1d55c' }}>MA5 <em>{volumeNumber(current && volume5.get(current.time))}</em></span><span style={{ color: '#d968e8' }}>MA20 <em>{volumeNumber(current && volume20.get(current.time))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
+      </section>}
+      {panels.MACD && <section className="terminal-indicator" aria-label="MACD 指标副图">
+        <div className="terminal-indicator-heading"><b>MACD <small>(12,26,9)</small></b><span style={{ color: '#ebedf1' }}>DIF <em>{number(currentMACD?.dif)}</em></span><span style={{ color: '#f1d55c' }}>DEA <em>{number(currentMACD?.dea)}</em></span><span className={(currentMACD?.histogram ?? 0) >= 0 ? 'terminal-up' : 'terminal-down'}>MACD <em>{number(currentMACD?.histogram)}</em></span></div><div ref={macdRef} data-testid="macd-pane" />
+      </section>}
+      {panels.KDJ && <section className="terminal-indicator" aria-label="KDJ 指标副图">
+        <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{ color: '#ebedf1' }}>K <em>{number(currentKDJ?.k)}</em></span><span style={{ color: '#f1d55c' }}>D <em>{number(currentKDJ?.d)}</em></span><span style={{ color: '#d968e8' }}>J <em>{number(currentKDJ?.j)}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
+      </section>}
+      <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根日线' : indicators.expanded ? '均线多头展开' : '均线结构观察中'}</span><span>{candles.length} 根日线 · 拖动平移 / 滚轮缩放</span></div>
+      <details className="terminal-method"><summary>交叉和展开标记的口径</summary><p>金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 个交易日前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；原有五线模型仍使用 MA5/10/20/60/120。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。</p></details>
+    </>}
+  </div>;
 }

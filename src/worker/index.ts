@@ -1,3 +1,4 @@
+import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
@@ -70,9 +71,9 @@ async function alphaVantage(symbol:string,key:string):Promise<{candles:Candle[];
 }
 async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  const symbol=normalizeSymbol(symbolRaw);if(!validSymbol(symbol))throw new Error('Invalid ticker');
- const cn=/^\d{6}\.(SH|SZ)$/.test(symbol);
+ const cn=/^\d{6}\.(SH|SZ|BJ)$/.test(symbol);
  const known=CATALOG.find(c=>c.symbol===symbol);
- let source:{candles:Candle[];url:string}|null=null,provider='',notice='',failure='';
+ let source:{candles:Candle[];url:string;name?:string}|null=null,provider='',notice='',failure='';
  // Prefer licensed, auditable price-history APIs. Never suggest unlicensed feeds are guaranteed.
  if(env.FMP_API_KEY){
   try{
@@ -92,7 +93,7 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
    notice='免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。';
   }catch(e){failure+=' Alpha Vantage: '+(e instanceof Error?e.message:String(e));}
  }
- if(!source&&cn){
+ if(!source&&cn&&!symbol.endsWith('.BJ')){
   try{
    source=await tencentAshares(symbol);
    provider='腾讯财经公开日线（非授权接口，前复权）';
@@ -120,7 +121,7 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  const candles=validateDailyBars(source.candles);
  if(candles.length<2)throw new Error('Source returned insufficient valid candles for '+symbol);
  const last=candles.at(-1)?.close??null,previous=candles.at(-2)?.close??null;
- return {symbol,displaySymbol:symbol,name:known?.name??symbol,exchange:known?.exchange??(cn?'CN':'US'),currency:cn?'CNY':'USD',
+ return {symbol,displaySymbol:symbol,name:known?.name??source.name??symbol,exchange:known?.exchange??(cn?'CN':'US'),currency:cn?'CNY':'USD',
   candles,last,previous,change:last!==null&&previous!==null?last-previous:null,changePercent:last!==null&&previous?((last/previous)-1)*100:null,
   asOf:candles.at(-1)?.time??null,delayed:true,provider,sourceUrl:source.url,notice};
 }
@@ -350,8 +351,14 @@ async function handle(req:Request,env:Env):Promise<Response>{
   news:'Google News / BBC / CNBC / GDELT',filings:'SEC EDGAR (contact header required)',earnings:'FMP (optional key)'},mode:'research-grade'});
  if(p==='/api/catalog')return json({items:CATALOG,sectors:SECTORS});
  if(p==='/api/search'){
-  const q=(url.searchParams.get('q')||'').slice(0,80),local=searchLocal(q);
-  if(!q.trim()||!env.TWELVE_DATA_API_KEY)return json({items:local});
+  const q=(url.searchParams.get('q')||'').slice(0,80);
+  let local=searchLocal(q);
+  if(!q.trim())return json({items:local});
+  if(/[\u3400-\u9fff]|\d{3}/.test(q)){
+   try{local=mergeSearch(local,await cached('search:cn:'+q,300,()=>searchChineseMarket(q)));}
+   catch{/* Keep code entry and the local catalog available if search fails. */}
+  }
+  if(!env.TWELVE_DATA_API_KEY)return json({items:local});
   try{
    const api='https://api.twelvedata.com/symbol_search?symbol='+encodeURIComponent(q)+'&apikey='+encodeURIComponent(env.TWELVE_DATA_API_KEY);
    const r=await withTimeout(api,{},5000),data=await r.json() as {data?:Array<{symbol:string;instrument_name:string;exchange:string;country:string}>};
