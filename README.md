@@ -2,8 +2,9 @@
 
 **Personal research desk, not a trading or P&L app.** Follow global events, seven industry catalyst chains, U.S. and A-share daily candles, individual company disclosures, and explainable technical trends — from one screen.
 
-**Mac preview:** https://personal-market-atlas-mac.nzp.workers.dev (moviegoer24 Cloudflare account, D1-backed)
-**Original deployment:** https://personal-market-atlas.nzs.workers.dev (different Cloudflare account; **not automatically updated** by Mac deployment)
+**Production:** https://personal-market-atlas.nzs.workers.dev
+
+This is the only supported deployment. `wrangler.toml` pins the production Worker and Cloudflare account.
 
 ## What is implemented
 
@@ -27,7 +28,7 @@
 5. Yahoo chart (best effort, currently returns 429 from Mac for tested US stocks), Stooq, Eastmoney fallback.
 6. When raw OHLCV is unavailable, official TradingView embeds still provide a reference chart; the local Five-Line model does **not** fabricate a score.
 
-Successful OHLCV responses are persisted as a D1 last-success snapshot. Stale/fallback snapshots carry an explicit notice, provider, fetch timestamp and as-of date. Source rows are normalized, validated and sorted before computing signals.
+When a D1 `DB` binding is configured, successful OHLCV responses are persisted as a last-success snapshot. The current production configuration has no D1 binding. Stale/fallback snapshots carry an explicit notice, provider, fetch timestamp and as-of date. Source rows are normalized, validated and sorted before computing signals.
 
 Before commercial use, negotiate licensed, exchange-entitled data; **do not assume a publicly reachable market API gives redistribution rights**.
 
@@ -35,66 +36,58 @@ Before commercial use, negotiate licensed, exchange-entitled data; **do not assu
 
 - **Frontend:** React + TypeScript + Vite + lightweight-charts, keyboard Cmd/Ctrl+K search, responsive dark UI.
 - **Backend:** Cloudflare Worker static assets + API.
-- **Durable storage:** Cloudflare D1 tables: intel_events, intel_sector_links, intel_scan_runs, market_snapshots.
-- **Cron:** Mac preview scheduled at minute 15 of every hour. Worker pulls multiple RSS/secondary indices and stores real source-linked items; old items update sightings without becoming new events.
+- **Optional durable storage:** Cloudflare D1 tables: intel_events, intel_sector_links, intel_scan_runs, market_snapshots.
+- **Scheduled ingestion:** available when a production D1 DB binding and Cron trigger are configured. Neither is currently configured in production; latest news and market queries remain available on demand.
 - **Security:** no trading execution, no brokerage auth, no private portfolio server-side; all keys are Worker secrets; public article archive only. Watchlist/bookmarks use browser localStorage.
-- **Verification:** deterministic analysis tests, ID stability tests, invalid candle rejection, Mac/Wrangler build + actual D1 repeated-ingestion smoke tests.
+- **Verification:** deterministic analysis tests, ID stability tests, invalid candle rejection, Wrangler build + historical D1 repeated-ingestion smoke tests.
 
-## Develop on Mac
+## Develop and deploy
 
-Requires Node.js 22+ and Wrangler authorization for the intended account.
+Requires Node.js 22+ on Windows, macOS or Linux.
 
-\`\`\`bash
+```bash
 git clone https://github.com/yaohuangguan/personal-trader-dashboard.git
 cd personal-trader-dashboard
 npm ci
-npm run build
 npm test
+npm run dev
+```
 
-# Mac D1 already exists; initialize other environments with their own D1 ID.
-npm run db:migrate:mac
-npm run dev:mac
-\`\`\`
+Deploy the single production Worker:
 
-Mac staging account's database ID is in \`wrangler.mac.toml\`. The default \`wrangler.toml\` deliberately doesn't reference a cross-account D1. Do not copy that Mac database ID into a Windows-account deployment. Create its own D1 and set the \`DB\` binding there.
+```bash
+npx wrangler login
+npx wrangler whoami
+npm run deploy
+```
 
-To deploy Mac preview:
-
-\`\`\`bash
-npm run deploy:mac
-\`\`\`
+The account pinned in `wrangler.toml` owns `personal-market-atlas.nzs.workers.dev`. Use a login with access to that account on every computer. The separate Mac preview Worker was retired on 2026-10-25; its deployment config and npm scripts have been removed.
 
 ### Secrets
 
-\`\`\`bash
-npx wrangler secret put FMP_API_KEY --config wrangler.mac.toml
-npx wrangler secret put TWELVE_DATA_API_KEY --config wrangler.mac.toml
-npx wrangler secret put SEC_USER_AGENT --config wrangler.mac.toml
-# optional: enable the protected manual scan endpoint
-npx wrangler secret put INGEST_SECRET --config wrangler.mac.toml
-\`\`\`
+Configure only the features you need:
 
-Use only the secrets you actually need; never check any tokens into Git or print them in logs. **SEC_USER_AGENT** must contain legitimate organization/application identity and contact email. Its omission leaves US official filing features explicitly unavailable.
+```bash
+npx wrangler secret put FMP_API_KEY
+npx wrangler secret put TWELVE_DATA_API_KEY
+npx wrangler secret put SEC_USER_AGENT
+# Optional protected manual ingestion endpoint, after configuring D1:
+npx wrangler secret put INGEST_SECRET
+```
 
-A private-use dashboard should be placed behind Cloudflare Access before adding any real personal portfolio data or accounts. This repo currently stores no private holdings in the cloud.
+Keep credentials out of Git and logs. `SEC_USER_AGENT` must contain legitimate application identity and a contact email.
 
-### Manual / local verification of ingestion
+### Optional event archive
 
-\`\`\`bash
-npm run db:migrate:local:mac
-npx wrangler dev --config wrangler.mac.toml --port 8789
-curl http://127.0.0.1:8789/cdn-cgi/local/scheduled
-curl http://127.0.0.1:8789/api/intelligence/summary
-# trigger it again: same articles must have new_events=0
-\`\`\`
+Create a D1 database in the production account and add its `DB` binding to `wrangler.toml` before applying `migrations/` or enabling scheduled ingestion. The retired preview's database belongs to another account and is not a production binding. Its data has not been migrated or deleted.
 
-If an administrator configures \`INGEST_SECRET\`, the cloud-side manual endpoint is \`POST /api/admin/ingest\` with \`Authorization: Bearer <secret>\`. Without a strong secret (24+ bytes), that endpoint remains disabled. Scheduled cron does **not** require the manual secret.
+When a D1 binding and a local database are configured, run `npx wrangler dev --test-scheduled`, invoke `/cdn-cgi/handler/scheduled`, and verify `/api/intelligence/summary`. Repeating an unchanged scan should add no new events. The cloud manual endpoint is `POST /api/admin/ingest`; it requires `INGEST_SECRET` and bearer authorization.
 
 ## Methodology and audit standard
 
 - **Five-Line Blossom:** MA5/10/20/60/120 rising, bullish order, last close above MA5, MACD histogram positive. Requires 121+ daily bars. This is a heuristic observation state and not a backtested alpha or win probability.
 - **Volume–Price–Time–Space:** 20-day relative volume, MA price structure, days above MA20, 120-day range/breakout and ATR risk context. Each dimension shows evidence instead of a naked buy/sell verdict.
-- **News -> Order -> Revenue -> Profit:** media headlines start with evidence stage \`media_lead\`. Primary validation and investment conclusions require human inspection of filings; this version never marks orders or earnings "verified" merely because a story repeats.
+- **News -> Order -> Revenue -> Profit:** media headlines start with evidence stage `media_lead`. Primary validation and investment conclusions require human inspection of filings; this version never marks orders or earnings "verified" merely because a story repeats.
 - **Historical truth:** source URLs, timestamps, observed dates, provider labels and feed warnings remain visible. Missing data is labeled, not replaced with demos.
 
 ## Next engineering decisions
@@ -111,14 +104,14 @@ Market Atlas now uses an integrated reader rather than opening an external websi
 
 - News headlines, bookmarks, company news and historical event timelines all open the **same site-local reader** with publisher/source attribution, timestamp and source-provided RSS excerpt. The source may not license full-text redistribution: when the source provides no synopsis, the reader **plainly states that no content is available** instead of silently fetching and republishing a copyrighted article.
 - For US corporate filings, the app can retrieve short HTML/text extracts from a validated SEC filing document matching the official submission index, with the SEC User-Agent configured. Report typography/tables may be incomplete. When the contact header is missing, the reader displays an unavailability explanation.
-- For A-share disclosures, the existing Eastmoney document index and text extract remain in-app. PDF attachments load through **same-origin** \`GET /api/announcement-pdf?code=AN...\`; the Worker resolves attachments itself, allowlists \`pdf.dfcfw.com\`, validates magic bytes and enforces a 12 MB limit. No arbitrary fetch URL is accepted.
+- For A-share disclosures, the existing Eastmoney document index and text extract remain in-app. PDF attachments load through **same-origin** `GET /api/announcement-pdf?code=AN...`; the Worker resolves attachments itself, allowlists `pdf.dfcfw.com`, validates magic bytes and enforces a 12 MB limit. No arbitrary fetch URL is accepted.
 - Charts are still powered by market-data providers, and fallback TradingView embeds may load third-party resources; application-controlled links do not navigate away. Commercial use requires appropriate market-data redistribution rights.
 
 The site is now an installable **Progressive Web App** (PWA): manifest, installable 192/512 and maskable icons, Apple touch icon, standalone display, service worker precache, offline app-shell support, install instructions, update prompt and offline status. On iOS, use **Safari → Share → Add to Home Screen**. Chrome/Edge desktop and Android may show an install button. An installation is not a native App Store application.
 
-**Offline behavior is intentionally conservative:** UI assets and on-device saved articles are accessible as stored; API calls are \`NetworkOnly\` to ensure the UI does not silently claim stale quotes and articles are live. Opening a detail page with no source-provided excerpt will not manufacture a summary. Chrome third-party widgets and official PDF assets require connectivity.
+**Offline behavior is intentionally conservative:** UI assets and on-device saved articles are accessible as stored; API calls are `NetworkOnly` to ensure the UI does not silently claim stale quotes and articles are live. Opening a detail page with no source-provided excerpt will not manufacture a summary. Chrome third-party widgets and official PDF assets require connectivity.
 
-To test locally, run \`npm run build\` and inspect \`dist/manifest.webmanifest\`, \`dist/sw.js\`, offline service-worker behavior and the \`/api/announcement-pdf\` response. Tests assert that app-owned article elements do not open new tabs.
+To test locally, run `npm run build` and inspect `dist/manifest.webmanifest`, `dist/sw.js`, offline service-worker behavior and the `/api/announcement-pdf` response. Tests assert that app-owned article elements do not open new tabs.
 
 ## Configurable chart terminal
 

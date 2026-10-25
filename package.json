@@ -9,11 +9,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "preview": "wrangler dev --port 8787",
-    "deploy": "npm run build && wrangler deploy",
-    "dev:mac": "npm run build && concurrently -k \"wrangler dev --config wrangler.mac.toml --port 8787\" \"vite --host 0.0.0.0\"",
-    "deploy:mac": "npm run build && wrangler deploy --config wrangler.mac.toml",
-    "db:migrate:mac": "wrangler d1 migrations apply market-atlas-intelligence --config wrangler.mac.toml --remote",
-    "db:migrate:local:mac": "wrangler d1 migrations apply market-atlas-intelligence --config wrangler.mac.toml --local"
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "lightweight-charts": "^4.2.3",
