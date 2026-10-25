@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuotes, parseTickPage, num } from '../src/worker/desk-data';
+import { parseQuotes, parseTickPage, num, peers } from '../src/worker/desk-data';
 import { marketSession, evaluateWatchRules } from '../src/shared/desk-types';
 import { deskRoute } from '../src/worker/desk-api';
 
@@ -50,4 +50,24 @@ test('desk endpoints reject arbitrary URLs, unbounded batches and unsafe board p
   assert.equal((await call('/api/desk/intraday?symbol=NVDA'))!.status, 400);
   assert.equal(await call('/api/market?symbol=NVDA'), null);
   assert.equal((await deskRoute(new Request('https://atlas.example/api/desk/flash', { method: 'POST' })))!.status, 405);
+});
+
+
+test('a failed primary sector list uses the documented delayed host and exposes the delay', async () => {
+  const original = globalThis.fetch;
+  const visited: string[] = [];
+  globalThis.fetch = async input => {
+    const url = String(input); visited.push(url);
+    if (new URL(url).hostname === 'push2.eastmoney.com') return new Response('', { status: 502 });
+    return Response.json({ data: { diff: [{ f12: '300545', f13: 0, f14: '联得装备', f2: 23.11, f3: 2.71, f62: null }] } });
+  };
+  try {
+    const result = await peers('BK1335');
+    assert.equal(result.items[0].symbol, '300545.SZ');
+    assert.equal(result.items[0].mainNet, null);
+    assert.equal(result.delayMinutes, 15);
+    assert.match(result.source, /15分钟延迟/);
+    assert.equal(new URL(result.sourceUrl).hostname, 'push2delay.eastmoney.com');
+    assert.deepEqual(visited.map(url => new URL(url).hostname), ['push2.eastmoney.com', 'push2delay.eastmoney.com']);
+  } finally { globalThis.fetch = original; }
 });

@@ -27,20 +27,31 @@ export function chineseSymbol(input: string) {
   if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) throw new Error('该公开接口支持沪深北证券代码；其他市场保留已配置的行情源。');
   return { symbol, code: symbol.slice(0, 6), wire: symbol.slice(-2).toLowerCase() + symbol.slice(0, 6), secid: (symbol.endsWith('.SH') ? '1.' : '0.') + symbol.slice(0, 6) };
 }
-async function request(url: string) {
-  const response = await fetch(url, { headers: { 'User-Agent': UA, Referer: url.includes('eastmoney') ? 'https://quote.eastmoney.com/' : 'https://gu.qq.com/' }, signal: AbortSignal.timeout(9000) });
+async function request(url: string, timeout = 9000) {
+  const response = await fetch(url, { headers: { 'User-Agent': UA, Referer: url.includes('eastmoney') ? 'https://quote.eastmoney.com/' : 'https://gu.qq.com/' }, signal: AbortSignal.timeout(timeout) });
   if (!response.ok) throw new Error('数据源 HTTP ' + response.status);
   return response;
 }
 let nextEastmoneyStart = 0;
-async function eastmoney(url: string) {
+async function eastmoney(url: string, timeout = 9000) {
   // Keep the wait in the calling request's context. A cross-request promise
   // queue can retain a timer after its owner request has already completed.
   const delay = Math.max(0, nextEastmoneyStart - Date.now());
   if (delay > 4500) throw new Error('数据源访问保护中，请稍后刷新');
   nextEastmoneyStart = Date.now() + delay + 900;
   if (delay) await new Promise<void>(resolve => setTimeout(resolve, delay));
-  return request(url);
+  return request(url, timeout);
+}
+async function listData(url: string) {
+  let failure: unknown;
+  for (const endpoint of [url, url.replace('https://push2.eastmoney.com/', 'https://push2delay.eastmoney.com/')]) {
+    try {
+      const payload = await (await eastmoney(endpoint, 4000)).json() as { data?: { diff?: unknown } };
+      if (!payload.data?.diff) throw new Error('板块列表源暂未返回数据');
+      return { data: payload.data, sourceUrl: endpoint, delayMinutes: endpoint === url ? 0 : 15 };
+    } catch (error) { failure = error; }
+  }
+  throw failure;
 }
 function emUrl(path: string, parameters: Record<string, string>) { return 'https://push2.eastmoney.com/api/qt/' + path + '?' + new URLSearchParams({ fltt: '2', invt: '2', ...parameters }); }
 const stamp = (source: string, sourceUrl: string): SourceStamp => ({ source, sourceUrl, fetchedAt: new Date().toISOString(), available: true });
@@ -142,16 +153,14 @@ export async function sectors(raw: string) {
 export async function peers(code: string) {
   if (!/^BK\d{4,6}$/.test(code)) throw new Error('无效板块代码');
   const url = emUrl('clist/get', { fs: 'b:' + code, pn: '1', pz: '16', po: '1', np: '1', fid: 'f3', fields: 'f2,f3,f12,f13,f14,f62' });
-  const data = await (await eastmoney(url)).json() as { data?: { diff?: unknown } };
-  if (!data.data) throw new Error('板块成分暂不可用');
+  const data = await listData(url);
   const items: Peer[] = rowList(data.data.diff).filter(r => /^\d{6}$/.test(String(r.f12))).map(r => ({ symbol: String(r.f12) + (Number(r.f13) === 1 ? '.SH' : /^(4|8|92)/.test(String(r.f12)) ? '.BJ' : '.SZ'), name: String(r.f14 || ''), price: num(r.f2), changePercent: num(r.f3), mainNet: num(r.f62) }));
-  return { ...stamp('东方财富板块成分', url), code, items };
+  return { ...stamp('东方财富板块成分' + (data.delayMinutes ? '（约15分钟延迟）' : ''), data.sourceUrl), delayMinutes: data.delayMinutes, code, items };
 }
 export async function ranks() {
   const url = emUrl('clist/get', { fs: 'm:90+t:2', pn: '1', pz: '20', po: '1', np: '1', fid: 'f3', fields: 'f12,f14,f3,f62,f128,f140,f141' });
-  const data = await (await eastmoney(url)).json() as { data?: { diff?: unknown } };
-  if (!data.data) throw new Error('行业排行暂不可用');
-  return { ...stamp('东方财富行业涨幅排行', url), items: rowList(data.data.diff).map(mapSector) };
+  const data = await listData(url);
+  return { ...stamp('东方财富行业涨幅排行' + (data.delayMinutes ? '（约15分钟延迟）' : ''), data.sourceUrl), delayMinutes: data.delayMinutes, items: rowList(data.data.diff).map(mapSector) };
 }
 export async function fundFlow(raw: string) {
   const { symbol, secid } = chineseSymbol(raw);
