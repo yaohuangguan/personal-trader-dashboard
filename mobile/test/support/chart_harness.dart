@@ -71,6 +71,10 @@ Future<void> exerciseChart(
   await tester.pumpAndSettle();
   final rect = tester.getRect(target), initial = painter(tester);
   final drag = await tester.startGesture(Offset(rect.center.dx, rect.top + 80));
+  // Establish horizontal drag intent before checking subpixel slow movement.
+  // Native integration frames use wall time; otherwise a very slow initial motion is a long press.
+  await drag.moveBy(const Offset(24, 0));
+  await tester.pump();
   for (var i = 1; i <= 48; i++) {
     await drag.moveBy(const Offset(1, 0));
     await tester.pump(const Duration(milliseconds: 16));

@@ -1040,5 +1040,8 @@
   "回到最新": "Return to latest",
   "副图布局": "Indicator layout",
   "横竖屏切换": "Rotate chart",
-  "关闭全屏": "Close fullscreen"
+  "关闭全屏": "Close fullscreen",
+  "全部副图 · 可纵向滚动": "All indicators · scroll vertically",
+  "自定义颜色": "Custom color",
+  "请输入 #RRGGBB 色值": "Enter a #RRGGBB color"
 }

@@ -61,15 +61,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('副图布局'), findsOneWidget);
     expect(
-      painter(tester).volume && painter(tester).macd && painter(tester).kdj,
+      painter(tester).volume && painter(tester).macd && !painter(tester).kdj,
       isTrue,
     );
     await tester.tap(find.byTooltip('副图布局'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('MACD').last);
+    await tester.tap(find.text('VOL + MACD').last);
     await tester.pumpAndSettle();
     expect(painter(tester).macd, isTrue);
-    expect(painter(tester).volume || painter(tester).kdj, isFalse);
+    expect(painter(tester).volume, isTrue);
+    expect(painter(tester).kdj, isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('均线参数'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(1), '10');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.ensureVisible(find.byTooltip('自定义颜色').first);
+    await tester.tap(find.byTooltip('自定义颜色').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, '#F4F5F7'),
+      '#91ABC0',
+    );
+    await tester.tap(find.text('应用参数').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('应用参数'));
+    await tester.tap(find.text('应用参数'));
+    await tester.pumpAndSettle();
+    expect(painter(tester).data.mas[1].period, 10);
+    expect(painter(tester).data.mas[0].color, const Color(0xff91abc0));
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('关闭全屏'));
     await tester.pumpAndSettle();

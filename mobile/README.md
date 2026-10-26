@@ -62,6 +62,25 @@ The first release targets iOS. GitHub Actions validates formatting, analysis and
 
 The iOS-focused chart pass adds accumulated slow dragging in the natural direction, finger-anchored pinch zoom, a crosshair that stays readable after lift, haptic selection feedback, VoiceOver candle adjustment, double-tap reset and a return-to-latest control. Source refreshes preserve historical date anchors. MA settings changed in fullscreen are restored to the stock page. Painting is isolated from unrelated quote refreshes.
 
-Fullscreen follows device rotation and has an explicit rotation button. Landscape fits all three subpanels and also offers individual VOL / MACD / KDJ focus layouts. Default eight MA colors and adjustable periods are retained. Indicator readouts follow the selected candle, including the current candle before the first touch.
+Fullscreen follows device rotation and has an explicit rotation button. Landscape defaults to volume plus MACD, switches to volume plus KDJ, and offers an all-indicator view with vertical scrolling at a readable minimum height. Portrait retains all three subpanels together. Default eight MA colors and adjustable periods are retained. Indicator readouts follow the selected candle, including the current candle before the first touch.
 
 `flutter test` covers slow drags, zoom anchoring, new listings, preserved refresh anchors, crosshair persistence and landscape subpanel selection. The iOS CI additionally boots an actual iPhone Simulator runtime and runs `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d <simulator-id>`, including MA editing and portrait/landscape screenshots. Integration fixtures are deterministic test candles, not production prices. Production interfaces continue to use source-attributed live APIs.
+
+## TestFlight signing and upload
+
+The `iOS TestFlight release` workflow is manual. `upload=false` (default) builds and saves a signed IPA for inspection. `upload=true` additionally submits that IPA to App Store Connect; it does not publish to the App Store or invite testers. The normal iOS CI never submits an app.
+
+Register **space.ps6.marketAtlas** and create its Market Atlas app record in your Apple Developer / App Store Connect team. In the GitHub **testflight** environment, configure:
+
+| Secret | Value |
+| --- | --- |
+| IOS_DISTRIBUTION_P12_BASE64 | Base64 of an exported Apple Distribution certificate **with its private key** |
+| IOS_DISTRIBUTION_P12_PASSWORD | Password used when exporting the P12 |
+| IOS_PROVISION_PROFILE_BASE64 | Base64 of the matching App Store distribution `.mobileprovision` |
+| ASC_KEY_ID | App Store Connect API key ID |
+| ASC_ISSUER_ID | App Store Connect API issuer ID |
+| ASC_PRIVATE_KEY | The private `.p8` key contents; needed only when upload is enabled |
+
+The workflow extracts the team ID from the profile, rejects a different bundle ID, expired/development/ad-hoc/enterprise profiles, creates an ephemeral signing keychain, and builds with a unique build number. It never commits signing material to the repository. Configure the secrets through GitHub Settings, not in a chat message. The already connected Mac currently has an Apple Development identity; that is separate from the distribution signing material needed here.
+
+After a successful explicit upload, wait for Apple's processing, then select the build for your internal TestFlight group in App Store Connect. External groups may require beta review. See [Apple upload documentation](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds) and [Flutter's iOS release guide](https://docs.flutter.dev/deployment/ios).

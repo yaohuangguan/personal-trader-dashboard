@@ -290,6 +290,7 @@ class _StockPageState extends State<StockPage> {
                             )
                           else if (timeframe == 'day')
                             MarketChart(
+                              name: name,
                               bars: bars,
                               symbol: widget.symbol,
                               events: rows(obj(data['guide'])['events']),
@@ -315,6 +316,7 @@ class _StockPageState extends State<StockPage> {
                               builder: (r) => Column(
                                 children: [
                                   MarketChart(
+                                    name: name,
                                     bars: rows(r['candles'])
                                         .map(Bar.fromJson)
                                         .toList(),

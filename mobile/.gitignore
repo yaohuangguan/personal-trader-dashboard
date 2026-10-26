@@ -54,3 +54,7 @@ app.*.map.json
 **/*.jks
 **/*.keystore
 
+
+/ios/ExportOptions.generated.plist
+/tool/__pycache__/
+

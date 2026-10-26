@@ -134,5 +134,5 @@ All symbols with valid OHLCV data share the same chart component; it is independ
 
 ## Flutter mobile app
 
-The native Android / iOS client is in [mobile](mobile/README.md), with mobile navigation, touch charts, the same guide-analysis API and full-market signal service. Firebase / APNs delivery is optional and disabled until configured. CI builds an Android sideload preview and validates an unsigned iOS app; store distribution requires your own signing.
+The iOS-first Flutter client is in [mobile](mobile/README.md), with mobile navigation, touch charts, the same guide-analysis API and full-market signal service. Firebase / APNs delivery is optional and disabled until configured. First-phase CI validates an unsigned iOS app and iPhone Simulator gestures; TestFlight distribution uses the optional manual signing workflow. Android builds are disabled.
 

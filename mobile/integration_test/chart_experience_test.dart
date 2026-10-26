@@ -30,12 +30,26 @@ void main() {
     await Future<void>.delayed(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.byTooltip('副图布局'), findsOneWidget);
-    await binding.takeScreenshot('ios-chart-landscape-all');
+    await binding.takeScreenshot('ios-chart-landscape-default');
     await tester.tap(find.byTooltip('副图布局'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('MACD').last);
+    await tester.tap(find.text('全部副图 · 可纵向滚动'));
     await tester.pumpAndSettle();
-    expect(painter(tester).volume || painter(tester).kdj, isFalse);
+    await binding.takeScreenshot('ios-chart-landscape-all-upper');
+    await tester.drag(
+      find.byKey(const ValueKey('candlestick-canvas')).last,
+      const Offset(0, -180),
+    );
+    await tester.pumpAndSettle();
+    await binding.takeScreenshot('ios-chart-landscape-all-lower');
+    await tester.ensureVisible(find.byTooltip('副图布局'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('副图布局'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VOL + MACD').last);
+    await tester.pumpAndSettle();
+    expect(painter(tester).volume, isTrue);
+    expect(painter(tester).kdj, isFalse);
     await binding.takeScreenshot('ios-chart-landscape-macd');
     await tester.tap(find.byTooltip('均线参数'));
     await tester.pumpAndSettle();
@@ -58,5 +72,5 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     s.dispose();
     prices.dispose();
-  });
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }

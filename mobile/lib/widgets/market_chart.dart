@@ -18,12 +18,14 @@ class MarketChart extends StatefulWidget {
     required this.bars,
     required this.symbol,
     this.unit = 'day',
+    this.name = '',
     this.volumeUnit = '手',
     this.events = const [],
     this.expanded = false,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
+  final String name;
   final List<Json> events;
   final bool expanded;
   @override
@@ -42,12 +44,12 @@ class _MarketChartState extends State<MarketChart> {
   bool get compact =>
       widget.expanded &&
       MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
-  String paneMode = 'all';
+  String paneMode = 'macd';
   int? hover;
   bool volume = true, macd = true, kdj = true, markers = true;
   final Map<int, Offset> pointers = {};
   double? pinchDistance;
-  int pinchCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -133,6 +135,78 @@ class _MarketChartState extends State<MarketChart> {
     viewport.reset(days);
     hover = null;
   });
+  Future<Color?> customColor(BuildContext context, Color initial) async {
+    final controller = TextEditingController(
+      text:
+          '#${initial.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+    );
+    String? error;
+    ModalRoute<dynamic>? editorRoute;
+    final result = await showDialog<Color>(
+      context: context,
+      builder: (ctx) {
+        editorRoute = ModalRoute.of(ctx);
+        return StatefulBuilder(
+          builder: (ctx, update) => AlertDialog(
+            scrollable: true,
+            title: Text(tr(ctx, '自定义颜色')),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  maxLength: 7,
+                  autocorrect: false,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: 'HEX',
+                    hintText: '#RRGGBB',
+                    errorText: error,
+                  ),
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: defaultMa
+                      .map(
+                        (m) => IconButton(
+                          onPressed: () => controller.text =
+                              '#${m.color.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+                          icon: Icon(Icons.circle, color: m.color),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(tr(ctx, '取消')),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final value = controller.text.trim();
+                  if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value)) {
+                    update(() => error = tr(ctx, '请输入 #RRGGBB 色值'));
+                    return;
+                  }
+                  Navigator.pop(
+                    ctx,
+                    Color(int.parse('FF${value.substring(1)}', radix: 16)),
+                  );
+                },
+                child: Text(tr(ctx, '应用参数')),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    await editorRoute?.completed;
+    controller.dispose();
+    return result;
+  }
+
   Future<void> settings() async {
     final periods = mas
             .map((m) => TextEditingController(text: '${m.period}'))
@@ -140,120 +214,140 @@ class _MarketChartState extends State<MarketChart> {
         enabled = mas.map((m) => m.enabled).toList(),
         colors = mas.map((m) => m.color).toList();
     String? error;
+    ModalRoute<dynamic>? editorRoute;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            18,
-            20,
-            MediaQuery.viewInsetsOf(ctx).bottom + 22,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  tr(ctx, '均线参数'),
-                  style: Theme.of(ctx).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                ...List.generate(
-                  8,
-                  (i) => Row(
-                    children: [
-                      Checkbox(
-                        value: enabled[i],
-                        onChanged: (v) => update(() => enabled[i] = v!),
-                      ),
-                      SizedBox(width: 38, child: Text('MA${i + 1}')),
-                      Expanded(
-                        child: TextField(
-                          controller: periods[i],
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(labelText: tr(ctx, '周期')),
+      builder: (ctx) {
+        editorRoute = ModalRoute.of(ctx);
+        return StatefulBuilder(
+          builder: (ctx, update) => Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              18,
+              20,
+              MediaQuery.viewInsetsOf(ctx).bottom + 22,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    tr(ctx, '均线参数'),
+                    style: Theme.of(ctx).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  ...List.generate(
+                    8,
+                    (i) => Row(
+                      children: [
+                        Checkbox(
+                          value: enabled[i],
+                          onChanged: (v) => update(() => enabled[i] = v!),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      DropdownButton<Color>(
-                        value: colors[i],
-                        items: {...defaultMa.map((m) => m.color), colors[i]}
-                            .map(
-                              (color) => DropdownMenuItem(
-                                value: color,
-                                child: Container(
-                                  width: 30,
-                                  height: 12,
-                                  color: color,
+                        SizedBox(width: 38, child: Text('MA${i + 1}')),
+                        Expanded(
+                          child: TextField(
+                            controller: periods[i],
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: tr(ctx, '周期'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        DropdownButton<Color>(
+                          value: colors[i],
+                          items: {...defaultMa.map((m) => m.color), colors[i]}
+                              .map(
+                                (color) => DropdownMenuItem(
+                                  value: color,
+                                  child: Container(
+                                    width: 30,
+                                    height: 12,
+                                    color: color,
+                                  ),
                                 ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (c) => update(() => colors[i] = c!),
+                              )
+                              .toList(),
+                          onChanged: (c) => update(() => colors[i] = c!),
+                        ),
+                        IconButton(
+                          tooltip: tr(ctx, '自定义颜色'),
+                          icon: const Icon(Icons.palette_outlined),
+                          onPressed: () async {
+                            final color = await customColor(ctx, colors[i]);
+                            if (color != null && ctx.mounted) {
+                              update(() => colors[i] = color);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (error != null)
+                    Text(error!, style: const TextStyle(color: up)),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => update(() {
+                          for (var i = 0; i < 8; i++) {
+                            periods[i].text = '${defaultMa[i].period}';
+                            enabled[i] = true;
+                            colors[i] = defaultMa[i].color;
+                          }
+                        }),
+                        child: Text(tr(ctx, '恢复默认')),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () {
+                          final values = periods
+                              .map((c) => int.tryParse(c.text))
+                              .toList();
+                          if (values.any(
+                                (v) => v == null || v < 1 || v > 500,
+                              ) ||
+                              values.indexed
+                                      .where((r) => enabled[r.$1])
+                                      .map((r) => r.$2)
+                                      .toSet()
+                                      .length !=
+                                  enabled.where((v) => v).length) {
+                            update(
+                              () =>
+                                  error = tr(ctx, '周期须为 1–500 的整数，已启用的周期不能重复。'),
+                            );
+                            return;
+                          }
+                          setState(() {
+                            mas = List.generate(
+                              8,
+                              (i) => MaLine(values[i]!, colors[i], enabled[i]),
+                            );
+                            indicators = IndicatorData(widget.bars, mas);
+                          });
+                          context.read<AtlasStore>().prefs.setString(
+                            'ma',
+                            jsonEncode(mas.map((m) => m.toJson()).toList()),
+                          );
+                          Navigator.pop(ctx);
+                        },
+                        child: Text(tr(ctx, '应用参数')),
                       ),
                     ],
                   ),
-                ),
-                if (error != null)
-                  Text(error!, style: const TextStyle(color: up)),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () => update(() {
-                        for (var i = 0; i < 8; i++) {
-                          periods[i].text = '${defaultMa[i].period}';
-                          enabled[i] = true;
-                          colors[i] = defaultMa[i].color;
-                        }
-                      }),
-                      child: Text(tr(ctx, '恢复默认')),
-                    ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: () {
-                        final values = periods
-                            .map((c) => int.tryParse(c.text))
-                            .toList();
-                        if (values.any((v) => v == null || v < 1 || v > 500) ||
-                            values.indexed
-                                    .where((r) => enabled[r.$1])
-                                    .map((r) => r.$2)
-                                    .toSet()
-                                    .length !=
-                                enabled.where((v) => v).length) {
-                          update(
-                            () => error = tr(ctx, '周期须为 1–500 的整数，已启用的周期不能重复。'),
-                          );
-                          return;
-                        }
-                        setState(() {
-                          mas = List.generate(
-                            8,
-                            (i) => MaLine(values[i]!, colors[i], enabled[i]),
-                          );
-                          indicators = IndicatorData(widget.bars, mas);
-                        });
-                        context.read<AtlasStore>().prefs.setString(
-                          'ma',
-                          jsonEncode(mas.map((m) => m.toJson()).toList()),
-                        );
-                        Navigator.pop(ctx);
-                      },
-                      child: Text(tr(ctx, '应用参数')),
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
+    await editorRoute?.completed;
     for (final c in periods) {
       c.dispose();
     }
@@ -276,6 +370,7 @@ class _MarketChartState extends State<MarketChart> {
         builder: (_) => FullscreenChart(
           bars: widget.bars,
           symbol: widget.symbol,
+          name: widget.name,
           unit: widget.unit,
           volumeUnit: widget.volumeUnit,
           events: widget.events,
@@ -305,14 +400,12 @@ class _MarketChartState extends State<MarketChart> {
       );
     }
     final c = current!, idx = hover ?? end - 1;
-    final drawVolume = compact
-            ? paneMode == 'all' || paneMode == 'vol'
-            : volume,
+    final drawVolume = compact ? true : volume,
         drawMacd = compact ? paneMode == 'all' || paneMode == 'macd' : macd,
         drawKdj = compact ? paneMode == 'all' || paneMode == 'kdj' : kdj;
     final height = compact
         ? math.max(
-            190.0,
+            paneMode == 'all' ? 460.0 : 190.0,
             MediaQuery.sizeOf(context).height -
                 MediaQuery.paddingOf(context).vertical -
                 138,
@@ -397,14 +490,17 @@ class _MarketChartState extends State<MarketChart> {
                   tooltip: tr(context, '副图布局'),
                   initialValue: paneMode,
                   onSelected: (v) => setState(() => paneMode = v),
-                  itemBuilder: (_) => const [
+                  itemBuilder: (_) => [
                     PopupMenuItem(
                       value: 'all',
-                      child: Text('VOL + MACD + KDJ'),
+                      child: Text(tr(context, '全部副图 · 可纵向滚动')),
                     ),
                     PopupMenuItem(value: 'vol', child: Text('VOL')),
-                    PopupMenuItem(value: 'macd', child: Text('MACD')),
-                    PopupMenuItem(value: 'kdj', child: Text('KDJ')),
+                    PopupMenuItem(
+                      value: 'macd',
+                      child: const Text('VOL + MACD'),
+                    ),
+                    PopupMenuItem(value: 'kdj', child: const Text('VOL + KDJ')),
                   ],
                   icon: const Icon(Icons.view_stream_outlined),
                 ),
@@ -471,7 +567,7 @@ class _MarketChartState extends State<MarketChart> {
           runSpacing: 6,
           children: [
             Text(
-              '${widget.expanded ? '${widget.symbol} · ' : ''}${c.time}',
+              '${widget.expanded ? '${widget.name.isEmpty ? '' : '${widget.name} · '}${widget.symbol} · ' : ''}${c.time}',
               style: const TextStyle(fontSize: 13, color: muted),
             ),
             for (final pair in [
@@ -501,7 +597,6 @@ class _MarketChartState extends State<MarketChart> {
               if (pointers.length == 2) {
                 pinchDistance =
                     (pointers.values.first - pointers.values.last).distance;
-                pinchCount = count;
                 viewport.beginPinch(
                   pinchDistance!,
                   ((pointers.values.first.dx + pointers.values.last.dx) / 2 -
@@ -652,12 +747,14 @@ class FullscreenChart extends StatefulWidget {
     super.key,
     required this.bars,
     required this.symbol,
+    this.name = '',
     required this.unit,
     required this.volumeUnit,
     required this.events,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
+  final String name;
   final List<Json> events;
   @override
   State<FullscreenChart> createState() => _FullscreenChartState();
@@ -737,6 +834,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
           child: MarketChart(
             bars: bars,
             symbol: widget.symbol,
+            name: widget.name,
             unit: widget.unit,
             volumeUnit: widget.volumeUnit,
             events: events,
@@ -945,11 +1043,13 @@ class ChartPainter extends CustomPainter {
         volumeBars ? amount(max) : max.toStringAsFixed(2),
         Offset(1, top + 18),
       );
-      label(
-        c,
-        volumeBars ? '0' : min.toStringAsFixed(2),
-        Offset(1, top + h - 10),
-      );
+      if (small >= 60) {
+        label(
+          c,
+          volumeBars ? '0' : min.toStringAsFixed(2),
+          Offset(1, top + h - 10),
+        );
+      }
       for (var k = 0; k < values.length; k++) {
         final path = Path();
         var first = true;
