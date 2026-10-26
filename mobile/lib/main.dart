@@ -66,17 +66,33 @@ class AtlasApp extends StatelessWidget {
           title: 'Market Atlas',
           debugShowCheckedModeBanner: false,
           theme: base.copyWith(
-            textTheme: const TextTheme(
-              bodyLarge: TextStyle(fontSize: 18, height: 1.55),
-              bodyMedium: TextStyle(fontSize: 18, height: 1.55),
-              bodySmall: TextStyle(fontSize: 14, height: 1.5),
-              titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-              titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              titleSmall: TextStyle(fontSize: 16),
-              labelLarge: TextStyle(fontSize: 16),
-              labelMedium: TextStyle(fontSize: 14),
-              labelSmall: TextStyle(fontSize: 13),
-            ),
+            textTheme:
+                const TextTheme(
+                  headlineSmall: TextStyle(fontSize: 24, height: 1.4),
+                  headlineMedium: TextStyle(fontSize: 28),
+                  headlineLarge: TextStyle(fontSize: 32),
+                  displaySmall: TextStyle(fontSize: 32),
+                  displayMedium: TextStyle(fontSize: 38),
+                  displayLarge: TextStyle(fontSize: 44),
+                  bodyLarge: TextStyle(fontSize: 18, height: 1.55),
+                  bodyMedium: TextStyle(fontSize: 18, height: 1.55),
+                  bodySmall: TextStyle(fontSize: 14, height: 1.5),
+                  titleLarge: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  titleMedium: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  titleSmall: TextStyle(fontSize: 16),
+                  labelLarge: TextStyle(fontSize: 16),
+                  labelMedium: TextStyle(fontSize: 14),
+                  labelSmall: TextStyle(fontSize: 13),
+                ).apply(
+                  bodyColor: const Color(0xffeeeef4),
+                  displayColor: const Color(0xffeeeef4),
+                ),
           ),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(

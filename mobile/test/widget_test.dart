@@ -163,6 +163,9 @@ void main() {
     await tester.pumpWidget(AtlasApp(store: s, push: native));
     await tester.pumpAndSettle();
     expect(find.text('我的自选'), findsWidgets);
+    final theme = Theme.of(tester.element(find.text('我的自选').first));
+    expect(theme.textTheme.headlineSmall?.color, const Color(0xffeeeef4));
+    expect(theme.textTheme.bodyMedium?.color, const Color(0xffeeeef4));
     await tester.tap(find.text('300545.SZ').first);
     await tester.pumpAndSettle();
     expect(find.text('Test stock'), findsOneWidget);
