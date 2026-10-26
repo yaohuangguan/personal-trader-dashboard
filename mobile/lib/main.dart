@@ -201,6 +201,8 @@ class _AtlasShellState extends State<AtlasShell> {
         toolbarHeight: 46,
         title: Text(
           index == 0 ? 'MARKET ATLAS' : s.t(names[index]),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontSize: 19,
             fontWeight: FontWeight.w700,

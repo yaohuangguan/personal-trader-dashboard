@@ -153,6 +153,7 @@ class _StockPageState extends State<StockPage> {
                   ),
                 ),
                 IconButton(
+                  tooltip: tr(ctx, '关闭'),
                   onPressed: () => Navigator.pop(ctx),
                   icon: const Icon(Icons.close, size: 20),
                 ),
@@ -893,49 +894,13 @@ class _ChipProfileState extends State<ChipProfile> {
             Notice(s.t(historical ? '使用逐日历史换手率' : '备用估算 · 固定最新流通股本')),
             SizedBox(
               height: 250,
-              child: Column(
-                children: histogram
-                    .map(
-                      (r) => Expanded(
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 55,
-                              child: Text(
-                                (histogram.indexOf(r) % 12 == 0)
-                                    ? fixed(r['price'])
-                                    : '',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: muted,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: FractionallySizedBox(
-                                  widthFactor:
-                                      (numOf(r['weight']) ?? 0) / maxWeight,
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(
-                                      vertical: .4,
-                                    ),
-                                    color:
-                                        (numOf(r['price']) ?? 0) <
-                                            (numOf(quote['price']) ??
-                                                bars.last.close)
-                                        ? up
-                                        : down,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
+              width: double.infinity,
+              child: CustomPaint(
+                painter: _ChipHistogramPainter(
+                  histogram,
+                  maxWeight,
+                  numOf(quote['price']) ?? bars.last.close,
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -980,6 +945,58 @@ class _ChipProfileState extends State<ChipProfile> {
       },
     );
   }
+}
+
+class _ChipHistogramPainter extends CustomPainter {
+  const _ChipHistogramPainter(this.histogram, this.maxWeight, this.lastPrice);
+  final List<Json> histogram;
+  final double maxWeight, lastPrice;
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (histogram.isEmpty || maxWeight <= 0) return;
+    const left = 58.0, top = 8.0;
+    final height = size.height - 16,
+        width = math.max(0.0, size.width - left),
+        step = height / histogram.length;
+    for (var i = 0; i < histogram.length; i++) {
+      final r = histogram[i];
+      canvas.drawRect(
+        Rect.fromLTWH(
+          left,
+          top + i * step,
+          width * (numOf(r['weight']) ?? 0) / maxWeight,
+          math.max(.5, step - .5),
+        ),
+        Paint()..color = (numOf(r['price']) ?? 0) < lastPrice ? up : down,
+      );
+    }
+    for (var i = 0; i <= 4; i++) {
+      final index = ((histogram.length - 1) * i / 4).round();
+      final text = TextPainter(
+        text: TextSpan(
+          text: fixed(histogram[index]['price']),
+          style: const TextStyle(fontSize: 13, color: muted),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: left - 6);
+      text.paint(
+        canvas,
+        Offset(
+          0,
+          (top + height * i / 4 - text.height / 2).clamp(
+            0.0,
+            size.height - text.height,
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChipHistogramPainter old) =>
+      old.histogram != histogram ||
+      old.lastPrice != lastPrice ||
+      old.maxWeight != maxWeight;
 }
 
 class StockNews extends StatelessWidget {

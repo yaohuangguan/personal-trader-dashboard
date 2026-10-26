@@ -35,12 +35,12 @@ export class MarketScanner {
   }
   if(action==='configure'){
    const config=body as unknown as ShardConfig;if(!Array.isArray(config.symbols)||config.symbols.length>160||!Number.isInteger(config.index))return json({error:'Invalid shard'},400);
-   const previous=await s.get<ShardConfig>('shard');await s.put('shard',config);
+   const previous=await s.get<ShardConfig>('shard'),same=previous?.index===config.index&&previous.revision===config.revision&&previous.enabled===config.enabled&&previous.symbols.length===config.symbols.length&&previous.symbols.every((symbol,i)=>symbol===config.symbols[i]);if(!same)await s.put('shard',config);
    if(config.enabled&&(!previous?.enabled||previous.revision!==config.revision||!await s.getAlarm()))await s.setAlarm(Date.now()+1000+config.index*300);
-   if(!config.enabled)await s.deleteAlarm();return json({ok:true});
+   if(!config.enabled&&await s.getAlarm())await s.deleteAlarm();return json({ok:true});
   }
   if(action==='report'){
-   await this.state.blockConcurrencyWhile(async()=>{const report=body as unknown as Report,master=await s.get<Master>('master');if(!master||report.revision!==master.revision)return;const reports=await s.get<Record<string,Report>>('reports')||{};reports[String(report.index)]={...report,events:[]};await s.put('reports',reports);const events=await s.get<SignalEvent[]>('events')||[],unique=new Map(events.map(e=>[e.id,e]));for(const e of report.events)if(!unique.has(e.id))unique.set(e.id,e);await s.put('events',[...unique.values()].sort((a,b)=>(b.observedAt||0)-(a.observedAt||0)).slice(0,1000));});return json({ok:true});
+   await this.state.blockConcurrencyWhile(async()=>{const report=body as unknown as Report,master=await s.get<Master>('master');if(!master||report.revision!==master.revision)return;const reports=await s.get<Record<string,Report>>('reports')||{};reports[String(report.index)]={...report,events:[]};await s.put('reports',reports);if(report.events.length){const events=await s.get<SignalEvent[]>('events')||[],unique=new Map(events.map(e=>[e.id,e]));for(const e of report.events)if(!unique.has(e.id))unique.set(e.id,e);if(unique.size!==events.length)await s.put('events',[...unique.values()].sort((a,b)=>(b.observedAt||0)-(a.observedAt||0)).slice(0,1000));}});return json({ok:true});
   }
   return json({error:'Unknown action'},404);
  }
@@ -70,10 +70,10 @@ export class MarketScanner {
    await s.put('reports',{});
   }
   // Reconcile even when today's universe is already loaded: a paused or lost shard must resume.
-  const partitions=partitionMarket(m.symbols),old=m.shards;m.shards=partitions.length;await s.put('master',m);
+  const partitions=partitionMarket(m.symbols),old=m.shards;m.shards=partitions.length;if(old!==m.shards)await s.put('master',m);
   for(let start=0;start<Math.max(old,m.shards);start+=6)await Promise.all(Array.from({length:Math.min(6,Math.max(old,m.shards)-start)},(_,j)=>{const i=start+j;return this.send(i,'configure',{index:i,symbols:partitions[i]||[],revision:m!.revision,enabled:i<m!.shards});}));
   if(m.error){m.error=undefined;await s.put('master',m);}
-  await s.setAlarm(Math.min(Date.now()+60000,nextMonitorRun()));
+  await s.setAlarm(nextMonitorRun());
  }
  private async loadBaseline(symbol:string):Promise<Baseline>{
   let data,unit:'股'|'手'='手';try{if(symbol.endsWith('.BJ'))throw new Error('BJ');data=await tencentAshares(symbol);if(/^68[89]/.test(symbol))unit='股';}catch{data=symbol.endsWith('.BJ')?await sinaBeijingDaily(symbol):await sinaAdjustedDaily(symbol);unit='股';}
@@ -86,17 +86,17 @@ export class MarketScanner {
   const attempts=await s.get<{date:string;counts:Record<string,number>}>('attempts')||{date:day,counts:{}};if(attempts.date!==day){attempts.date=day;attempts.counts={};}
   for(const symbol of config.symbols){const b=await s.get<Baseline>('b:'+symbol),q=snapshots.get(symbol),prior=b?.candles.filter(c=>c.time<day).at(-1);if(b&&now.getTime()-b.loaded<7*86400000&&(!q||prior&&Math.abs(prior.close/q.previous-1)<=.005))baselines.set(symbol,b);else missing.push(symbol);}
   const pending=missing.filter(symbol=>inSession||!attempts.counts[symbol]).sort((a,b)=>(attempts.counts[a]||0)-(attempts.counts[b]||0));
-  for(let i=0;i<Math.min(4,pending.length);i+=2)await Promise.all(pending.slice(i,i+2).map(async symbol=>{attempts.counts[symbol]=(attempts.counts[symbol]||0)+1;try{const baseline=await this.loadBaseline(symbol);baselines.set(symbol,baseline);await s.put('b:'+symbol,baseline);}catch{failures.push({symbol,reason:'历史日线源暂不可用'});}}));await s.put('attempts',attempts);
+  for(let i=0;i<Math.min(4,pending.length);i+=2)await Promise.all(pending.slice(i,i+2).map(async symbol=>{attempts.counts[symbol]=(attempts.counts[symbol]||0)+1;try{const baseline=await this.loadBaseline(symbol);baselines.set(symbol,baseline);await s.put('b:'+symbol,baseline);}catch{failures.push({symbol,reason:'历史日线源暂不可用'});}}));if(pending.length)await s.put('attempts',attempts);
   for(const symbol of config.symbols)if(!baselines.has(symbol)&&!failures.some(f=>f.symbol===symbol))failures.push({symbol,reason:'历史日线未就绪，等待来源重试'});else if(inSession&&!snapshots.has(symbol)&&!failures.some(f=>f.symbol===symbol))failures.push({symbol,reason:'本轮快照缺失，未计入有效核验'});
-  const seen=await s.get<Record<string,boolean>>('seen')||{},events:SignalEvent[]=[];let checked=0,lastQuoteAt:string|null=null;
+  const seen=await s.get<Record<string,boolean>>('seen')||{},priorSeen=JSON.stringify(seen),events:SignalEvent[]=[];let checked=0,lastQuoteAt:string|null=null;
   if(inSession)for(const symbol of config.symbols){const b=baselines.get(symbol),q=snapshots.get(symbol);if(!b||!q)continue;const result=evaluateLiveSignal(b.candles,b.unit,q,now,false);if(result.reason){failures.push({symbol,reason:result.reason});continue;}checked++;lastQuoteAt=q.asOf;
    const character=stockCharacter(b.candles.filter(c=>c.time<day),day),eligible=!!character&&!character.quiet&&!character.weakFollow;
    for(const event of result.signals)if(!seen[event.id]){seen[event.id]=true;events.push({...event,observedAt:Date.now(),activityEligible:eligible,delivery:'none'});}
-   if(beijingParts(now).minute>=900&&q.open&&q.high&&q.low&&q.volume){const volume=q.volume*(q.volumeUnit==='手'?100:1)/(b.unit==='手'?100:1);const candle={time:day,open:q.open,high:q.high,low:q.low,close:q.price,volume};b.candles=[...b.candles.filter(c=>c.time<day),candle].slice(-270);await s.put('b:'+symbol,b);}
+   if(beijingParts(now).minute>=900&&q.open&&q.high&&q.low&&q.volume){const volume=q.volume*(q.volumeUnit==='手'?100:1)/(b.unit==='手'?100:1);const candle={time:day,open:q.open,high:q.high,low:q.low,close:q.price,volume};const last=b.candles.at(-1);if(!last||last.time!==day||last.open!==candle.open||last.high!==candle.high||last.low!==candle.low||last.close!==candle.close||last.volume!==candle.volume){b.candles=[...b.candles.filter(c=>c.time<day),candle].slice(-270);await s.put('b:'+symbol,b);}}
   }
-  for(const id of Object.keys(seen))if(id.slice(0,10)<new Date(Date.now()-10*86400000).toISOString().slice(0,10))delete seen[id];await s.put('seen',seen);
-  const outbox=await s.get<SignalEvent[]>('outbox')||[],unsent=[...new Map([...outbox,...events].map(e=>[e.id,e])).values()];await s.put('outbox',unsent);
-  const report:Report={index:config.index,revision:config.revision,total:config.symbols.length,ready:baselines.size,checked,lastRun:Date.now(),lastQuoteAt,failures,events:unsent};await scannerCall(this.env.MARKET_SCANNER,'report',report);await s.put('outbox',[]);
+  for(const id of Object.keys(seen))if(id.slice(0,10)<new Date(Date.now()-10*86400000).toISOString().slice(0,10))delete seen[id];if(JSON.stringify(seen)!==priorSeen)await s.put('seen',seen);
+  const outbox=await s.get<SignalEvent[]>('outbox')||[],unsent=[...new Map([...outbox,...events].map(e=>[e.id,e])).values()];if(events.length)await s.put('outbox',unsent);
+  const report:Report={index:config.index,revision:config.revision,total:config.symbols.length,ready:baselines.size,checked,lastRun:Date.now(),lastQuoteAt,failures,events:unsent};await scannerCall(this.env.MARKET_SCANNER,'report',report);if(unsent.length)await s.put('outbox',[]);
   const current=await s.get<ShardConfig>('shard');if(current?.enabled){await s.setAlarm(pending.length>4?Date.now()+30000:nextMonitorRun());}
  }
 }

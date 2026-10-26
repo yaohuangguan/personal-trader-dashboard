@@ -91,14 +91,20 @@ void main() {
       api.dispose();
     },
   );
-  Future<AtlasStore> store({double font = 22}) async {
+  Future<AtlasStore> store({
+    double font = 22,
+    bool globalUnavailable = false,
+  }) async {
     SharedPreferences.setMockInitialValues({'fontSize': font});
     return AtlasStore.load(
       api: AtlasApi(
         client: MockClient((r) async {
+          if (globalUnavailable && r.url.path == '/api/monitor/global') {
+            return http.Response('{"error":"Monitoring quota exhausted"}', 503);
+          }
           final data = switch (r.url.path) {
             '/api/monitor/status' => {
-              'config': {'enabled': false},
+              'config': {'enabled': globalUnavailable},
               'events': [],
             },
             '/api/monitor/global' => {
@@ -152,6 +158,23 @@ void main() {
     );
   }
 
+  testWidgets('global outage preserves the device monitoring state', (
+    tester,
+  ) async {
+    final s = (await tester.runAsync(() => store(globalUnavailable: true)))!;
+    final native = NativePushService(s.api, s.deviceToken);
+    await tester.pumpWidget(AtlasApp(store: s, push: native));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.sensors).last);
+    await tester.pumpAndSettle();
+    expect(find.text('Monitoring quota exhausted'), findsOneWidget);
+    expect(find.text('暂停盯盘'), findsOneWidget);
+    expect(find.text('开启盯盘'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    s.dispose();
+    await native.dispose();
+  });
   testWidgets(
     'chart refresh retains history on errors and pauses in background',
     (tester) async {

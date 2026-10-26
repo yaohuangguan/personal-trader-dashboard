@@ -300,6 +300,8 @@ class PageTitle extends StatelessWidget {
         Expanded(
           child: Text(
             tr(context, title),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
           ),
         ),

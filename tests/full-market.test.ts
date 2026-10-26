@@ -1,8 +1,14 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {partitionMarket} from '../src/shared/full-market';import {MarketScanner,FULL_MARKET_MASTER} from '../src/worker/full-market-scanner';
 import {SignalMonitor} from '../src/worker/signal-monitor';
-function store(){const values=new Map<string,unknown>();let alarm:number|null=null;return {values,storage:{get:async<T>(key:string)=>structuredClone(values.get(key)) as T|undefined,put:async<T>(key:string,value:T)=>{values.set(key,structuredClone(value));},delete:async(key:string)=>values.delete(key),setAlarm:async(t:number)=>{alarm=t;},getAlarm:async()=>alarm,deleteAlarm:async()=>{alarm=null;}},blockConcurrencyWhile:async<T>(fn:()=>Promise<T>)=>fn()};}
+import worker from '../src/worker/index';
+function store(){const values=new Map<string,unknown>(),writes:string[]=[];let alarm:number|null=null;return {values,writes,storage:{get:async<T>(key:string)=>structuredClone(values.get(key)) as T|undefined,put:async<T>(key:string,value:T)=>{writes.push(key);values.set(key,structuredClone(value));},delete:async(key:string)=>values.delete(key),setAlarm:async(t:number)=>{alarm=t;},getAlarm:async()=>alarm,deleteAlarm:async()=>{alarm=null;}},blockConcurrencyWhile:async<T>(fn:()=>Promise<T>)=>fn()};}
 test('all 5,576 names enter disjoint shards; the sixty-stock device cap never truncates discovery',()=>{const symbols=Array.from({length:5576},(_,i)=>String(i).padStart(6,'0')+'.SZ'),groups=partitionMarket(symbols);assert.equal(new Set(groups.flat()).size,5576);assert.ok(groups.every(g=>g.length<=160));assert.ok(groups.length>30);});
+test('an exhausted DO quota returns an explicit unavailable response and reset time',async()=>{
+ const namespace={idFromName:(name:string)=>name,get:()=>({fetch:async()=>{throw new Error('Exceeded allowed rows written in Durable Objects free tier.');}})};
+ const result=await worker.fetch(new Request('https://atlas/api/monitor/global',{headers:{Authorization:'Bearer '+'a'.repeat(64)}}),{SIGNAL_MONITOR:namespace} as any);
+ const data=await result.json() as any;assert.equal(result.status,503);assert.equal(data.available,false);assert.equal(data.code,'MONITOR_QUOTA_EXCEEDED');assert.ok(Date.parse(data.retryAt)>Date.now());assert.equal(new Date(data.retryAt).getUTCHours(),0);
+});
 test('the shared scanner reads every source page, checks beyond watchlists and stops after its final lease is released and resumes the same day',async ctx=>{
  ctx.mock.timers.enable({apis:['Date'],now:Date.parse('2026-10-26T02:00:00Z')});
  const original=globalThis.fetch,symbols=Array.from({length:321},(_,i)=>'30'+String(i).padStart(4,'0')+'.SZ'),states=new Map<string,ReturnType<typeof store>>(),objects=new Map<string,MarketScanner>();
@@ -15,6 +21,11 @@ test('the shared scanner reads every source page, checks beyond watchlists and s
   const candles=Array.from({length:100},(_,i)=>({time:new Date(Date.UTC(2026,9,25-(99-i))).toISOString().slice(0,10),open:100,close:100,high:101,low:99,volume:1000}));
   for(let i=0;i<3;i++){const state=states.get('market-shard-'+i)!;const config=await state.storage.get<any>('shard');for(const symbol of config.symbols)await state.storage.put('b:'+symbol,{candles,unit:'手',loaded:Date.now()});await get('market-shard-'+i).alarm();}
   const complete=await(await master.fetch(new Request('https://scanner/status'))).json() as any;assert.equal(complete.ready,321);assert.equal(complete.checked,321);assert.equal(complete.freshShards,3);assert.equal(complete.countMatches,true);
+  // Unchanged reconciliation and signal-free scans must not rewrite per-shard state.
+  const counts=Array.from({length:3},(_,i)=>states.get('market-shard-'+i)!.writes.length);
+  await master.alarm();
+  for(let i=0;i<3;i++){await get('market-shard-'+i).alarm();assert.deepEqual(states.get('market-shard-'+i)!.writes.slice(counts[i]),[]);}
+  assert.equal(states.get(FULL_MARKET_MASTER)!.values.has('events'),false);
   await master.fetch(new Request('https://scanner/release',{method:'POST',body:JSON.stringify({id:lease})}));await master.alarm();assert.equal(await states.get(FULL_MARKET_MASTER)!.storage.getAlarm(),null);for(let i=0;i<3;i++)assert.equal(await states.get('market-shard-'+i)!.storage.getAlarm(),null);
   await master.fetch(new Request('https://scanner/ensure',{method:'POST',body:JSON.stringify({id:lease,until:Date.now()+86400000})}));await master.alarm();
   for(let i=0;i<3;i++){const state=states.get('market-shard-'+i)!,config=await state.storage.get<any>('shard');assert.equal(config.enabled,true);assert.ok(config.symbols.length>0);assert.ok(await state.storage.getAlarm());await get('market-shard-'+i).alarm();}

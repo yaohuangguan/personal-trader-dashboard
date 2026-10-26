@@ -35,6 +35,10 @@ For a different deployed service, add `--dart-define=ATLAS_API_BASE=https://your
 
 Phone workspaces use portrait bottom navigation, sheets and push/pop details. Chart fullscreen unlocks device rotation and restores portrait on exit. Tablets use a navigation rail. Settings and coverage details in the screener/signal center are collapsed so candidates and events remain prominent. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app is inactive. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
 
+## Service availability
+
+The shared scanner avoids rewriting unchanged shard configuration, empty event/outbox state and unchanged closing candles; its master sleeps until the next session outside trading hours. Source warmup and meaningful detections are still persisted. Cloudflare Free account quotas can stop monitoring across devices: the API returns HTTP 503 with `MONITOR_QUOTA_EXCEEDED` and a `retryAt` UTC timestamp instead of claiming a healthy scan. The app retains independently readable device state when global coverage is unavailable. Quota exhaustion is an external availability limit; reduced writes do not retroactively restore an exhausted allowance. See [Cloudflare's quota/reset policy](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+
 ## Native push (reserved, not enabled by default)
 
 No Firebase project is included. The default app does not initialize Firebase, request notification permission, or promise closed-app notification delivery. Existing website/PWA Web Push remains available through its original page.

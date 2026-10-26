@@ -41,20 +41,36 @@ class _SignalsPageState extends State<SignalsPage> {
 
   Future<void> refresh() async {
     final s = context.read<AtlasStore>();
-    try {
-      final results = await Future.wait([
-        s.api.get('/api/monitor/status', token: s.deviceToken),
-        s.api.get('/api/monitor/global', token: s.deviceToken),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        status = results[0];
-        market = results[1];
-        error = null;
-      });
-    } catch (e) {
-      if (mounted) setState(() => error = e.toString());
-    }
+    Json? nextStatus, nextMarket;
+    final errors = <String>{};
+    await Future.wait([
+      () async {
+        try {
+          nextStatus = await s.api.get(
+            '/api/monitor/status',
+            token: s.deviceToken,
+          );
+        } catch (e) {
+          errors.add(e.toString());
+        }
+      }(),
+      () async {
+        try {
+          nextMarket = await s.api.get(
+            '/api/monitor/global',
+            token: s.deviceToken,
+          );
+        } catch (e) {
+          errors.add(e.toString());
+        }
+      }(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      if (nextStatus != null) status = nextStatus;
+      if (nextMarket != null) market = nextMarket;
+      error = errors.isEmpty ? null : errors.join('\n');
+    });
   }
 
   Future<void> action(Future<dynamic> Function() fn, [String? success]) async {
@@ -143,7 +159,7 @@ class _SignalsPageState extends State<SignalsPage> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(
-              '${s.t(str(status?['status'], '尚未开启'))} · ${s.t('底稿')} ${market?['ready'] ?? 0}/${market?['total'] ?? 0}',
+              '${s.t(str(status?['status'], '尚未开启'))} · ${s.t('底稿')} ${market?['ready'] ?? '—'}/${market?['total'] ?? '—'}',
               style: const TextStyle(fontSize: 13, color: muted),
             ),
           ),

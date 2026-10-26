@@ -486,7 +486,7 @@ export default {
    const desk=await deskRoute(request);if(desk)return desk;
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
-  }catch(e){return json({error:'Unexpected server error',details:e instanceof Error?e.message:String(e)},500);}
+  }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details))return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:new Date(new Date().setUTCHours(24,0,0,0)).toISOString()},503);return json({error:'Unexpected server error',details},500);}
  },
  async scheduled(_controller:unknown,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
   if(env.DB)ctx.waitUntil(scanOnce(env).catch(err=>console.error('Scheduled intelligence scan failed:',String(err))));

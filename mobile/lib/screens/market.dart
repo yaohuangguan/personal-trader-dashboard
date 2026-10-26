@@ -84,7 +84,7 @@ class _MarketPageState extends State<MarketPage> {
     final store = context.watch<AtlasStore>(), quotes = rows(indices?['items']);
     final sourceDate = quotes.isEmpty
         ? null
-        : str(quotes.first['asOf']).substring(0, 10);
+        : str(quotes.first['asOf']).split('T').first;
     return Column(
       children: [
         _tabs(context),
