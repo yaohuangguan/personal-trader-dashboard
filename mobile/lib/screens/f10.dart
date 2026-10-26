@@ -35,7 +35,10 @@ class _F10PageState extends State<F10Page> {
                   children: [
                     Text(
                       str(profile['name']),
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -55,14 +58,15 @@ class _F10PageState extends State<F10Page> {
                       ],
                     ),
                     const Divider(height: 36),
-                    Text(
-                      s.t('公司概况'),
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      str(profile['description']),
-                      style: const TextStyle(height: 1.8),
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: Text(s.t('公司概况')),
+                      children: [
+                        Text(
+                          str(profile['description']),
+                          style: const TextStyle(height: 1.8),
+                        ),
+                      ],
                     ),
                     ExpansionTile(
                       title: Text(s.t('经营范围')),

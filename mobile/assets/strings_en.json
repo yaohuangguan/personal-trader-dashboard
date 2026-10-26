@@ -1055,6 +1055,7 @@
   "扫描设置": "Scan settings",
   "筛选与导出": "Filter and export",
   "底稿": "Baselines",
+  "资讯": "News",
   "暂停盯盘": "Pause",
   "开启盯盘": "Start monitor",
   "后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号": "Background monitoring quota is exhausted. Full-market signals cannot be verified until the daily Cloudflare quota resets."
