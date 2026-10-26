@@ -180,6 +180,7 @@ class _SignalsPageState extends State<SignalsPage> {
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: scope,
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
                       decoration: InputDecoration(labelText: s.t('监控范围')),
                       isExpanded: true,
                       items:
@@ -256,6 +257,7 @@ class _SignalsPageState extends State<SignalsPage> {
                             s.t(
                               config['enabled'] == true ? '更新监控名单' : '开启后台盯盘',
                             ),
+                            style: const TextStyle(fontSize: 15),
                           ),
                         ),
                         OutlinedButton.icon(
@@ -268,7 +270,10 @@ class _SignalsPageState extends State<SignalsPage> {
                                   '后台盯盘已暂停。',
                                 ),
                           icon: const Icon(Icons.pause),
-                          label: Text(s.t('暂停后台盯盘')),
+                          label: Text(
+                            s.t('暂停后台盯盘'),
+                            style: const TextStyle(fontSize: 15),
+                          ),
                         ),
                       ],
                     ),

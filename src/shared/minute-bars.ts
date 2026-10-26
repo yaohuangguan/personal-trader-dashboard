@@ -1,15 +1,16 @@
 import type {Candle} from './types';
 /** Tencent timestamps are exchange local time, and denote interval ends. */
-export function parseMinuteBars(rows:unknown,now=new Date()):Candle[]{
+export function parseMinuteBars(rows:unknown,now=new Date(),intervalMinutes=0):Candle[]{
  if(!Array.isArray(rows))throw new Error('分钟线来源格式异常');
  const limit=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(now);
+ const upper=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(now.getTime()+intervalMinutes*60000));
  const result=rows.map(r=>{
-  if(!Array.isArray(r)||!/^\d{12}$/.test(String(r[0])))throw new Error('分钟线时间缺失');
+  if(!Array.isArray(r)||!/^\d{12}$/.test(String(r[0]))||r.length<6||r.slice(1,6).some(v=>v==null||v===''||typeof v==='boolean'))throw new Error('分钟线时间缺失');
   const raw=String(r[0]),time=`${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)} ${raw.slice(8,10)}:${raw.slice(10,12)}`;
   const [open,close,high,low,volume]=r.slice(1,6).map(Number),minute=Number(raw.slice(8,10))*60+Number(raw.slice(10,12));
-  if(!Number.isFinite(Date.parse(time.replace(' ','T')+':00+08:00'))||![open,close,high,low,volume].every(Number.isFinite)||Math.min(open,close,high,low)<=0||volume<0||high<Math.max(open,close)||low>Math.min(open,close)||!((minute>570&&minute<=690)||(minute>780&&minute<=900)))throw new Error('分钟线 OHLCV 或交易时段异常');
+  if(new Date(Date.parse(time.slice(0,10)+'T00:00:00Z')).toISOString().slice(0,10)!==time.slice(0,10)||!Number.isFinite(Date.parse(time.replace(' ','T')+':00+08:00'))||![open,close,high,low,volume].every(Number.isFinite)||Math.min(open,close,high,low)<=0||volume<0||high<Math.max(open,close)||low>Math.min(open,close)||!((minute>570&&minute<=690)||(minute>780&&minute<=900)))throw new Error('分钟线 OHLCV 或交易时段异常');
   return {time,open,close,high,low,volume};
- }).filter(c=>c.time<=limit).sort((a,b)=>a.time.localeCompare(b.time));
+ }).filter(c=>c.time<=upper&&c.time.slice(0,10)<=limit.slice(0,10)).sort((a,b)=>a.time.localeCompare(b.time));
  if(result.some((c,i)=>i>0&&c.time===result[i-1].time))throw new Error('分钟线重复时间');
  return result;
 }

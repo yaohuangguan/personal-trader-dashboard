@@ -86,11 +86,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         grid: { vertLines: { visible: false }, horzLines: { color: '#222225' } },
         leftPriceScale: { visible: true, borderVisible: false, entireTextOnly: true, minimumWidth: compact ? 55 : 68, scaleMargins: { top: 0.12, bottom: 0.08 } },
         rightPriceScale: { visible: false },
-        timeScale: { visible: bottomAxis, borderVisible: false, timeVisible: unit.startsWith('m')&&unit!=='month', lockVisibleTimeRangeOnResize: true, rightOffset: 4, barSpacing: 9, minBarSpacing: 2, fixLeftEdge: false },
+        timeScale: { visible: bottomAxis, borderVisible: false, tickMarkFormatter:(time:Time)=>typeof time==='number'?timeKey(time).slice(11):null, timeVisible: unit.startsWith('m')&&unit!=='month', lockVisibleTimeRangeOnResize: true, rightOffset: 4, barSpacing: 9, minBarSpacing: 2, fixLeftEdge: false },
         crosshair: { mode: CrosshairMode.Normal, vertLine: { color: '#878b92', labelBackgroundColor: '#3e4146' }, horzLine: { color: '#878b92', labelBackgroundColor: '#3e4146' } },
         handleScroll: { mouseWheel: !compact, pressedMouseMove: !compact, horzTouchDrag: !compact, vertTouchDrag: false },
         handleScale: { mouseWheel: !compact, pinch: !compact, axisPressedMouseMove: !compact },
-        localization: { locale: display.locale },
+        localization: { locale: display.locale,timeFormatter:timeKey },
       });
       instances.push(chart);
       resizeTargets.push({ chart, element: el, height });
@@ -127,6 +127,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           }
           points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
           for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:p.label,size:1});
+          points.sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time)));
           prices.setMarkers(points);
         }
       }

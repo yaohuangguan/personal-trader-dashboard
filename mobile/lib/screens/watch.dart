@@ -293,14 +293,26 @@ class _WatchPageState extends State<WatchPage> {
                 style: const TextStyle(fontSize: 12, color: muted),
               ),
             ),
-            Text(
-              s.t('当日分时'),
-              style: const TextStyle(fontSize: 12, color: muted),
+            SizedBox(
+              width: 90,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  s.t('当日分时'),
+                  style: const TextStyle(fontSize: 12, color: muted),
+                ),
+              ),
             ),
-            const SizedBox(width: 42),
-            Text(
-              s.t('价格 / 涨幅'),
-              style: const TextStyle(fontSize: 12, color: muted),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 84,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  s.t('价格 / 涨幅'),
+                  style: const TextStyle(fontSize: 12, color: muted),
+                ),
+              ),
             ),
           ],
         ),

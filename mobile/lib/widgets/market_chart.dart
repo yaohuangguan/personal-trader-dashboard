@@ -734,14 +734,53 @@ class _MarketChartState extends State<MarketChart> {
           compact: compact,
           dense: widget.terminal,
           children: overlay != 'MA'
-              ? [
-                  Text(
-                    overlay == 'BOLL'
-                        ? 'BOLL (20,2)  MID ${fixed(indicators.bollMid[idx])}  UP ${fixed(indicators.bollUpper[idx])}  LOW ${fixed(indicators.bollLower[idx])}'
-                        : 'SAR (0.02,0.2)  ${fixed(indicators.sar[idx])}',
-                    style: const TextStyle(color: Colors.amber, fontSize: 12),
-                  ),
-                ]
+              ? (overlay == 'BOLL'
+                    ? [
+                        Text(
+                          'BOLL (20,2)',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          'MID ${fixed(indicators.bollMid[idx])}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          'UP ${fixed(indicators.bollUpper[idx])}',
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          'LOW ${fixed(indicators.bollLower[idx])}',
+                          style: const TextStyle(
+                            color: Color(0xffed89bf),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ]
+                    : [
+                        Text(
+                          'SAR (0.02,0.2)',
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          fixed(indicators.sar[idx]),
+                          style: const TextStyle(
+                            color: Colors.amber,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ])
               : mas
                     .map(
                       (ma) => InkWell(
@@ -1418,7 +1457,10 @@ class ChartPainter extends CustomPainter {
         label(
           c,
           buy ? 'B ↑' : 'S ↓',
-          Offset((px - 8).clamp(left, size.width - right - 24), py),
+          Offset(
+            (px - 8).clamp(left, size.width - right - 24),
+            py.clamp(15, priceHeight - 15),
+          ),
           color: buy ? up : down,
           size: 11,
           background: true,
@@ -1456,6 +1498,10 @@ class ChartPainter extends CustomPainter {
       if (histogram || volumeBars) {
         min = math.min(0, min);
         max = math.max(0, max);
+      }
+      if (title.startsWith('RSI')) {
+        min = 0;
+        max = 100;
       }
       if (max - min < .0001) max = min + 1;
       double py(double v) =>

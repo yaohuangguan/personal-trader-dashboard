@@ -678,8 +678,8 @@ class _StockPageState extends State<StockPage> {
     ),
   );
   Widget _chart(double height, String name) {
-    if (analysis == null) return _waiting();
     if (timeframe == 'day') {
+      if (analysis == null) return _waiting();
       return MarketChart(
         key: ValueKey('${widget.symbol}-day'),
         bars: bars,

@@ -15,8 +15,9 @@ const flat=(n=100):Candle[]=>Array.from({length:n},(_,i)=>({time:new Date(Date.U
 function setup(){const bars=flat();for(const [close,volume] of [[106,2200],[107,1800],[108,1800],[109,1800]]){const time=new Date(Date.parse(bars.at(-1)!.time)+86400000).toISOString().slice(0,10);bars.push({time,open:close===106?99:close-.5,close,high:close+.2,low:close===106?98.5:close-.8,volume});}return bars;}
 test('minute timestamps retain distinct intraday bars, exclude future and reject invalid OHLC/session',()=>{
  const c=parseMinuteBars([row('202610261030'),row('202610261130'),row('202610271030')],now);assert.equal(c.length,2);assert.equal(c[0].time,'2026-10-26 10:30');
- assert.throws(()=>parseMinuteBars([row('202610261230')],now));assert.throws(()=>parseMinuteBars([['202610261030',10,15,12,9,100]],now));assert.throws(()=>parseMinuteBars([row('202610261030'),row('202610261030')],now));
+ assert.throws(()=>parseMinuteBars([row('202602301030')],now));assert.throws(()=>parseMinuteBars([['202610261030',10,11,12,9,'']],now));assert.throws(()=>parseMinuteBars([row('202610261230')],now));assert.throws(()=>parseMinuteBars([['202610261030',10,15,12,9,100]],now));assert.throws(()=>parseMinuteBars([row('202610261030'),row('202610261030')],now));
 });
+test('an unfinished source interval can retain its future end time without accepting tomorrow data',()=>{const c=parseMinuteBars([row('202610261030'),row('202610271030')],new Date('2026-10-26T02:15:00Z'),60);assert.equal(c.length,1);assert.equal(c[0].time,'2026-10-26 10:30');});
 test('120 minute candles never cross the lunch break/day or fabricate an incomplete pair',()=>{
  const input=parseMinuteBars(['202610261030','202610261130','202610261400','202610261500','202610271030'].map(row),new Date('2026-10-27T03:00:00Z'));
  const c=aggregate120(input);assert.equal(c.length,2);assert.equal(c[0].volume,200);assert.equal(c[1].time,'2026-10-26 15:00');assert.equal(aggregate120(input.slice(1,3)).length,0);

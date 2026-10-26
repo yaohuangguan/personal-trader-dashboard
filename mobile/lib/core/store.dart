@@ -155,7 +155,8 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (id == null) {
       if (groups.length >= 20) throw const FormatException('最多创建20个分组');
-      id = DateTime.now().microsecondsSinceEpoch.toString();
+      id =
+          '${DateTime.now().microsecondsSinceEpoch}_${Random.secure().nextInt(0x7fffffff)}';
       groups.add({'id': id, 'name': name, 'symbols': <String>[]});
     } else {
       groups.firstWhere((g) => g['id'] == id)['name'] = name;
