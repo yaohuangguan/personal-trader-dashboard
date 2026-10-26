@@ -13,10 +13,12 @@ class GuidePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.watch<AtlasStore>(),
         guide = obj(analysis['guide']),
-        character = obj(analysis['character']);
+        character = obj(analysis['character']),
+        strength = obj(analysis['strength']);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        GuideActionPanel(analysis),
         Panel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -24,6 +26,56 @@ class GuidePanel extends StatelessWidget {
               Text(
                 s.t('姚记五线开花 v10.4'),
                 style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    fixed(strength['score'], 0),
+                    style: const TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    ' / 100 · ${s.t('五线总分')}',
+                    style: const TextStyle(color: muted, fontSize: 14),
+                  ),
+                ],
+              ),
+              ...rows(strength['parts']).map(
+                (p) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.t(str(p['label'])),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                      Text(
+                        '${p['score']} / ${p['max']}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: Text(s.t('评分口径'), style: const TextStyle(fontSize: 14)),
+                children: [
+                  Text(
+                    s.t(str(strength['notice'])),
+                    style: const TextStyle(
+                      color: muted,
+                      fontSize: 13,
+                      height: 1.6,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Text(
@@ -256,6 +308,93 @@ class GuidePanel extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class GuideActionPanel extends StatelessWidget {
+  const GuideActionPanel(this.analysis, {super.key});
+  final Json analysis;
+  @override
+  Widget build(BuildContext context) {
+    final a = obj(analysis['action']),
+        strength = obj(analysis['strength']),
+        s = context.watch<AtlasStore>();
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  s.t('五线操作建议'),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                '${fixed(strength['score'], 0)} / 100',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            s.t(str(a['action'], '观望')),
+            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '${str(a['asOf'])} · ${s.t(a['provisional'] == true ? '盘中待确认' : '收盘规则')}',
+            style: const TextStyle(color: muted, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          ...((a['reasons'] as List?) ?? []).map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '• ${s.t('$r')}',
+                style: const TextStyle(fontSize: 15, height: 1.6),
+              ),
+            ),
+          ),
+          if (a['invalidation'] != null)
+            Text(
+              '${s.t('失效观察')} · ${s.t('阳线半位')} ${fixed(obj(a['invalidation'])['midpoint'])} / MA20 ${fixed(obj(a['invalidation'])['ma20'])}',
+              style: const TextStyle(fontSize: 14, color: muted),
+            ),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text(s.t('历史买卖点与规则'), style: const TextStyle(fontSize: 14)),
+            children: [
+              ...rows(analysis['tradeMarkers']).reversed
+                  .take(10)
+                  .map(
+                    (p) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        '${str(p['time'])} · ${s.t(str(p['label']))}  ${fixed(p['price'])}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      subtitle: Text(
+                        s.t(str(p['reason'])),
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+              Text(
+                s.t(str(a['notice'])),
+                style: const TextStyle(color: muted, fontSize: 13, height: 1.7),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

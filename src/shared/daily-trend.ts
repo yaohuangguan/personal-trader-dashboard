@@ -1,16 +1,19 @@
+import {analyzeGuide} from './guide-analysis';
+import {stockCharacter} from './stock-character';
+import {guideAction} from './guide-action';
 import type {Candle} from './types';
 import type {Snapshot,IntradayPayload} from './desk-types';
 import {beijingParts} from './monitor';
 import {marketSession} from './desk-types';
 
 export type TrendDimension={key:string;weight:number;score:number|null;value:number|null;unit:string};
-export type DailyTrend={available:boolean;date:string|null;asOf:string|null;current:boolean;provisional:boolean;score:number|null;label:string;coveredWeight:number;dimensions:TrendDimension[];observations:string[];observationsEn:string[];risks:string[];risksEn:string[];levels:{support:number|null;resistance:number|null;vwap:number|null};volumeRatio:number|null;source:string;method:string};
+export type DailyTrend={operation:ReturnType<typeof guideAction>|null;available:boolean;date:string|null;asOf:string|null;current:boolean;provisional:boolean;score:number|null;label:string;coveredWeight:number;dimensions:TrendDimension[];observations:string[];observationsEn:string[];risks:string[];risksEn:string[];levels:{support:number|null;resistance:number|null;vwap:number|null};volumeRatio:number|null;source:string;method:string};
 const clamp=(n:number)=>Math.max(0,Math.min(100,n));
 const valid=(c:Candle)=>/^\d{4}-\d{2}-\d{2}$/.test(c.time)&&[c.open,c.high,c.low,c.close,c.volume].every(Number.isFinite)&&c.low>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&c.volume>=0;
 const pct=(n:number)=>`${n>=0?'+':''}${n.toFixed(2)}%`;
 export function dailyTrend(input:Candle[],options:{symbol:string;quote?:Snapshot;benchmark?:Snapshot;intraday?:IntradayPayload;volumeUnit?:'股'|'手';source?:string;now?:Date}):DailyTrend{
  const now=options.now||new Date(),clock=beijingParts(now),candles=input.filter(c=>valid(c)&&c.time<=clock.date).sort((a,b)=>a.time.localeCompare(b.time));
- const result:DailyTrend={available:false,date:null,asOf:null,current:false,provisional:false,score:null,label:'数据不足',coveredWeight:0,dimensions:[],observations:[],observationsEn:[],risks:[],risksEn:[],levels:{support:null,resistance:null,vwap:null},volumeRatio:null,source:options.source||'公开日线',method:'观察强弱分，不是涨跌概率。涨跌相对历史ATR占25%，日内位置占20%，开盘后表现占20%，相对沪深300占25%，相对分时均价占10%。缺项不补分，按已覆盖权重归一化。量能单独说明，不外推全天量。'};
+ const result:DailyTrend={operation:null,available:false,date:null,asOf:null,current:false,provisional:false,score:null,label:'数据不足',coveredWeight:0,dimensions:[],observations:[],observationsEn:[],risks:[],risksEn:[],levels:{support:null,resistance:null,vwap:null},volumeRatio:null,source:options.source||'公开日线',method:'观察强弱分，不是涨跌概率。涨跌相对历史ATR占25%，日内位置占20%，开盘后表现占20%，相对沪深300占25%，相对分时均价占10%。缺项不补分，按已覆盖权重归一化。量能单独说明，不外推全天量。'};
  let last=candles.at(-1),q=options.quote;
  if(q){const stamp=Date.parse(q.asOf),date=q.asOf.slice(0,10);if(q.symbol!==options.symbol||!Number.isFinite(stamp)||stamp>now.getTime()+60000||date>clock.date||q.stale||date<(last?.time||date)||date===clock.date&&marketSession(now)==='trading'&&now.getTime()-stamp>120000){result.risks.push('快照过期或日期无效，使用可核验日线');q=undefined;}}
  if(q&&q.open!=null&&q.high!=null&&q.low!=null&&q.volume!=null){
@@ -54,6 +57,7 @@ export function dailyTrend(input:Candle[],options:{symbol:string;quote?:Snapshot
  if(move<0&&(result.volumeRatio??0)>=1.5)result.risks.push('下跌且累计量已超过前20日均量1.5倍');
  if(last.high===last.low)result.risks.push('一字价格不能说明交易流动性');
  if(result.provisional)result.risks.push('盘中评分随行情变化，等待收盘复核');
+ const actionBars=[...prior,last];result.operation=guideAction(analyzeGuide(actionBars,{now}),stockCharacter(actionBars,last.time));
  return finishTrend(result);
 }
 

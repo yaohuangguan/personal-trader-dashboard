@@ -376,8 +376,12 @@ class _StockPageState extends State<StockPage> {
             ),
             const SizedBox(height: 2),
             Text(
-              widget.symbol,
-              style: const TextStyle(fontSize: 10, height: 1, color: muted),
+              '${widget.symbol}  ${fixed(q['price'])}  ${percent(q['changePercent'])}',
+              style: TextStyle(
+                fontSize: 10,
+                height: 1,
+                color: tone(q['changePercent']),
+              ),
             ),
           ],
         ),
@@ -402,54 +406,60 @@ class _StockPageState extends State<StockPage> {
       ),
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            _quoteStrip(),
-            if (tab == 'chart') ...[
-              _periodBar(),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (ctx, c) => _chart(c.maxHeight, name),
-                ),
-              ),
-              _sourceBar(),
-            ] else
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-                  children: [
-                    if (tab == 'guide')
-                      if (analysis != null)
-                        GuidePanel(widget.symbol, analysis!)
-                      else
-                        _waiting(),
-                    if (tab == 'sector') StockSectors(widget.symbol),
-                    if (tab == 'f10') F10Page(widget.symbol),
-                    if (tab == 'news') ...[
-                      Row(
+        child: tab == 'chart'
+            ? _chartPage(name)
+            : Column(
+                children: [
+                  _quoteStrip(),
+                  if (tab == 'chart') ...[
+                    _periodBar(),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (ctx, c) => _chart(c.maxHeight, name),
+                      ),
+                    ),
+                    _sourceBar(),
+                  ] else
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
                         children: [
-                          mini(
-                            '个股资讯',
-                            () => setState(() => newsTab = 'news'),
-                            color: newsTab == 'news' ? Colors.white : null,
-                          ),
-                          mini(
-                            '公告财报',
-                            () => setState(() => newsTab = 'evidence'),
-                            color: newsTab == 'evidence' ? Colors.white : null,
-                          ),
+                          if (tab == 'guide')
+                            if (analysis != null)
+                              GuidePanel(widget.symbol, analysis!)
+                            else
+                              _waiting(),
+                          if (tab == 'sector') StockSectors(widget.symbol),
+                          if (tab == 'f10') F10Page(widget.symbol),
+                          if (tab == 'news') ...[
+                            Row(
+                              children: [
+                                mini(
+                                  '个股资讯',
+                                  () => setState(() => newsTab = 'news'),
+                                  color: newsTab == 'news'
+                                      ? Colors.white
+                                      : null,
+                                ),
+                                mini(
+                                  '公告财报',
+                                  () => setState(() => newsTab = 'evidence'),
+                                  color: newsTab == 'evidence'
+                                      ? Colors.white
+                                      : null,
+                                ),
+                              ],
+                            ),
+                            if (newsTab == 'news')
+                              StockNews(widget.symbol)
+                            else
+                              EvidencePanel(widget.symbol),
+                          ],
                         ],
                       ),
-                      if (newsTab == 'news')
-                        StockNews(widget.symbol)
-                      else
-                        EvidencePanel(widget.symbol),
-                    ],
-                  ],
-                ),
+                    ),
+                ],
               ),
-          ],
-        ),
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -501,6 +511,52 @@ class _StockPageState extends State<StockPage> {
     );
   }
 
+  Widget _chartPage(String name) => LayoutBuilder(
+    builder: (ctx, c) => ListView.builder(
+      key: ValueKey('details-${widget.symbol}'),
+      itemCount: 5,
+      itemBuilder: (ctx, i) {
+        if (i == 0) {
+          return SizedBox(
+            height: c.maxHeight,
+            child: Column(
+              children: [
+                _quoteStrip(),
+                _periodBar(),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (ctx, box) => _chart(box.maxHeight, name),
+                  ),
+                ),
+                _sourceBar(),
+              ],
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: switch (i) {
+            1 =>
+              analysis == null
+                  ? const SizedBox.shrink()
+                  : GuideActionPanel(analysis!),
+            2 =>
+              cnStock(widget.symbol)
+                  ? StockFlowSummary(widget.symbol)
+                  : const SizedBox.shrink(),
+            3 =>
+              cnStock(widget.symbol)
+                  ? StockEmotion(widget.symbol, q)
+                  : const SizedBox.shrink(),
+            _ =>
+              cnStock(widget.symbol)
+                  ? F10Page(widget.symbol)
+                  : const SizedBox.shrink(),
+          },
+        );
+      },
+    ),
+  );
   Widget _quoteStrip() => InkWell(
     onTap: more,
     child: Container(
@@ -597,48 +653,9 @@ class _StockPageState extends State<StockPage> {
         ),
     ],
   );
-  Widget _periodBar() => Container(
-    height: 36,
-    decoration: const BoxDecoration(
-      border: Border(bottom: BorderSide(color: Color(0xff303038), width: .5)),
-    ),
-    child: Row(
-      children: [
-        for (final p in [
-          ('intraday', '分时'),
-          ('day', '日 K'),
-          ('week', '周 K'),
-          ('month', '月 K'),
-        ])
-          Expanded(
-            child: InkWell(
-              onTap: () => setState(() => timeframe = p.$1),
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: timeframe == p.$1 ? up : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
-                ),
-                child: Text(
-                  tr(context, p.$2),
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1,
-                    color: timeframe == p.$1 ? Colors.white : muted,
-                    fontWeight: timeframe == p.$1
-                        ? FontWeight.w600
-                        : FontWeight.normal,
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    ),
+  Widget _periodBar() => PeriodSelector(
+    value: timeframe,
+    onChanged: (v) => setState(() => timeframe = v),
   );
   Widget _waiting() => Center(
     child: Padding(
@@ -670,6 +687,7 @@ class _StockPageState extends State<StockPage> {
         symbol: widget.symbol,
         volumeUnit: volumeUnit,
         events: rows(obj(analysis?['guide'])['events']),
+        trades: rows(analysis?['tradeMarkers']),
         terminal: true,
         viewportHeight: height,
       );
@@ -1201,6 +1219,147 @@ class EvidencePanel extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class StockFlowSummary extends StatelessWidget {
+  const StockFlowSummary(this.symbol, {super.key});
+  final String symbol;
+  @override
+  Widget build(BuildContext context) => Panel(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          tr(context, '资金面'),
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        ),
+        AsyncPanel(
+          load: () => context.read<AtlasStore>().api.get(
+            '/api/desk/flow',
+            parameters: {'symbol': symbol},
+          ),
+          builder: (r) {
+            final last = rows(r['points']).lastOrNull ?? {};
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final e in {
+                  'main': '主力净流入',
+                  'superLarge': '超大单',
+                  'large': '大单',
+                  'medium': '中单',
+                  'small': '小单',
+                }.entries)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            tr(context, e.value),
+                            style: const TextStyle(color: muted, fontSize: 15),
+                          ),
+                        ),
+                        Text(
+                          amount(last[e.key]),
+                          style: TextStyle(
+                            fontSize: 19,
+                            color: tone(last[e.key]),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                SourceLine(r, extra: str(last['time'])),
+                if (r['notice'] != null) Notice(str(r['notice'])),
+                Notice(tr(context, '按成交单大小分类估算，不等于机构实际持仓或Level-2。')),
+              ],
+            );
+          },
+        ),
+      ],
+    ),
+  );
+}
+
+class StockEmotion extends StatelessWidget {
+  const StockEmotion(this.symbol, this.quote, {super.key});
+  final String symbol;
+  final Json quote;
+  @override
+  Widget build(BuildContext context) {
+    final date = str(
+      quote['asOf'],
+      '',
+    ).substring(0, math.min(10, str(quote['asOf'], '').length));
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            tr(context, '情绪面'),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${tr(context, '个股涨幅')} ${percent(quote['changePercent'])} · ${tr(context, '换手率')} ${fixed(quote['turnover'])}%',
+            style: const TextStyle(fontSize: 15),
+          ),
+          if (date.length == 10)
+            AsyncPanel(
+              load: () => context.read<AtlasStore>().api.get(
+                '/api/desk/market-pools',
+                parameters: {'date': date},
+              ),
+              builder: (r) {
+                final p = obj(r['pools']), m = sentiment(p), tags = <String>[];
+                for (final e in {
+                  'up': '本日涨停',
+                  'broken': '曾触及涨停',
+                  'yesterday': '昨日涨停',
+                  'down': '本日跌停',
+                }.entries) {
+                  if (rows(obj(p[e.key])['items'])
+                      .any((v) => v['symbol'] == symbol)) {
+                    tags.add(e.value);
+                  }
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 18),
+                    Text(
+                      '${tr(context, '市场情绪指数')} ${fixed(m?['score'], 0)} / 100',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '$date · ${tr(context, '来源股票池口径')}',
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: tags
+                          .map((t) => Chip(label: Text(tr(context, t))))
+                          .toList(),
+                    ),
+                    Notice(
+                      tr(
+                        context,
+                        m == null ? '股票池缺失，暂停情绪评分' : '情绪指数衡量市场环境，不是该股上涨概率。',
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
     );
   }
 }

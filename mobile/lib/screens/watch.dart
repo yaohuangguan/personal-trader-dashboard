@@ -20,8 +20,10 @@ Future<void> showStockSearch(BuildContext context) async {
 }
 
 class StockSearch extends SearchDelegate<String> {
-  StockSearch(this.store) : super(searchFieldLabel: store.t('股票名称或代码'));
+  StockSearch(this.store) : super(searchFieldLabel: store.t('名称、代码或拼音首字母'));
   final AtlasStore store;
+  String? lastQuery;
+  Future<Json>? pending;
   @override
   ThemeData appBarTheme(BuildContext context) => Theme.of(context);
   @override
@@ -52,8 +54,15 @@ class StockSearch extends SearchDelegate<String> {
             .toList(),
       );
     }
+    if (lastQuery != value) {
+      lastQuery = value;
+      pending = Future.delayed(
+        const Duration(milliseconds: 250),
+        () => store.api.get('/api/search', parameters: {'q': value}),
+      );
+    }
     return FutureBuilder<Json>(
-      future: store.api.get('/api/search', parameters: {'q': value}),
+      future: pending,
       builder: (context, snapshot) {
         return ListView(
           children: [
@@ -87,13 +96,125 @@ class WatchPage extends StatefulWidget {
 }
 
 class _WatchPageState extends State<WatchPage> {
-  String filter = 'all', sort = 'manual';
+  String filter = 'all', sort = 'manual', group = 'all';
+  Future<void> editGroup(AtlasStore s, {Json? existing}) async {
+    final c = TextEditingController(text: str(existing?['name'], ''));
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: Text(s.t(existing == null ? '创建分组' : '编辑分组')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: c,
+                autofocus: true,
+                maxLength: 24,
+                decoration: InputDecoration(labelText: s.t('分组名称')),
+              ),
+              if (error != null)
+                Text(s.t(error!), style: const TextStyle(color: up)),
+            ],
+          ),
+          actions: [
+            if (existing != null)
+              TextButton(
+                onPressed: () {
+                  s.deleteGroup(str(existing['id']));
+                  setState(() => group = 'all');
+                  Navigator.pop(ctx);
+                },
+                child: Text(s.t('删除分组（保留自选）')),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(s.t('取消')),
+            ),
+            TextButton(
+              onPressed: () async {
+                try {
+                  final id = await s.saveGroup(c.text, id: existing?['id']);
+                  if (ctx.mounted) {
+                    setState(() => group = id!);
+                    Navigator.pop(ctx);
+                  }
+                } catch (e) {
+                  set(
+                    () => error = e.toString().replaceFirst(
+                      'FormatException: ',
+                      '',
+                    ),
+                  );
+                }
+              },
+              child: Text(s.t('保存')),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Dialog disposal can overlap its reverse animation; let it finish first.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    c.dispose();
+  }
+
+  void stockActions(AtlasStore s, String symbol) => showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, update) => ListView(
+        shrinkWrap: true,
+        children: [
+          ListTile(
+            title: Text(str(s.quotes[symbol]?['name'], symbol)),
+            subtitle: Text(s.t('可加入多个分组')),
+          ),
+          for (final g in s.groups)
+            CheckboxListTile(
+              title: Text(str(g['name'])),
+              value: (g['symbols'] as List).contains(symbol),
+              onChanged: (v) async {
+                await s.groupStock(str(g['id']), symbol, v == true);
+                update(() {});
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.add),
+            title: Text(s.t('创建分组')),
+            onTap: () {
+              Navigator.pop(ctx);
+              editGroup(s);
+            },
+          ),
+          ListTile(
+            title: Text(s.t('移到第一位')),
+            onTap: () {
+              Navigator.pop(ctx);
+              s.reorderWatch(s.watchlist.indexOf(symbol), 0);
+            },
+          ),
+          ListTile(
+            title: Text(s.t('移除自选')),
+            onTap: () {
+              Navigator.pop(ctx);
+              s.toggleWatch(symbol);
+            },
+          ),
+        ],
+      ),
+    ),
+  );
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>();
+    final s = context.watch<AtlasStore>(),
+        selected = s.groups.where((g) => g['id'] == group).firstOrNull;
     final list = s.watchlist
         .where(
-          (v) => filter == 'all' || (filter == 'cn' ? cnStock(v) : !cnStock(v)),
+          (v) =>
+              (selected == null || (selected['symbols'] as List).contains(v)) &&
+              (filter == 'all' || (filter == 'cn' ? cnStock(v) : !cnStock(v))),
         )
         .toList();
     if (sort == 'change') {
@@ -103,133 +224,306 @@ class _WatchPageState extends State<WatchPage> {
         ),
       );
     }
-    return RefreshIndicator(
-      onRefresh: s.refreshQuotes,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    final headers = <Widget>[
+      PageTitle(
+        '我的自选',
+        '长按股票设置分组，左滑移除',
+        trailing: IconButton(
+          onPressed: () => showStockSearch(context),
+          icon: const Icon(Icons.add),
+        ),
+      ),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            ChoiceChip(
+              label: Text(s.t('全部自选')),
+              selected: group == 'all',
+              onSelected: (_) => setState(() => group = 'all'),
+            ),
+            for (final g in s.groups)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: GestureDetector(
+                  onLongPress: () => editGroup(s, existing: g),
+                  child: ChoiceChip(
+                    label: Text(str(g['name'])),
+                    selected: group == g['id'],
+                    onSelected: (_) => setState(() => group = str(g['id'])),
+                  ),
+                ),
+              ),
+            IconButton(
+              tooltip: s.t('创建分组'),
+              onPressed: () => editGroup(s),
+              icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+            ),
+          ],
+        ),
+      ),
+      Row(
         children: [
-          PageTitle(
-            '我的自选',
-            '点选股票进入工作台，长按排序，左滑移除',
-            trailing: IconButton(
-              onPressed: () => showStockSearch(context),
-              icon: const Icon(Icons.add),
+          Expanded(
+            child: Chips(
+              values: const {'all': '全部', 'cn': 'A股', 'us': '美股'},
+              selected: filter,
+              onSelected: (v) => setState(() => filter = v),
             ),
           ),
-          Chips(
-            values: const {'all': '全部', 'cn': 'A股', 'us': '美股'},
-            selected: filter,
-            onSelected: (v) => setState(() => filter = v),
+          TextButton.icon(
+            onPressed: () =>
+                setState(() => sort = sort == 'manual' ? 'change' : 'manual'),
+            icon: const Icon(Icons.sort, size: 16),
+            label: Text(
+              s.t(sort == 'manual' ? '自定义排序' : '涨幅排序'),
+              style: const TextStyle(fontSize: 12),
+            ),
           ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${list.length} ${s.t('只自选')}',
-                  style: const TextStyle(color: muted),
-                ),
+        ],
+      ),
+      if (s.quoteError != null) Notice('${s.t('行情源暂时不可用')} · ${s.quoteError}'),
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${list.length} ${s.t('只自选')}',
+                style: const TextStyle(fontSize: 12, color: muted),
               ),
-              TextButton.icon(
-                onPressed: () => setState(
-                  () => sort = sort == 'manual' ? 'change' : 'manual',
-                ),
-                icon: const Icon(Icons.sort, size: 18),
-                label: Text(s.t(sort == 'manual' ? '自定义排序' : '涨幅排序')),
-              ),
-            ],
-          ),
-          if (s.quoteError != null)
-            Notice('${s.t('行情源暂时不可用')} · ${s.quoteError}'),
-          if (list.isEmpty) Notice(s.t('添加股票开始看盘')),
-          ...list.map((symbol) {
-            final q = s.quotes[symbol] ?? {};
-            return Dismissible(
-              key: ValueKey(symbol),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                color: up.withValues(alpha: .2),
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.all(20),
-                child: const Icon(Icons.star_border),
-              ),
-              onDismissed: (_) => s.toggleWatch(symbol),
-              child: Container(
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0xff303038))),
-                ),
-                child: ListTile(
-                  minVerticalPadding: 14,
-                  title: Text(
-                    str(q['name'], symbol),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 19,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '$symbol${q['asOf'] != null
-                        ? ' · ${str(q['asOf']).replaceFirst('T', ' ')}'
-                        : cnStock(symbol)
-                        ? ''
-                        : ' · ${s.t('打开查看行情')}'}',
-                    style: const TextStyle(color: muted, fontSize: 12),
-                  ),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        fixed(q['price']),
-                        style: const TextStyle(
-                          fontSize: 22,
-                          height: 1.05,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        percent(q['changePercent']),
-                        style: TextStyle(
-                          fontSize: 16,
-                          height: 1.05,
-                          color: tone(q['changePercent']),
-                        ),
-                      ),
-                    ],
-                  ),
-                  onTap: () => openStock(context, symbol),
-                  onLongPress: () => showModalBottomSheet(
-                    context: context,
-                    useSafeArea: true,
-                    builder: (ctx) => ListView(
-                      shrinkWrap: true,
-                      children: [
-                        ListTile(
-                          title: Text(s.t('移到第一位')),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            s.reorderWatch(s.watchlist.indexOf(symbol), 0);
-                          },
-                        ),
-                        ListTile(
-                          title: Text(s.t('移除自选')),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            s.toggleWatch(symbol);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
+            ),
+            Text(
+              s.t('当日分时'),
+              style: const TextStyle(fontSize: 12, color: muted),
+            ),
+            const SizedBox(width: 42),
+            Text(
+              s.t('价格 / 涨幅'),
+              style: const TextStyle(fontSize: 12, color: muted),
+            ),
+          ],
+        ),
+      ),
+    ];
+    return RefreshIndicator(
+      onRefresh: s.refreshQuotes,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: headers.length + list.length + 1,
+        itemBuilder: (ctx, i) {
+          if (i < headers.length) return headers[i];
+          if (i == headers.length + list.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Notice(
+                s.t(
+                  list.isEmpty ? '分组暂无股票，长按自选股票加入分组' : '分时仅显示来源当日数据；长按股票管理分组。',
                 ),
               ),
             );
-          }),
-          const SizedBox(height: 20),
-          Notice(s.t('公开行情快照约5秒刷新。盘外保留来源时间；美股行情进入工作台读取。')),
-        ],
+          }
+          final symbol = list[i - headers.length], q = s.quotes[symbol] ?? {};
+          return Dismissible(
+            key: ValueKey(symbol),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              color: up.withValues(alpha: .2),
+              alignment: Alignment.centerRight,
+              child: const Icon(Icons.star_border),
+            ),
+            onDismissed: (_) => s.toggleWatch(symbol),
+            child: InkWell(
+              onTap: () => openStock(context, symbol),
+              onLongPress: () => stockActions(s, symbol),
+              child: Container(
+                height: 76,
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xff26262c), width: .5),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            str(q['name'], symbol),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            symbol,
+                            style: const TextStyle(fontSize: 12, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: SizedBox(
+                        height: 42,
+                        child: cnStock(symbol)
+                            ? MiniIntraday(symbol)
+                            : const Center(
+                                child: Text(
+                                  '—',
+                                  style: TextStyle(color: muted),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 84,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            fixed(q['price']),
+                            style: const TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            percent(q['changePercent']),
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: tone(q['changePercent']),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
+}
+
+class MiniIntraday extends StatefulWidget {
+  const MiniIntraday(this.symbol, {super.key});
+  final String symbol;
+  @override
+  State<MiniIntraday> createState() => _MiniIntradayState();
+}
+
+class _MiniIntradayState extends State<MiniIntraday> {
+  static final cache = <String, ({DateTime at, Json data})>{};
+  Json? data;
+  bool loading = false;
+  @override
+  void didUpdateWidget(covariant MiniIntraday old) {
+    super.didUpdateWidget(old);
+    load();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    if (loading) return;
+    final saved = cache[widget.symbol];
+    if (saved != null && DateTime.now().difference(saved.at).inSeconds < 60) {
+      data = saved.data;
+      return;
+    }
+    loading = true;
+    try {
+      final r = await context.read<AtlasStore>().api.get(
+        '/api/desk/intraday',
+        parameters: {'symbol': widget.symbol},
+      );
+      cache[widget.symbol] = (at: DateTime.now(), data: r);
+      if (mounted) setState(() => data = r);
+    } catch (_) {
+    } finally {
+      loading = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final points = rows(data?['points']), previous = numOf(data?['previous']);
+    return Tooltip(
+      message: '${str(data?['date'], '—')} · ${tr(context, '当日分时')}',
+      child: points.length < 2
+          ? const Center(
+              child: Text('—', style: TextStyle(color: muted)),
+            )
+          : CustomPaint(painter: SparkPainter(points, previous)),
+    );
+  }
+}
+
+class SparkPainter extends CustomPainter {
+  SparkPainter(this.points, this.previous);
+  final List<Json> points;
+  final double? previous;
+  @override
+  void paint(Canvas c, Size size) {
+    final prices = points
+        .map((p) => numOf(p['price']))
+        .whereType<double>()
+        .toList();
+    if (prices.length < 2) return;
+    var lo = prices.reduce((a, b) => a < b ? a : b),
+        hi = prices.reduce((a, b) => a > b ? a : b);
+    if (previous != null) {
+      if (previous! < lo) lo = previous!;
+      if (previous! > hi) hi = previous!;
+    }
+    if (hi == lo) hi = lo + 1;
+    double y(double p) => 3 + (hi - p) / (hi - lo) * (size.height - 6);
+    if (previous != null) {
+      c.drawLine(
+        Offset(0, y(previous!)),
+        Offset(size.width, y(previous!)),
+        Paint()
+          ..color = muted.withValues(alpha: .35)
+          ..strokeWidth = .5,
+      );
+    }
+    final path = Path();
+    for (var i = 0; i < prices.length; i++) {
+      final x = size.width * i / (prices.length - 1);
+      if (i == 0) {
+        path.moveTo(x, y(prices[i]));
+      } else {
+        path.lineTo(x, y(prices[i]));
+      }
+    }
+    c.drawPath(
+      path,
+      Paint()
+        ..color = (prices.last >= (previous ?? prices.first) ? up : down)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant SparkPainter old) =>
+      old.points != points || old.previous != previous;
 }
 
 class SettingsPage extends StatelessWidget {

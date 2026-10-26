@@ -8,6 +8,19 @@ export type MACDPoint = { time: string; dif: number; dea: number; histogram: num
 export type KDJPoint = { time: string; k: number; d: number; j: number };
 export type ChartSignal = { time: string; kind: 'golden' | 'death' | 'bloom'; text: string };
 
+export function bollinger(c:Candle[],period=20,multiplier=2){
+ return sma(c,period).map((p,i)=>{const values=c.slice(i,i+period).map(b=>b.close),sd=Math.sqrt(values.reduce((s,v)=>s+(v-p.value)**2,0)/period);return {time:p.time,mid:p.value,upper:p.value+multiplier*sd,lower:p.value-multiplier*sd};});
+}
+export function rsi(c:Candle[],period=14):Point[]{
+ const out:Point[]=[];let gain=0,loss=0;
+ for(let i=1;i<c.length;i++){const d=c[i].close-c[i-1].close,g=Math.max(0,d),l=Math.max(0,-d);if(i<=period){gain+=g/period;loss+=l/period;}else{gain=(gain*(period-1)+g)/period;loss=(loss*(period-1)+l)/period;}if(i>=period)out.push({time:c[i].time,value:gain+loss===0?50:100*gain/(gain+loss)});}
+ return out;
+}
+export function parabolicSar(c:Candle[],step=.02,maximum=.2):Point[]{
+ if(c.length<2)return [];let rising=c[1].close>=c[0].close,sar=rising?c[0].low:c[0].high,extreme=rising?c[0].high:c[0].low,af=step;const out:Point[]=[];
+ for(let i=1;i<c.length;i++){let next=sar+af*(extreme-sar);if(rising){next=Math.min(next,c[i-1].low,i>1?c[i-2].low:c[i-1].low);if(c[i].low<next){rising=false;next=extreme;extreme=c[i].low;af=step;}else if(c[i].high>extreme){extreme=c[i].high;af=Math.min(maximum,af+step);}}else{next=Math.max(next,c[i-1].high,i>1?c[i-2].high:c[i-1].high);if(c[i].high>next){rising=true;next=extreme;extreme=c[i].high;af=step;}else if(c[i].low<extreme){extreme=c[i].low;af=Math.min(maximum,af+step);}}sar=next;out.push({time:c[i].time,value:sar});}return out;
+}
+
 export function defaultMAs(): MAPreference[] {
   return DEFAULT_MA_PERIODS.map((period, i) => ({ period, enabled: true, color: MA_COLORS[i] }));
 }

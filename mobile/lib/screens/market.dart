@@ -29,9 +29,7 @@ class MarketPage extends StatefulWidget {
 }
 
 class _MarketPageState extends State<MarketPage> {
-  String index = indexSymbols.first,
-      timeframe = 'intraday',
-      ranking = 'gainers';
+  String index = indexSymbols.first, timeframe = 'day', ranking = 'gainers';
   Json? indices;
   String? error;
   Timer? timer;
@@ -158,15 +156,9 @@ class _MarketPageState extends State<MarketPage> {
               },
             ),
           ),
-          Chips(
-            values: const {
-              'intraday': '分时',
-              'day': '日 K',
-              'week': '周 K',
-              'month': '月 K',
-            },
-            selected: timeframe,
-            onSelected: (v) => setState(() => timeframe = v),
+          PeriodSelector(
+            value: timeframe,
+            onChanged: (v) => setState(() => timeframe = v),
           ),
           Expanded(
             child: LayoutBuilder(

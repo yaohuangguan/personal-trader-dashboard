@@ -1,3 +1,5 @@
+import {guideAction,guideTradeMarkers} from '../shared/guide-action';
+import {guideScore} from '../shared/guide-score';
 import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
 import {stockCharacter} from '../shared/stock-character';
 import {screenCandidate} from '../shared/screening';
@@ -369,7 +371,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const guide=analyzeGuide(data.candles),character=guide.asOf?stockCharacter(data.candles,guide.asOf):null;
   const candidate=screenCandidate({symbol,name:data.name,price:data.last,changePercent:data.changePercent,amount:null,turnover:null},guide,data.provider);if(candidate){candidate.character=character;candidate.risks=[...candidate.risks,...(character?.warnings||[])];}
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
-  return json({available:true,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
+  return json({available:true,strength:guideScore(guide,character),action:guideAction(guide,character),tradeMarkers:guideTradeMarkers(data.candles,guide),market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
   providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',
@@ -379,7 +381,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const q=(url.searchParams.get('q')||'').slice(0,80);
   let local=searchLocal(q);
   if(!q.trim())return json({items:local});
-  if(/[\u3400-\u9fff]|\d{3}/.test(q)){
+  if(/[\u3400-\u9fff]|\d{3}/.test(q)||/^[a-z]{2,12}$/i.test(q.trim())){
    try{local=mergeSearch(local,await cached('search:cn:'+q,300,()=>searchChineseMarket(q)));}
    catch{/* Keep code entry and the local catalog available if search fails. */}
   }

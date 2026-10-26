@@ -20,7 +20,7 @@ export async function searchChineseMarket(query: string): Promise<SearchItem[]> 
 }
 
 export function mergeSearch(local: SearchItem[], found: SearchItem[]): SearchItem[] {
-  const items = new Map(local.map(item => [item.symbol, item]));
+  const items = new Map((found.length ? local.filter(item=>!item.name.startsWith('自定义代码')) : local).map(item => [item.symbol, item]));
   for (const item of found) {
     const previous = items.get(item.symbol);
     if (!previous || previous.name.startsWith('自定义代码')) items.set(item.symbol, item);

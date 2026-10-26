@@ -23,12 +23,13 @@ class MarketChart extends StatefulWidget {
     this.viewportHeight,
     this.volumeUnit = '手',
     this.events = const [],
+    this.trades = const [],
     this.expanded = false,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
-  final List<Json> events;
+  final List<Json> events, trades;
   final bool expanded;
   final bool terminal;
   final double? viewportHeight;
@@ -48,7 +49,8 @@ class _MarketChartState extends State<MarketChart> {
   bool get compact =>
       widget.expanded &&
       MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
-  String paneMode = 'macd';
+  String paneMode = 'macd', overlay = 'MA';
+  bool rsi = false;
   int? hover;
   bool volume = true, macd = true, kdj = true, markers = true;
   final Map<int, Offset> pointers = {};
@@ -378,6 +380,7 @@ class _MarketChartState extends State<MarketChart> {
           unit: widget.unit,
           volumeUnit: widget.volumeUnit,
           events: widget.events,
+          trades: widget.trades,
         ),
       ),
     );
@@ -407,7 +410,77 @@ class _MarketChartState extends State<MarketChart> {
           icon: Icon(icon, size: 17),
         ),
       );
-  int _months(int n) => widget.unit == 'month'
+  Future<void> indicatorSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, update) => Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                tr(ctx, '图表指标'),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Chips(
+                values: const {
+                  'MA': 'MA',
+                  'BOLL': 'BOLL (20,2)',
+                  'SAR': 'SAR (0.02,0.2)',
+                },
+                selected: overlay,
+                onSelected: (v) {
+                  setState(() => overlay = v);
+                  update(() {});
+                },
+              ),
+              for (final item in [
+                ('VOL', volume),
+                ('MACD', macd),
+                ('KDJ', kdj),
+                ('RSI (14)', rsi),
+              ])
+                SwitchListTile(
+                  dense: true,
+                  title: Text(item.$1),
+                  value: item.$2,
+                  onChanged: (v) {
+                    setState(() {
+                      switch (item.$1) {
+                        case 'VOL':
+                          volume = v;
+                        case 'MACD':
+                          macd = v;
+                        case 'KDJ':
+                          kdj = v;
+                        default:
+                          rsi = v;
+                      }
+                    });
+                    update(() {});
+                  },
+                ),
+              Text(
+                tr(ctx, '指标按当前周期计算，历史不足时留空。'),
+                style: const TextStyle(color: muted, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  int _months(int n) => widget.unit.startsWith('m') && widget.unit != 'month'
+      ? n * 22
+      : widget.unit == 'month'
       ? n
       : widget.unit == 'week'
       ? {1: 4, 3: 13, 6: 26}[n]!
@@ -515,7 +588,9 @@ class _MarketChartState extends State<MarketChart> {
                       child: Text(
                         tr(
                           context,
-                          n == 1
+                          widget.unit.startsWith('m') && widget.unit != 'month'
+                              ? '${n * 22}根'
+                              : n == 1
                               ? '1个月'
                               : n == 3
                               ? '3个月'
@@ -532,6 +607,7 @@ class _MarketChartState extends State<MarketChart> {
                 const Spacer(),
                 if (offset > 0)
                   _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
+                _smallIcon(Icons.show_chart, '图表指标', indicatorSettings),
                 _smallIcon(Icons.tune, '均线参数', settings),
                 if (!widget.expanded)
                   _smallIcon(Icons.fullscreen, '展开图表', expand),
@@ -657,36 +733,45 @@ class _MarketChartState extends State<MarketChart> {
         _ChartLegend(
           compact: compact,
           dense: widget.terminal,
-          children: mas
-              .map(
-                (ma) => InkWell(
-                  onTap: () {
-                    setState(() {
-                      mas = mas
-                          .map(
-                            (m) => m == ma
-                                ? MaLine(m.period, m.color, !m.enabled)
-                                : m,
-                          )
-                          .toList();
-                      indicators = IndicatorData(widget.bars, mas);
-                    });
-                    context.read<AtlasStore>().prefs.setString(
-                      'ma',
-                      jsonEncode(mas.map((m) => m.toJson()).toList()),
-                    );
-                  },
-                  child: Text(
-                    'MA${ma.period} ${ma.enabled ? fixed(indicators.averages[ma.period]?[idx]) : '—'}',
-                    style: TextStyle(
-                      color: ma.enabled ? ma.color : muted,
-                      fontSize: widget.terminal ? 12 : 13,
-                      height: 1.1,
-                    ),
+          children: overlay != 'MA'
+              ? [
+                  Text(
+                    overlay == 'BOLL'
+                        ? 'BOLL (20,2)  MID ${fixed(indicators.bollMid[idx])}  UP ${fixed(indicators.bollUpper[idx])}  LOW ${fixed(indicators.bollLower[idx])}'
+                        : 'SAR (0.02,0.2)  ${fixed(indicators.sar[idx])}',
+                    style: const TextStyle(color: Colors.amber, fontSize: 12),
                   ),
-                ),
-              )
-              .toList(),
+                ]
+              : mas
+                    .map(
+                      (ma) => InkWell(
+                        onTap: () {
+                          setState(() {
+                            mas = mas
+                                .map(
+                                  (m) => m == ma
+                                      ? MaLine(m.period, m.color, !m.enabled)
+                                      : m,
+                                )
+                                .toList();
+                            indicators = IndicatorData(widget.bars, mas);
+                          });
+                          context.read<AtlasStore>().prefs.setString(
+                            'ma',
+                            jsonEncode(mas.map((m) => m.toJson()).toList()),
+                          );
+                        },
+                        child: Text(
+                          'MA${ma.period} ${ma.enabled ? fixed(indicators.averages[ma.period]?[idx]) : '—'}',
+                          style: TextStyle(
+                            color: ma.enabled ? ma.color : muted,
+                            fontSize: widget.terminal ? 12 : 13,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
         ),
         SizedBox(
           height: widget.terminal
@@ -863,6 +948,9 @@ class _MarketChartState extends State<MarketChart> {
                       widget.volumeUnit,
                       math.max(14, context.watch<AtlasStore>().fontSize * .72),
                       markers,
+                      overlay: overlay,
+                      rsi: rsi,
+                      trades: widget.trades,
                     ),
                   ),
                 ),
@@ -974,11 +1062,12 @@ class FullscreenChart extends StatefulWidget {
     required this.unit,
     required this.volumeUnit,
     required this.events,
+    this.trades = const [],
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
-  final List<Json> events;
+  final List<Json> events, trades;
   @override
   State<FullscreenChart> createState() => _FullscreenChartState();
 }
@@ -986,6 +1075,7 @@ class FullscreenChart extends StatefulWidget {
 class _FullscreenChartState extends State<FullscreenChart> {
   late List<Bar> bars = widget.bars;
   late List<Json> events = widget.events;
+  late List<Json> trades = widget.trades;
   Timer? timer;
   bool loading = false;
   @override
@@ -1032,6 +1122,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
       setState(() {
         bars = rows(source['candles']).map(Bar.fromJson).toList();
         if (data['guide'] != null) events = rows(obj(data['guide'])['events']);
+        if (data['tradeMarkers'] != null) trades = rows(data['tradeMarkers']);
       });
     } catch (_) {
       if (mounted) {
@@ -1068,6 +1159,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
             unit: widget.unit,
             volumeUnit: widget.volumeUnit,
             events: events,
+            trades: trades,
             expanded: true,
             terminal: portrait,
             viewportHeight: c.maxHeight,
@@ -1091,16 +1183,20 @@ class ChartPainter extends CustomPainter {
     this.events,
     this.unit,
     this.font,
-    this.showSignals,
-  );
+    this.showSignals, {
+    this.overlay = 'MA',
+    this.rsi = false,
+    this.trades = const [],
+  });
   final IndicatorData data;
   final int start, end;
   final int? hover;
   final bool volume, macd, kdj;
-  final List<Json> events;
+  final List<Json> events, trades;
   final String unit;
   final double font;
-  final bool showSignals;
+  final bool showSignals, rsi;
+  final String overlay;
   void label(
     Canvas c,
     String text,
@@ -1144,7 +1240,12 @@ class ChartPainter extends CustomPainter {
     final width = ChartPlot.width(size.width),
         n = end - start,
         step = width / math.max(1, n),
-        parts = 1 + (volume ? 1 : 0) + (macd ? 1 : 0) + (kdj ? 1 : 0),
+        parts =
+            1 +
+            (volume ? 1 : 0) +
+            (macd ? 1 : 0) +
+            (kdj ? 1 : 0) +
+            (rsi ? 1 : 0),
         priceHeight = parts == 1
             ? size.height - 28
             : math.max(
@@ -1164,13 +1265,24 @@ class ChartPainter extends CustomPainter {
     final visible = data.bars.sublist(start, end);
     var lo = visible.map((b) => b.low).reduce(math.min),
         hi = visible.map((b) => b.high).reduce(math.max);
-    for (final ma in data.mas.where((m) => m.enabled)) {
+    for (final ma in data.mas.where((m) => m.enabled && overlay == 'MA')) {
       for (final value
           in data.averages[ma.period]!
               .sublist(start, end)
               .whereType<double>()) {
         lo = math.min(lo, value);
         hi = math.max(hi, value);
+      }
+    }
+    for (final series
+        in overlay == 'BOLL'
+            ? [data.bollUpper, data.bollLower]
+            : overlay == 'SAR'
+            ? [data.sar]
+            : <List<double?>>[]) {
+      for (final v in series.sublist(start, end).whereType<double>()) {
+        lo = math.min(lo, v);
+        hi = math.max(hi, v);
       }
     }
     final pad = (hi - lo) * .08;
@@ -1207,7 +1319,7 @@ class ChartPainter extends CustomPainter {
         paint,
       );
     }
-    for (final ma in data.mas.where((m) => m.enabled)) {
+    for (final ma in data.mas.where((m) => m.enabled && overlay == 'MA')) {
       final path = Path();
       var began = false;
       for (var i = start; i < end; i++) {
@@ -1227,6 +1339,40 @@ class ChartPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.1,
       );
+    }
+    if (overlay != 'MA') {
+      final series = overlay == 'BOLL'
+          ? [data.bollMid, data.bollUpper, data.bollLower]
+          : [data.sar];
+      for (var k = 0; k < series.length; k++) {
+        final path = Path();
+        var began = false;
+        for (var i = start; i < end; i++) {
+          final v = series[k][i];
+          if (v == null) continue;
+          if (overlay == 'SAR') {
+            c.drawCircle(
+              Offset(x(i), y(v)),
+              1.8,
+              Paint()..color = Colors.amber,
+            );
+          } else {
+            if (!began) {
+              path.moveTo(x(i), y(v));
+              began = true;
+            } else {
+              path.lineTo(x(i), y(v));
+            }
+          }
+        }
+        c.drawPath(
+          path,
+          Paint()
+            ..color = [Colors.white, Colors.amber, const Color(0xffed89bf)][k]
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.1,
+        );
+      }
     }
     if (events.isNotEmpty || showSignals) {
       for (final signal in data.signals) {
@@ -1260,6 +1406,25 @@ class ChartPainter extends CustomPainter {
         );
       }
     }
+    if (showSignals) {
+      for (final trade in trades) {
+        final index = data.bars.indexWhere((b) => b.time == trade['time']);
+        if (index < start || index >= end) continue;
+        final buy = trade['side'] == 'buy',
+            px = x(index),
+            py = buy
+                ? y(data.bars[index].low) + 15
+                : y(data.bars[index].high) - 24;
+        label(
+          c,
+          buy ? 'B ↑' : 'S ↓',
+          Offset((px - 8).clamp(left, size.width - right - 24), py),
+          color: buy ? up : down,
+          size: 11,
+          background: true,
+        );
+      }
+    }
     c.restore();
     for (var i = 0; i < gridCount; i++) {
       final value = lo + (hi - lo) * i / (gridCount - 1);
@@ -1270,14 +1435,6 @@ class ChartPainter extends CustomPainter {
         background: true,
       );
     }
-    final last = data.bars[end - 1], latest = last.close.toStringAsFixed(2);
-    label(
-      c,
-      latest,
-      Offset(size.width - right - textWidth(latest), y(last.close) - 7),
-      color: last.close >= last.open ? up : down,
-      background: true,
-    );
     var top = priceHeight + 4;
     void pane(
       String title,
@@ -1404,14 +1561,19 @@ class ChartPainter extends CustomPainter {
         [Colors.white, const Color(0xfff7cf65), const Color(0xffd968e8)],
       );
     }
+    if (rsi) pane('RSI (14)', [data.rsi14], [Colors.amber]);
     for (final index in [start, (start + end) ~/ 2, end - 1]) {
       label(
         c,
-        data.bars[index].time.substring(5),
+        (data.bars[index].time.length > 10
+            ? data.bars[index].time.substring(11)
+            : data.bars[index].time.substring(5)),
         Offset(
           (x(index) -
                   textWidth(
-                        data.bars[index].time.substring(5),
+                        (data.bars[index].time.length > 10
+                            ? data.bars[index].time.substring(11)
+                            : data.bars[index].time.substring(5)),
                         size: font - 1,
                       ) /
                       2)
@@ -1420,7 +1582,9 @@ class ChartPainter extends CustomPainter {
                 size.width -
                     right -
                     textWidth(
-                      data.bars[index].time.substring(5),
+                      (data.bars[index].time.length > 10
+                          ? data.bars[index].time.substring(11)
+                          : data.bars[index].time.substring(5)),
                       size: font - 1,
                     ),
               ),
@@ -1457,7 +1621,10 @@ class ChartPainter extends CustomPainter {
       kdj != old.kdj ||
       events != old.events ||
       font != old.font ||
-      showSignals != old.showSignals;
+      showSignals != old.showSignals ||
+      overlay != old.overlay ||
+      rsi != old.rsi ||
+      trades != old.trades;
 }
 
 class IntradayChart extends StatelessWidget {

@@ -13,6 +13,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     watchlist =
         prefs.getStringList('watchlist') ??
         ['300545.SZ', '300308.SZ', '300502.SZ'];
+    groups = rows(_decode(prefs.getString('watchGroups')));
     locale = prefs.getString('locale') ?? 'zh-CN';
     fontSize = prefs.getDouble('fontSize') ?? 18;
     bookmarks = rows(_decode(prefs.getString('bookmarks')));
@@ -32,7 +33,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   late List<String> watchlist;
   late String locale;
   late double fontSize;
-  late List<Json> bookmarks, alerts;
+  late List<Json> bookmarks, alerts, groups;
   late String deviceToken;
   final Map<String, Json> quotes = {};
   Json catalog = {};
@@ -132,12 +133,58 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     symbol = normalize(symbol);
     if (watchlist.contains(symbol)) {
       watchlist.remove(symbol);
+      for (final g in groups) {
+        (g['symbols'] as List?)?.remove(symbol);
+      }
+      await prefs.setString('watchGroups', jsonEncode(groups));
     } else {
       watchlist.add(symbol);
     }
     await prefs.setStringList('watchlist', watchlist);
     notifyListeners();
     refreshQuotes();
+  }
+
+  Future<String?> saveGroup(String name, {String? id}) async {
+    name = name.trim();
+    if (name.isEmpty || name.length > 24) {
+      throw const FormatException('分组名称需要1–24个字');
+    }
+    if (groups.any((g) => g['name'] == name && g['id'] != id)) {
+      throw const FormatException('分组名称已存在');
+    }
+    if (id == null) {
+      if (groups.length >= 20) throw const FormatException('最多创建20个分组');
+      id = DateTime.now().microsecondsSinceEpoch.toString();
+      groups.add({'id': id, 'name': name, 'symbols': <String>[]});
+    } else {
+      groups.firstWhere((g) => g['id'] == id)['name'] = name;
+    }
+    await prefs.setString('watchGroups', jsonEncode(groups));
+    notifyListeners();
+    return id;
+  }
+
+  Future<void> deleteGroup(String id) async {
+    groups.removeWhere((g) => g['id'] == id);
+    await prefs.setString('watchGroups', jsonEncode(groups));
+    notifyListeners();
+  }
+
+  Future<void> groupStock(String id, String symbol, bool included) async {
+    final group = groups.firstWhere((g) => g['id'] == id),
+        symbols = List<String>.from(group['symbols'] ?? []);
+    symbols.remove(symbol);
+    if (included) {
+      symbols.add(symbol);
+      if (!watchlist.contains(symbol)) {
+        watchlist.add(symbol);
+        await prefs.setStringList('watchlist', watchlist);
+      }
+    }
+    group['symbols'] = symbols;
+    await prefs.setString('watchGroups', jsonEncode(groups));
+    notifyListeners();
   }
 
   Future<void> reorderWatch(int oldIndex, int newIndex) async {

@@ -54,6 +54,26 @@ class DailyTrendPanel extends StatelessWidget {
                 ),
               ),
             ),
+        if (r['operation'] != null) ...[
+          const Divider(height: 24),
+          Text(
+            '${tr(context, '五线操作建议')} · ${tr(context, str(obj(r['operation'])['action']))}',
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '${str(obj(r['operation'])['asOf'])} · ${tr(context, '当日强弱分结合形态与股性核验')}',
+            style: const TextStyle(fontSize: 12, color: muted),
+          ),
+          ...((obj(r['operation'])['reasons'] as List?) ?? []).map(
+            (v) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                tr(context, '$v'),
+                style: const TextStyle(fontSize: 15, height: 1.6),
+              ),
+            ),
+          ),
+        ],
         const Divider(height: 24),
         for (final d in rows(r['dimensions']))
           Padding(

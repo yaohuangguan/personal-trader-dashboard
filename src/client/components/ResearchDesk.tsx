@@ -1,3 +1,5 @@
+import {stockCharacter} from '../../shared/stock-character';
+import {guideTradeMarkers} from '../../shared/guide-action';
 import F10Panel from './F10Panel';
 import DailyTrendPanel from './DailyTrendPanel';
 import {t as uiText} from '../preferences';
@@ -84,7 +86,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
   const quoteMap = useMemo(() => new Map(quotes.data?.items.map(q => [q.symbol, q]) || []), [quotes.data]);
   const quote = quoteMap.get(symbol);
   const dayData = useLiveEndpoint<IntradayPayload>(chinese && chartMode === 'intraday' ? '/api/desk/intraday?symbol=' + symbol : null, 15000, auto);
-  const periodData = useLiveEndpoint<{candles:Candle[];source:string;volumeUnit?:string;notice?:string}>(chinese && ['week','month'].includes(chartMode) ? '/api/desk/history?symbol=' + symbol + '&period=' + chartMode : null);
+  const periodData = useLiveEndpoint<{candles:Candle[];source:string;volumeUnit?:string;notice?:string}>(chinese && ['week','month','m5','m15','m30','m60','m120'].includes(chartMode) ? '/api/desk/history?symbol=' + symbol + '&period=' + chartMode : null);
   const guideWeekly = useLiveEndpoint<{candles:Candle[];source:string;volumeUnit?:string;notice?:string}>(chinese && contextTab === 'guide' ? '/api/desk/history?symbol=' + symbol + '&period=week' : null);
   const guideMonthly = useLiveEndpoint<{candles:Candle[];source:string;volumeUnit?:string;notice?:string}>(chinese && contextTab === 'guide' ? '/api/desk/history?symbol=' + symbol + '&period=month' : null);
   const tickData = useLiveEndpoint<TickPayload>(chinese && bookTab === 'ticks' ? '/api/desk/ticks?symbol=' + symbol : null, 15000, auto);
@@ -98,6 +100,8 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
   const companyNews = useLiveEndpoint<FlashPayload>(chinese && contextTab === 'news' ? '/api/desk/stock-news?symbol=' + symbol : null, 180000, auto);
   const reportData = useLiveEndpoint<ReportsPayload>(chinese && contextTab === 'reports' ? '/api/desk/reports?symbol=' + symbol : null);
   const analysis = useMemo(() => market ? (() => {const result = analyzeGuide(market.candles);if(market.provider.includes('不复权')) result.warnings.push('当前历史不复权，送转与除权可能改变均线形态，需复核。');return result;})() : null, [market]);
+  const character=useMemo(()=>analysis?.asOf&&market?stockCharacter(market.candles,analysis.asOf):null,[analysis,market]);
+  const tradeMarkers=useMemo(()=>analysis&&market?guideTradeMarkers(market.candles,analysis):[],[analysis,market]);
   const known = CATALOG.find(item => item.symbol === symbol), name = quote?.name || market?.name || known?.name || symbol;
   const price = quote?.price ?? market?.last, change = quote?.changePercent ?? market?.changePercent;
   const benchmark = quoteMap.get('000300.SH');
@@ -141,11 +145,11 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
         <div className="desk-mobile-security">{securityCard}</div>
 
         {chinese && <DailyTrendPanel symbol={symbol} />}
-        {uiText(analysis && <GuideSummary data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
+        {uiText(analysis && <GuideSummary character={character} data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
         <section className="desk-chart-card"><Tabs.Root value={chartMode} onValueChange={setChartMode}>
-          <div className="desk-chart-heading"><Tabs.List className="desk-tabs" aria-label={uiText("行情图表类型")}><Tabs.Trigger value="intraday" disabled={!chinese}>{uiText("分时")}</Tabs.Trigger><Tabs.Trigger value="daily">{uiText("日 K")}</Tabs.Trigger><Tabs.Trigger value="week" disabled={!chinese}>{uiText("周 K")}</Tabs.Trigger><Tabs.Trigger value="month" disabled={!chinese}>{uiText("月 K")}</Tabs.Trigger></Tabs.List><span>MA · VOL · MACD · KDJ</span></div>
-          <Tabs.Content value="daily">{uiText(market?.candles.length ? <MarketChart candles={market.candles} symbol={symbol} guideEvents={analysis?.events} chipFloatShares={quote?.floatCap&&quote.price?quote.floatCap/quote.price:undefined} volumeUnit={market.provider.startsWith('新浪') ? '股' : market.provider.startsWith('腾讯') ? /^68[89]/.test(symbol) ? '股' : '手' : undefined} /> : marketError ? <><Empty text={uiText("原始K线暂不可用，保留第三方参考图")} /><TradingViewWidget symbol={symbol} /></> : <Empty loading />)}</Tabs.Content>
-          {uiText((['week','month'] as const).map(period=><Tabs.Content value={period} key={period}>{uiText(periodData.data?<MarketChart candles={periodData.data.candles} symbol={symbol} unit={period} volumeUnit={periodData.data.volumeUnit}/>:<div><Empty loading={periodData.loading} text={uiText(periodData.error)}/>{uiText(!periodData.loading&&<button className="outline-button" onClick={periodData.refresh}>{uiText("重试数据源")}</button>)}</div>)}</Tabs.Content>))}
+          <div className="desk-chart-heading"><Tabs.List className="desk-tabs" aria-label={uiText("行情图表类型")}><Tabs.Trigger value="intraday" disabled={!chinese}>{uiText("分时")}</Tabs.Trigger><Tabs.Trigger value="daily">{uiText("日 K")}</Tabs.Trigger><Tabs.Trigger value="week" disabled={!chinese}>{uiText("周 K")}</Tabs.Trigger><Tabs.Trigger value="month" disabled={!chinese}>{uiText("月 K")}</Tabs.Trigger><select aria-label={uiText('分钟周期')} value={chartMode.startsWith('m')&&chartMode!=='month'?chartMode:''} onChange={e=>{if(e.target.value)setChartMode(e.target.value);}}><option value="">{uiText('周期')}</option>{[5,15,30,60,120].map(n=><option key={n} value={'m'+n}>{n} {uiText('分钟')}</option>)}</select></Tabs.List><span>MA · VOL · MACD · KDJ</span></div>
+          <Tabs.Content value="daily">{uiText(market?.candles.length ? <MarketChart candles={market.candles} symbol={symbol} guideEvents={analysis?.events} tradeMarkers={tradeMarkers} chipFloatShares={quote?.floatCap&&quote.price?quote.floatCap/quote.price:undefined} volumeUnit={market.provider.startsWith('新浪') ? '股' : market.provider.startsWith('腾讯') ? /^68[89]/.test(symbol) ? '股' : '手' : undefined} /> : marketError ? <><Empty text={uiText("原始K线暂不可用，保留第三方参考图")} /><TradingViewWidget symbol={symbol} /></> : <Empty loading />)}</Tabs.Content>
+          {uiText((['week','month','m5','m15','m30','m60','m120'] as const).map(period=><Tabs.Content value={period} key={period}>{uiText(periodData.data?<MarketChart candles={periodData.data.candles} symbol={symbol} unit={period} volumeUnit={periodData.data.volumeUnit}/>:<div><Empty loading={periodData.loading} text={uiText(periodData.error)}/>{uiText(!periodData.loading&&<button className="outline-button" onClick={periodData.refresh}>{uiText("重试数据源")}</button>)}</div>)}</Tabs.Content>))}
           <Tabs.Content value="intraday">{uiText(dayData.data ? <IntradayChart data={dayData.data} /> : <Empty loading={dayData.loading} text={uiText(dayData.error || '分时暂不可用')} />)}{uiText(dayData.error && dayData.data && <Source text="" error={uiText("分时刷新失败，保留上一快照")} />)}</Tabs.Content>
         </Tabs.Root><div className="desk-chart-source"><span>{uiText(chartMode === 'daily' ? market?.provider || '等待日线数据' : chartMode === 'intraday' ? dayData.data?.source || '公开分钟分时' : periodData.data?.source || '等待周期历史')}</span><span>{uiText(chartMode === 'daily' ? market?.asOf : chartMode === 'intraday' ? dayData.data?.date : periodData.data?.candles.at(-1)?.time)}</span></div></section>
 
@@ -158,7 +162,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
           <Tabs.Content value="reports">{uiText(reportData.data?.items.length ? <div className="desk-reports">{uiText(reportData.data.items.map((r, i) => <button type="button" key={r.url + i} onClick={() => openNews({ id: r.url, title: r.title, publishedAt: r.date + 'T00:00:00+08:00', source: r.organization, url: r.url, category: 'all', originalTitle: r.title, summary: '机构：' + r.organization + (r.rating ? '；来源评级：' + r.rating : '') })}><span>{uiText(r.date)}<b>{uiText(r.organization)}</b></span><strong>{(r.title)}</strong><small>{uiText(r.rating || '未提供评级')} <ChevronRight size={13} /></small></button>))}</div> : <Empty loading={reportData.loading} text={uiText(reportData.error || '来源在当前窗口未列出研报')} />)}<Source text={uiText("东方财富研报索引 · 评级保留来源表述")} /></Tabs.Content>
           <Tabs.Content value="evidence"><StockResearchExtras symbol={symbol} onStock={onSelect} /></Tabs.Content>
           <Tabs.Content value="f10"><F10Panel symbol={symbol}/></Tabs.Content>
-          <Tabs.Content value="guide">{uiText(analysis ? <GuidePanel data={analysis} weekly={guideWeekly.data?.candles} monthly={guideMonthly.data?.candles} weekError={!chinese ? '当前周期接口未覆盖此市场' : guideWeekly.error} monthError={!chinese ? '当前周期接口未覆盖此市场' : guideMonthly.error} loading={guideWeekly.loading || guideMonthly.loading} /> : <Empty text={uiText("等待有效日线以核验指南条件")} />)}</Tabs.Content>
+          <Tabs.Content value="guide">{uiText(analysis ? <GuidePanel character={character} data={analysis} weekly={guideWeekly.data?.candles} monthly={guideMonthly.data?.candles} weekError={!chinese ? '当前周期接口未覆盖此市场' : guideWeekly.error} monthError={!chinese ? '当前周期接口未覆盖此市场' : guideMonthly.error} loading={guideWeekly.loading || guideMonthly.loading} /> : <Empty text={uiText("等待有效日线以核验指南条件")} />)}</Tabs.Content>
         </Tabs.Root></section>
       </div>
 

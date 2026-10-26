@@ -1,3 +1,4 @@
+import {newsLink,readNewsLink} from '../../shared/news-link';
 import {t as uiText} from '../preferences';
 import {createContext,useCallback,useContext,useEffect,useMemo,useState,type ReactNode} from 'react';
 import {ArrowLeft,BookOpen,CalendarDays,Copy,FileText,Info,LoaderCircle,Newspaper,ShieldCheck,X} from 'lucide-react';
@@ -78,7 +79,8 @@ function ReaderContents({selection}:{selection:ReadingItem}){
 }
 export function InAppReaderProvider({children}:{children:ReactNode}){
  const [selected,setSelected]=useState<ReadingItem|null>(null);
- const close=useCallback(()=>setSelected(null),[]);
+ const close=useCallback(()=>{setSelected(null);const u=new URL(location.href);u.searchParams.delete('article');history.replaceState(null,'',u);},[]);
+ useEffect(()=>{const raw=new URLSearchParams(location.search).get('article');if(raw){const item=readNewsLink(raw);if(item)setSelected({kind:'news',item});}},[]);
  useEffect(()=>{
   if(!selected)return;
   const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.stopPropagation();close();}};
@@ -98,7 +100,7 @@ export function InAppReaderProvider({children}:{children:ReactNode}){
    <div className="reader-modal" role="dialog" aria-modal="true" aria-label={uiText("站内资料阅读器")}>
     <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><button onClick={close} aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></header>
     <div className="reader-scroll"><ReaderContents selection={selected}/></div>
-    <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button><span>{uiText("站内阅读 · 来源可追溯")}</span></footer>
+    <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button>{selected.kind==='news'&&<button onClick={async()=>{await navigator.clipboard.writeText(newsLink(selected.item,location.origin));}}><Copy size={15}/>{uiText("复制站内链接")}</button>}<span>{uiText("站内阅读 · 来源可追溯")}</span></footer>
    </div>
   </div>)}
  </ReaderContext.Provider>;

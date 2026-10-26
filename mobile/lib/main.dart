@@ -159,12 +159,21 @@ class _AtlasShellState extends State<AtlasShell> {
     pushClicks = push.opened.stream.listen(_open);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final url = push.initialUrl ?? Uri.base.toString();
-      if (url.contains('symbol=') || url.contains('view=signals')) _open(url);
+      if (url.contains('symbol=') ||
+          url.contains('view=signals') ||
+          url.contains('article=')) {
+        _open(url);
+      }
     });
   }
 
   void _open(String url) {
     if (!mounted) return;
+    final article = parseArticleLink(url);
+    if (article != null) {
+      openNews(context, article);
+      return;
+    }
     final symbol = Uri.tryParse(url)?.queryParameters['symbol'];
     if (symbol != null) {
       openStock(context, symbol);

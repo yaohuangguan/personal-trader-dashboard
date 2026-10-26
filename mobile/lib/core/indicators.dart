@@ -61,6 +61,80 @@ class IndicatorData {
     for (final ma in mas) {
       averages[ma.period] = sma(bars, ma.period);
     }
+    bollMid = sma(bars, 20);
+    bollUpper = List<double?>.filled(bars.length, null);
+    bollLower = List<double?>.filled(bars.length, null);
+    rsi14 = List<double?>.filled(bars.length, null);
+    sar = List<double?>.filled(bars.length, null);
+    var gain = 0.0, loss = 0.0;
+    for (var i = 0; i < bars.length; i++) {
+      if (i >= 19) {
+        final mid = bollMid[i]!,
+            sd = math.sqrt(
+              bars
+                      .sublist(i - 19, i + 1)
+                      .fold(0.0, (s, b) => s + math.pow(b.close - mid, 2)) /
+                  20,
+            );
+        bollUpper[i] = mid + 2 * sd;
+        bollLower[i] = mid - 2 * sd;
+      }
+      if (i > 0) {
+        final delta = bars[i].close - bars[i - 1].close,
+            g = math.max(0.0, delta),
+            l = math.max(0.0, -delta);
+        if (i <= 14) {
+          gain += g / 14;
+          loss += l / 14;
+        } else {
+          gain = (gain * 13 + g) / 14;
+          loss = (loss * 13 + l) / 14;
+        }
+        if (i >= 14) {
+          rsi14[i] = gain + loss == 0 ? 50 : 100 * gain / (gain + loss);
+        }
+      }
+    }
+    if (bars.length >= 2) {
+      var rising = bars[1].close >= bars[0].close,
+          point = rising ? bars[0].low : bars[0].high,
+          extreme = rising ? bars[0].high : bars[0].low,
+          af = .02;
+      for (var i = 1; i < bars.length; i++) {
+        var next = point + af * (extreme - point);
+        if (rising) {
+          next = math.min(
+            next,
+            math.min(bars[i - 1].low, bars[math.max(0, i - 2)].low),
+          );
+          if (bars[i].low < next) {
+            rising = false;
+            next = extreme;
+            extreme = bars[i].low;
+            af = .02;
+          } else if (bars[i].high > extreme) {
+            extreme = bars[i].high;
+            af = math.min(.2, af + .02);
+          }
+        } else {
+          next = math.max(
+            next,
+            math.max(bars[i - 1].high, bars[math.max(0, i - 2)].high),
+          );
+          if (bars[i].high > next) {
+            rising = true;
+            next = extreme;
+            extreme = bars[i].high;
+            af = .02;
+          } else if (bars[i].low < extreme) {
+            extreme = bars[i].low;
+            af = math.min(.2, af + .02);
+          }
+        }
+        point = next;
+        sar[i] = point;
+      }
+    }
     vol5 = sma(bars, 5, volume: true);
     vol20 = sma(bars, 20, volume: true);
     double? fast, slow;
@@ -125,7 +199,7 @@ class IndicatorData {
   final List<MaLine> mas;
   final List<Json> signals = [];
   final Map<int, List<double?>> averages = {};
-  late List<double?> vol5, vol20;
+  late List<double?> vol5, vol20, bollMid, bollUpper, bollLower, rsi14, sar;
   final List<double> dif = [],
       dea = [],
       hist = [],

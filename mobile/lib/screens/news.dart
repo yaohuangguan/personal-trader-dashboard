@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -159,9 +160,7 @@ class ReaderPage extends StatelessWidget {
           ),
           IconButton(
             onPressed: () => SharePlus.instance.share(
-              ShareParams(
-                text: '${str(item['title'])}\n${str(item['url'], '')}',
-              ),
+              ShareParams(text: '${str(item['title'])}\n${articleLink(item)}'),
             ),
             tooltip: s.t('分享'),
             icon: const Icon(Icons.ios_share),
@@ -241,5 +240,38 @@ class ReaderPage extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+String articleLink(Json item) {
+  String plain(dynamic v, int n) {
+    final t = str(v, '').replaceAll(RegExp(r'<[^>]*>'), '');
+    return t.substring(0, t.length < n ? t.length : n);
+  }
+
+  final data = {
+    'title': plain(item['title'], 240),
+    'source': plain(item['source'], 100),
+    'url': plain(item['url'] ?? item['sourceUrl'], 2048),
+    'publishedAt': item['publishedAt'] ?? item['date'],
+    'summary': plain(item['summary'] ?? item['content'], 1800),
+  };
+  return 'https://personal-market-atlas.nzs.workers.dev/?article=${base64Url.encode(utf8.encode(jsonEncode(data))).replaceAll('=', '')}';
+}
+
+Json? parseArticleLink(String url) {
+  try {
+    final raw = Uri.parse(url).queryParameters['article'];
+    if (raw == null || raw.length > 12000) return null;
+    final r = obj(
+      jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(raw)))),
+    );
+    if (str(r['title'], '').isEmpty ||
+        !['http', 'https'].contains(Uri.parse(str(r['url'])).scheme)) {
+      return null;
+    }
+    return r;
+  } catch (_) {
+    return null;
   }
 }

@@ -326,3 +326,69 @@ class PageTitle extends StatelessWidget {
     ),
   );
 }
+
+class PeriodSelector extends StatelessWidget {
+  const PeriodSelector({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+  final String value;
+  final ValueChanged<String> onChanged;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 36,
+    child: Row(
+      children: [
+        for (final pair in [
+          ('intraday', '分时'),
+          ('day', '日 K'),
+          ('week', '周 K'),
+          ('month', '月 K'),
+        ])
+          Expanded(
+            child: InkWell(
+              onTap: () => onChanged(pair.$1),
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      width: 2,
+                      color: value == pair.$1 ? up : Colors.transparent,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  tr(context, pair.$2),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: value == pair.$1 ? Colors.white : muted,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: PopupMenuButton<String>(
+            tooltip: tr(context, '分钟周期'),
+            onSelected: onChanged,
+            itemBuilder: (ctx) => [
+              for (final n in [5, 15, 30, 60, 120])
+                PopupMenuItem(value: 'm$n', child: Text('$n ${tr(ctx, '分钟')}')),
+            ],
+            child: Container(
+              alignment: Alignment.center,
+              child: Text(
+                value.startsWith('m') && value != 'month'
+                    ? '${value.substring(1)}m ▾'
+                    : '${tr(context, '周期')} ▾',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}

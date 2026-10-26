@@ -1,3 +1,4 @@
+import {parseMinuteBars,aggregate120} from '../shared/minute-bars';
 import {aggregateDaily} from '../shared/market-models';
 import {sinaAdjustedDaily,sinaBeijingDaily,sinaIndexDaily} from './research';
 // HTTP adapters ported from a-stock-data v3.10.3 (Apache-2.0).
@@ -106,6 +107,15 @@ export async function intraday(raw: string) {
 }
 export async function history(raw: string, period: string) {
   const { symbol, wire } = chineseSymbol(raw);
+  if(/^m(?:5|15|30|60|120)$/.test(period)){
+    if(symbol.endsWith('.BJ'))throw new Error('分钟线来源暂不覆盖北交所');
+    const sourcePeriod=period==='m120'?'m60':period,url='https://ifzq.gtimg.cn/appstock/app/kline/mkline?param='+wire+','+sourcePeriod+',,320';
+    const payload=await(await request(url,6000)).json() as {data?:Record<string,Record<string,unknown>>};
+    const rawBars=parseMinuteBars(payload.data?.[wire]?.[sourcePeriod]);
+    const candles=period==='m120'?aggregate120(rawBars):rawBars;
+    if(candles.length<2)throw new Error('分钟线样本不足');
+    return {...stamp('腾讯财经未复权分钟线'+(period==='m120'?' · 60分钟分时段合成':''),url),symbol,candles,period,volumeUnit:/^68[89]/.test(symbol)?'股':'手',notice:period==='m120'?'120分钟按上午、下午分别合成，仅展示两根60分钟均已存在的完整交易时段。':'未复权分钟K；最后一根可能未结束，来源最多320根。'};
+  }
   if (!['day','week', 'month'].includes(period)) throw new Error('无效历史周期');
   try {
   if(symbol.endsWith('.BJ'))throw new Error('使用北交所日线聚合');
