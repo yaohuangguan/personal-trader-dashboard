@@ -1,6 +1,6 @@
 # Market Atlas mobile
 
-Android / iOS Flutter client for the existing Market Atlas production API. This is a native Material 3 interface, not a WebView wrapper. Default API: https://personal-market-atlas.nzs.workers.dev.
+iOS-first Flutter client for the existing Market Atlas production API. This is a native Material 3 interface, not a WebView wrapper. Default API: https://personal-market-atlas.nzs.workers.dev.
 
 ## Run
 
@@ -10,7 +10,6 @@ Use Flutter **3.47.5 / Dart 3.13.4**, then:
 cd mobile
 flutter pub get
 flutter run
-flutter build apk --release
 # On macOS with Xcode:
 flutter build ios --release --no-codesign
 ```
@@ -57,4 +56,12 @@ flutter test
 flutter build web --release
 ```
 
-The mobile GitHub Actions workflow validates formatting, analysis and tests, builds a release APK and builds the iOS app without code signing. Android preview APK uses the generated debug signing key and is for sideload testing; configure your own stable signing key before store distribution. The unsigned iOS `.app` archive validates compilation and cannot be installed directly or submitted to the App Store. Distribution needs Apple signing / provisioning and an archive export, or TestFlight.
+The first release targets iOS. GitHub Actions validates formatting, analysis and tests, and builds the iOS app without code signing. The Android scaffold remains in the repository but Android builds and distribution are disabled for this phase. The unsigned iOS `.app` archive validates compilation and cannot be installed directly or submitted to the App Store. Distribution needs Apple signing / provisioning and an archive export, or TestFlight.
+
+## iOS chart experience
+
+The iOS-focused chart pass adds accumulated slow dragging in the natural direction, finger-anchored pinch zoom, a crosshair that stays readable after lift, haptic selection feedback, VoiceOver candle adjustment, double-tap reset and a return-to-latest control. Source refreshes preserve historical date anchors. MA settings changed in fullscreen are restored to the stock page. Painting is isolated from unrelated quote refreshes.
+
+Fullscreen follows device rotation and has an explicit rotation button. Landscape fits all three subpanels and also offers individual VOL / MACD / KDJ focus layouts. Default eight MA colors and adjustable periods are retained. Indicator readouts follow the selected candle, including the current candle before the first touch.
+
+`flutter test` covers slow drags, zoom anchoring, new listings, preserved refresh anchors, crosshair persistence and landscape subpanel selection. The iOS CI additionally boots an actual iPhone Simulator runtime and runs `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d <simulator-id>`, including MA editing and portrait/landscape screenshots. Integration fixtures are deterministic test candles, not production prices. Production interfaces continue to use source-attributed live APIs.

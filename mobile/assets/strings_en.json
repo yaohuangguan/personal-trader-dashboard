@@ -1036,5 +1036,9 @@
   "通知未获允许，请在系统设置中开启。": "Notification permission was denied. Enable it in system settings.",
   "需要股票代码 JSON 数组": "A JSON array of stock symbols is required",
   "Firebase 原生推送尚未配置": "Firebase native push is not configured",
-  "· 最近一页 · 聚合分笔，非全日完整明细": "Latest page · Aggregated trades, not a complete daily tape"
+  "· 最近一页 · 聚合分笔，非全日完整明细": "Latest page · Aggregated trades, not a complete daily tape",
+  "回到最新": "Return to latest",
+  "副图布局": "Indicator layout",
+  "横竖屏切换": "Rotate chart",
+  "关闭全屏": "Close fullscreen"
 }

@@ -1,12 +1,15 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
 import '../core/store.dart';
 import '../core/indicators.dart';
+import '../core/chart_viewport.dart';
 import 'common.dart';
 
 class MarketChart extends StatefulWidget {
@@ -30,7 +33,16 @@ class MarketChart extends StatefulWidget {
 class _MarketChartState extends State<MarketChart> {
   List<MaLine> mas = List.of(defaultMa);
   late IndicatorData indicators;
-  int count = 66, offset = 0;
+  final viewport = ChartViewport();
+  int get count => viewport.count;
+  set count(int v) => viewport.count = v;
+  int get offset => viewport.offset;
+  set offset(int v) => viewport.offset = v;
+  DateTime hapticAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool get compact =>
+      widget.expanded &&
+      MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
+  String paneMode = 'all';
   int? hover;
   bool volume = true, macd = true, kdj = true, markers = true;
   final Map<int, Offset> pointers = {};
@@ -52,6 +64,7 @@ class _MarketChartState extends State<MarketChart> {
       }
     } catch (_) {}
     indicators = IndicatorData(widget.bars, mas);
+    viewport.length = widget.bars.length;
   }
 
   @override
@@ -83,8 +96,27 @@ class _MarketChartState extends State<MarketChart> {
             ) ||
         oldWidget.symbol != widget.symbol ||
         oldWidget.unit != widget.unit) {
+      final rightDate = oldWidget.bars.isEmpty
+          ? null
+          : oldWidget
+                .bars[(oldWidget.bars.length - offset - 1).clamp(
+                  0,
+                  oldWidget.bars.length - 1,
+                )]
+                .time;
+      final selectedDate = hover == null || oldWidget.bars.isEmpty
+          ? null
+          : oldWidget.bars[hover!.clamp(0, oldWidget.bars.length - 1)].time;
       indicators = IndicatorData(widget.bars, mas);
-      hover = null;
+      viewport.length = widget.bars.length;
+      if (offset > 0 && rightDate != null) {
+        final index = widget.bars.indexWhere((b) => b.time == rightDate);
+        if (index >= 0) offset = widget.bars.length - index - 1;
+      }
+      final selectedIndex = selectedDate == null
+          ? -1
+          : widget.bars.indexWhere((b) => b.time == selectedDate);
+      hover = selectedIndex < 0 ? null : selectedIndex;
       if (oldWidget.symbol != widget.symbol || oldWidget.unit != widget.unit) {
         offset = 0;
       }
@@ -92,14 +124,13 @@ class _MarketChartState extends State<MarketChart> {
     }
   }
 
-  int get end => math.max(1, widget.bars.length - offset);
-  int get start => math.max(0, end - count);
+  int get end => viewport.end;
+  int get start => viewport.start;
   Bar? get current => widget.bars.isEmpty
       ? null
       : widget.bars[(hover ?? (end - 1)).clamp(0, widget.bars.length - 1)];
   void range(int days) => setState(() {
-    count = days;
-    offset = 0;
+    viewport.reset(days);
     hover = null;
   });
   Future<void> settings() async {
@@ -229,9 +260,40 @@ class _MarketChartState extends State<MarketChart> {
   }
 
   void selectAt(Offset p, double width) {
-    final i = (start + ((p.dx - 51) / (width - 103) * (end - start)).floor())
-        .clamp(start, end - 1);
+    final i = viewport.select((p.dx - 52) / (width - 106));
+    if (i != hover &&
+        DateTime.now().difference(hapticAt).inMilliseconds >= 80) {
+      hapticAt = DateTime.now();
+      HapticFeedback.selectionClick();
+    }
     setState(() => hover = i);
+  }
+
+  Future<void> expand() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FullscreenChart(
+          bars: widget.bars,
+          symbol: widget.symbol,
+          unit: widget.unit,
+          volumeUnit: widget.volumeUnit,
+          events: widget.events,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final raw = context.read<AtlasStore>().prefs.getString('ma');
+    if (raw != null) {
+      final saved = rows(jsonDecode(raw)).map(MaLine.fromJson).toList();
+      if (saved.length == 8 &&
+          saved.every((m) => m.period >= 1 && m.period <= 500)) {
+        setState(() {
+          mas = saved;
+          indicators = IndicatorData(widget.bars, mas);
+        });
+      }
+    }
   }
 
   @override
@@ -243,9 +305,21 @@ class _MarketChartState extends State<MarketChart> {
       );
     }
     final c = current!, idx = hover ?? end - 1;
-    final height = widget.expanded
-        ? math.max(500.0, MediaQuery.sizeOf(context).height - 250)
-        : (280 + (volume ? 95 : 0) + (macd ? 95 : 0) + (kdj ? 95 : 0))
+    final drawVolume = compact
+            ? paneMode == 'all' || paneMode == 'vol'
+            : volume,
+        drawMacd = compact ? paneMode == 'all' || paneMode == 'macd' : macd,
+        drawKdj = compact ? paneMode == 'all' || paneMode == 'kdj' : kdj;
+    final height = compact
+        ? math.max(
+            190.0,
+            MediaQuery.sizeOf(context).height -
+                MediaQuery.paddingOf(context).vertical -
+                138,
+          )
+        : widget.expanded
+        ? math.max(450.0, MediaQuery.sizeOf(context).height - 280)
+        : (280 + (volume ? 100 : 0) + (macd ? 100 : 0) + (kdj ? 100 : 0))
               .toDouble();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -311,36 +385,56 @@ class _MarketChartState extends State<MarketChart> {
               tooltip: tr(context, '均线参数'),
               icon: const Icon(Icons.tune, size: 20),
             ),
-            if (!widget.expanded)
+            if (offset > 0)
               IconButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (ctx) => Scaffold(
-                      appBar: AppBar(title: Text(widget.symbol)),
-                      body: SafeArea(
-                        child: SingleChildScrollView(
-                          child: MarketChart(
-                            bars: widget.bars,
-                            symbol: widget.symbol,
-                            unit: widget.unit,
-                            volumeUnit: widget.volumeUnit,
-                            events: widget.events,
-                            expanded: true,
-                          ),
-                        ),
-                      ),
+                onPressed: () => range(count),
+                tooltip: tr(context, '回到最新'),
+                icon: const Icon(Icons.skip_next),
+              ),
+            if (widget.expanded) ...[
+              if (compact)
+                PopupMenuButton<String>(
+                  tooltip: tr(context, '副图布局'),
+                  initialValue: paneMode,
+                  onSelected: (v) => setState(() => paneMode = v),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'all',
+                      child: Text('VOL + MACD + KDJ'),
                     ),
-                  ),
+                    PopupMenuItem(value: 'vol', child: Text('VOL')),
+                    PopupMenuItem(value: 'macd', child: Text('MACD')),
+                    PopupMenuItem(value: 'kdj', child: Text('KDJ')),
+                  ],
+                  icon: const Icon(Icons.view_stream_outlined),
                 ),
+              IconButton(
+                onPressed: () => SystemChrome.setPreferredOrientations(
+                  compact
+                      ? [DeviceOrientation.portraitUp]
+                      : [
+                          DeviceOrientation.landscapeLeft,
+                          DeviceOrientation.landscapeRight,
+                        ],
+                ),
+                tooltip: tr(context, '横竖屏切换'),
+                icon: const Icon(Icons.screen_rotation_outlined),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                tooltip: tr(context, '关闭全屏'),
+                icon: const Icon(Icons.close),
+              ),
+            ] else
+              IconButton(
+                onPressed: expand,
                 tooltip: tr(context, '展开图表'),
                 icon: const Icon(Icons.fullscreen),
               ),
           ],
         ),
-        Wrap(
-          spacing: 14,
-          runSpacing: 8,
+        _ChartLegend(
+          compact: compact,
           children: mas
               .map(
                 (ma) => InkWell(
@@ -371,12 +465,15 @@ class _MarketChartState extends State<MarketChart> {
               )
               .toList(),
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: compact ? 4 : 14),
         Wrap(
           spacing: 12,
           runSpacing: 6,
           children: [
-            Text(c.time, style: const TextStyle(fontSize: 13, color: muted)),
+            Text(
+              '${widget.expanded ? '${widget.symbol} · ' : ''}${c.time}',
+              style: const TextStyle(fontSize: 13, color: muted),
+            ),
             for (final pair in [
               ('开', c.open),
               ('高', c.high),
@@ -396,7 +493,7 @@ class _MarketChartState extends State<MarketChart> {
               ),
           ],
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: compact ? 4 : 10),
         LayoutBuilder(
           builder: (context, constraints) => Listener(
             onPointerDown: (e) {
@@ -405,6 +502,13 @@ class _MarketChartState extends State<MarketChart> {
                 pinchDistance =
                     (pointers.values.first - pointers.values.last).distance;
                 pinchCount = count;
+                viewport.beginPinch(
+                  pinchDistance!,
+                  ((pointers.values.first.dx + pointers.values.last.dx) / 2 -
+                          52) /
+                      (constraints.maxWidth - 106),
+                );
+                hover = null;
               }
             },
             onPointerMove: (e) {
@@ -414,12 +518,13 @@ class _MarketChartState extends State<MarketChart> {
                     (pointers.values.first - pointers.values.last).distance;
                 if (distance > 10) {
                   setState(
-                    () => count = (pinchCount * pinchDistance! / distance)
-                        .round()
-                        .clamp(
-                          math.min(15, widget.bars.length),
-                          widget.bars.length,
-                        ),
+                    () => viewport.pinch(
+                      distance,
+                      ((pointers.values.first.dx + pointers.values.last.dx) /
+                                  2 -
+                              52) /
+                          (constraints.maxWidth - 106),
+                    ),
                   );
                 }
               }
@@ -433,76 +538,214 @@ class _MarketChartState extends State<MarketChart> {
             },
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: (_) {
+                viewport.beginPan();
+                setState(() => hover = null);
+              },
               onHorizontalDragUpdate: (e) {
                 if (pointers.length < 2) {
                   setState(
-                    () => offset =
-                        (offset +
-                                (-e.delta.dx /
-                                        (constraints.maxWidth - 103) *
-                                        count)
-                                    .round())
-                            .clamp(0, math.max(0, widget.bars.length - 15)),
+                    () => viewport.pan(e.delta.dx, constraints.maxWidth - 106),
                   );
                 }
               },
+              onDoubleTap: () => range(66),
               onLongPressStart: (e) =>
                   selectAt(e.localPosition, constraints.maxWidth),
               onLongPressMoveUpdate: (e) =>
                   selectAt(e.localPosition, constraints.maxWidth),
-              onLongPressEnd: (_) => setState(() => hover = null),
+              onLongPressEnd: (_) {},
               onTapDown: (e) => selectAt(e.localPosition, constraints.maxWidth),
-              child: CustomPaint(
-                size: Size(constraints.maxWidth, height),
-                painter: ChartPainter(
-                  indicators,
-                  start,
-                  end,
-                  hover,
-                  volume,
-                  macd,
-                  kdj,
-                  markers ? widget.events : [],
-                  widget.volumeUnit,
-                  math.max(14, context.watch<AtlasStore>().fontSize * .72),
-                  markers,
+              child: Semantics(
+                label:
+                    '${widget.symbol} ${c.time} ${tr(context, '开')} ${fixed(c.open)} ${tr(context, '高')} ${fixed(c.high)} ${tr(context, '低')} ${fixed(c.low)} ${tr(context, '收')} ${fixed(c.close)}',
+                hint: tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
+                onIncrease: () => setState(
+                  () => hover = ((hover ?? end - 1) + 1).clamp(start, end - 1),
+                ),
+                onDecrease: () => setState(
+                  () => hover = ((hover ?? end - 1) - 1).clamp(start, end - 1),
+                ),
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    key: const ValueKey('candlestick-canvas'),
+                    size: Size(constraints.maxWidth, height),
+                    painter: ChartPainter(
+                      indicators,
+                      start,
+                      end,
+                      hover,
+                      drawVolume,
+                      drawMacd,
+                      drawKdj,
+                      markers ? widget.events : [],
+                      widget.volumeUnit,
+                      math.max(14, context.watch<AtlasStore>().fontSize * .72),
+                      markers,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         ),
-        Wrap(
-          spacing: 6,
-          children: [
-            FilterChip(
-              label: const Text('VOL'),
-              selected: volume,
-              onSelected: (v) => setState(() => volume = v),
-            ),
-            FilterChip(
-              label: const Text('MACD'),
-              selected: macd,
-              onSelected: (v) => setState(() => macd = v),
-            ),
-            FilterChip(
-              label: const Text('KDJ'),
-              selected: kdj,
-              onSelected: (v) => setState(() => kdj = v),
-            ),
-            FilterChip(
-              label: Text(tr(context, '交叉 / 展开标记')),
-              selected: markers,
-              onSelected: (v) => setState(() => markers = v),
-            ),
-          ],
-        ),
-        Text(
-          tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
-          style: const TextStyle(fontSize: 12, color: muted),
-        ),
+        if (!compact)
+          Wrap(
+            spacing: 6,
+            children: [
+              FilterChip(
+                label: const Text('VOL'),
+                selected: volume,
+                onSelected: (v) => setState(() => volume = v),
+              ),
+              FilterChip(
+                label: const Text('MACD'),
+                selected: macd,
+                onSelected: (v) => setState(() => macd = v),
+              ),
+              FilterChip(
+                label: const Text('KDJ'),
+                selected: kdj,
+                onSelected: (v) => setState(() => kdj = v),
+              ),
+              FilterChip(
+                label: Text(tr(context, '交叉 / 展开标记')),
+                selected: markers,
+                onSelected: (v) => setState(() => markers = v),
+              ),
+            ],
+          ),
+        if (!compact)
+          Text(
+            tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
+            style: const TextStyle(fontSize: 12, color: muted),
+          ),
       ],
     );
   }
+}
+
+class _ChartLegend extends StatelessWidget {
+  const _ChartLegend({required this.compact, required this.children});
+  final bool compact;
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => compact
+      ? SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: children
+                .map(
+                  (w) => Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: w,
+                  ),
+                )
+                .toList(),
+          ),
+        )
+      : Wrap(spacing: 14, runSpacing: 8, children: children);
+}
+
+class FullscreenChart extends StatefulWidget {
+  const FullscreenChart({
+    super.key,
+    required this.bars,
+    required this.symbol,
+    required this.unit,
+    required this.volumeUnit,
+    required this.events,
+  });
+  final List<Bar> bars;
+  final String symbol, unit, volumeUnit;
+  final List<Json> events;
+  @override
+  State<FullscreenChart> createState() => _FullscreenChartState();
+}
+
+class _FullscreenChartState extends State<FullscreenChart> {
+  late List<Bar> bars = widget.bars;
+  late List<Json> events = widget.events;
+  Timer? timer;
+  bool loading = false;
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer.periodic(const Duration(seconds: 60), (_) => refresh());
+  }
+
+  Future<void> refresh() async {
+    if (loading ||
+        !mounted ||
+        !context.read<AtlasStore>().foreground ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      return;
+    }
+    loading = true;
+    try {
+      final api = context.read<AtlasStore>().api;
+      final Json data;
+      if (cnStock(widget.symbol) && widget.unit != 'day') {
+        data = await api.get(
+          '/api/desk/history',
+          parameters: {'symbol': widget.symbol, 'period': widget.unit},
+        );
+      } else if (cnStock(widget.symbol)) {
+        data = await api.get(
+          '/api/analysis',
+          parameters: {'symbol': widget.symbol},
+        );
+      } else {
+        data = await api.get(
+          '/api/market',
+          parameters: {'symbol': widget.symbol},
+        );
+      }
+      if (!mounted) return;
+      final source = data['market'] == null ? data : obj(data['market']);
+      setState(() {
+        bars = rows(source['candles']).map(Bar.fromJson).toList();
+        if (data['guide'] != null) events = rows(obj(data['guide'])['events']);
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(tr(context, '刷新失败，保留上一快照'))));
+      }
+    } finally {
+      loading = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: MarketChart(
+            bars: bars,
+            symbol: widget.symbol,
+            unit: widget.unit,
+            volumeUnit: widget.volumeUnit,
+            events: events,
+            expanded: true,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class ChartPainter extends CustomPainter {
@@ -553,8 +796,10 @@ class ChartPainter extends CustomPainter {
         n = end - start,
         step = width / math.max(1, n),
         parts = 1 + (volume ? 1 : 0) + (macd ? 1 : 0) + (kdj ? 1 : 0),
-        small = (size.height - 280) / (parts - 1 == 0 ? 1 : parts - 1),
-        priceHeight = parts == 1 ? size.height - 28 : 260.0;
+        priceHeight = parts == 1
+            ? size.height - 28
+            : (size.height * .49).clamp(95.0, 285.0),
+        small = (size.height - priceHeight - 28) / math.max(1, parts - 1);
     double x(int i) => left + (i - start + .5) * step;
     final visible = data.bars.sublist(start, end);
     var lo = visible.map((b) => b.low).reduce(math.min),
@@ -576,8 +821,9 @@ class ChartPainter extends CustomPainter {
     final grid = Paint()
       ..color = const Color(0xff29292f)
       ..strokeWidth = .6;
-    for (var i = 0; i < 5; i++) {
-      final value = lo + (hi - lo) * i / 4, py = y(value);
+    final gridCount = priceHeight < 180 ? 3 : 5;
+    for (var i = 0; i < gridCount; i++) {
+      final value = lo + (hi - lo) * i / (gridCount - 1), py = y(value);
       c.drawLine(Offset(left, py), Offset(size.width - right, py), grid);
       label(c, value.toStringAsFixed(2), Offset(1, py - 7));
     }
@@ -664,7 +910,7 @@ class ChartPainter extends CustomPainter {
       color: last.close >= last.open ? up : down,
       size: font,
     );
-    var top = priceHeight + 12;
+    var top = priceHeight + 4;
     void pane(
       String title,
       List<List<double?>> values,
@@ -672,7 +918,7 @@ class ChartPainter extends CustomPainter {
       bool histogram = false,
       bool volumeBars = false,
     }) {
-      final h = small - 20;
+      final h = small - 4;
       label(c, title, Offset(left, top), color: Colors.white);
       final all = values
           .expand((r) => r.sublist(start, end).whereType<double>())
@@ -687,7 +933,8 @@ class ChartPainter extends CustomPainter {
         max = math.max(0, max);
       }
       if (max - min < .0001) max = min + 1;
-      double py(double v) => top + 22 + (max - v) / (max - min) * (h - 27);
+      double py(double v) =>
+          top + 21 + (max - v) / (max - min) * math.max(5, h - 25);
       c.drawLine(
         Offset(left, top + 20),
         Offset(size.width - right, top + 20),
@@ -741,14 +988,14 @@ class ChartPainter extends CustomPainter {
             ..strokeWidth = 1.1,
         );
       }
-      if (hover != null) {
+      {
         for (var k = 0; k < values.length; k++) {
-          final v = values[k][hover!];
+          final v = values[k][hover ?? end - 1];
           if (v != null) {
             label(
               c,
-              v.toStringAsFixed(volumeBars ? 0 : 2),
-              Offset(left + 70 + k * 65, top),
+              volumeBars ? amount(v) : v.toStringAsFixed(2),
+              Offset(left + 58 + k * (size.width < 420 ? 55 : 90), top),
               color: colors[k],
               size: font - 1,
             );
@@ -814,7 +1061,17 @@ class ChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant ChartPainter old) => true;
+  bool shouldRepaint(covariant ChartPainter old) =>
+      data != old.data ||
+      start != old.start ||
+      end != old.end ||
+      hover != old.hover ||
+      volume != old.volume ||
+      macd != old.macd ||
+      kdj != old.kdj ||
+      events != old.events ||
+      font != old.font ||
+      showSignals != old.showSignals;
 }
 
 class IntradayChart extends StatelessWidget {
