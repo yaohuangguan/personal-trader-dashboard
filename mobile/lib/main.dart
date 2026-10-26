@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'core/store.dart';
@@ -17,6 +19,7 @@ import 'widgets/common.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final store = await AtlasStore.load();
   final native = NativePushService(store.api, store.deviceToken);
   await native.initialize();
@@ -56,6 +59,20 @@ class AtlasApp extends StatelessWidget {
             filled: true,
             fillColor: const Color(0xff1e1e24),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              textStyle: const TextStyle(fontSize: 14),
+            ),
+          ),
+          outlinedButtonTheme: OutlinedButtonThemeData(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              textStyle: const TextStyle(fontSize: 14),
+            ),
           ),
           navigationBarTheme: const NavigationBarThemeData(
             backgroundColor: Color(0xff151519),
@@ -171,7 +188,7 @@ class _AtlasShellState extends State<AtlasShell> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AtlasStore>(),
-        wide = MediaQuery.sizeOf(context).width >= 760;
+        wide = MediaQuery.sizeOf(context).shortestSide >= 600;
     final body = [
       const WatchPage(),
       const MarketPage(),
@@ -181,6 +198,7 @@ class _AtlasShellState extends State<AtlasShell> {
     ][index];
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 46,
         title: Text(
           index == 0 ? 'MARKET ATLAS' : s.t(names[index]),
           style: const TextStyle(
@@ -285,14 +303,17 @@ class _AtlasShellState extends State<AtlasShell> {
       ),
       bottomNavigationBar: wide
           ? null
-          : NavigationBar(
-              height: 78,
-              selectedIndex: index,
-              onDestinationSelected: (i) => setState(() => index = i),
-              destinations: List.generate(
+          : CupertinoTabBar(
+              height: 48,
+              backgroundColor: const Color(0xff111114),
+              activeColor: Colors.white,
+              inactiveColor: muted,
+              currentIndex: index,
+              onTap: (i) => setState(() => index = i),
+              items: List.generate(
                 names.length,
-                (i) => NavigationDestination(
-                  icon: Icon(icons[i]),
+                (i) => BottomNavigationBarItem(
+                  icon: Icon(icons[i], size: 21),
                   label: s.t(['自选', '市场', '选股', '信号', '快讯'][i]),
                 ),
               ),

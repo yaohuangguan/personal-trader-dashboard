@@ -11,6 +11,7 @@ import 'package:market_atlas/core/store.dart';
 import 'package:market_atlas/core/push_service.dart';
 import 'package:market_atlas/core/indicators.dart';
 import 'package:market_atlas/widgets/market_chart.dart';
+import 'package:market_atlas/widgets/live_chart_feed.dart';
 import 'package:provider/provider.dart';
 
 List<Bar> prices(int n) => List.generate(
@@ -151,6 +152,48 @@ void main() {
     );
   }
 
+  testWidgets(
+    'chart refresh retains history on errors and pauses in background',
+    (tester) async {
+      final s = (await tester.runAsync(() => store()))!;
+      var calls = 0;
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: s,
+          child: MaterialApp(
+            home: Scaffold(
+              body: LiveChartFeed(
+                refreshSeconds: 15,
+                load: () async {
+                  calls++;
+                  if (calls == 2) throw Exception('upstream unavailable');
+                  return {'asOf': '2025-10-27', 'version': '$calls'};
+                },
+                builder: (data) =>
+                    Center(child: Text('Chart ${data['version']}')),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Chart 1'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pumpAndSettle();
+      expect(find.text('Chart 1'), findsOneWidget);
+      expect(find.textContaining('刷新失败，保留上一快照'), findsOneWidget);
+      s.foreground = false;
+      await tester.pump(const Duration(seconds: 15));
+      expect(calls, 2);
+      s.foreground = true;
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pumpAndSettle();
+      expect(find.text('Chart 3'), findsOneWidget);
+      expect(find.textContaining('刷新失败，保留上一快照'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      s.dispose();
+    },
+  );
   testWidgets('390px phone at 22px keeps watch/settings/signals usable', (
     tester,
   ) async {
@@ -170,6 +213,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Test stock'), findsOneWidget);
     expect(find.text('MA250 114.45'), findsOneWidget);
+    final canvas = tester.getRect(
+      find.byKey(const ValueKey('candlestick-canvas')),
+    );
+    expect(
+      canvas.top,
+      lessThan(300),
+      reason: 'Quote and chart controls must remain compact',
+    );
+    expect(
+      canvas.bottom,
+      lessThan(790),
+      reason: 'The full candle and all three indicator panes must fit before the bottom navigation',
+    );
+    expect(
+      painterForStock(tester).volume &&
+          painterForStock(tester).macd &&
+          painterForStock(tester).kdj,
+      isTrue,
+    );
+    expect(
+      find.byType(OutlinedButton),
+      findsNothing,
+      reason: 'No large chart action buttons on the trading first screen',
+    );
     expect(tester.takeException(), isNull);
     await tester.pageBack();
     await tester.pumpAndSettle();
@@ -183,6 +250,8 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.sensors).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Monitor settings'));
     await tester.pumpAndSettle();
     expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -214,3 +283,11 @@ void main() {
     s.dispose();
   });
 }
+
+ChartPainter painterForStock(WidgetTester tester) =>
+    tester
+            .widget<CustomPaint>(
+              find.byKey(const ValueKey('candlestick-canvas')),
+            )
+            .painter!
+        as ChartPainter;

@@ -19,6 +19,8 @@ class MarketChart extends StatefulWidget {
     required this.symbol,
     this.unit = 'day',
     this.name = '',
+    this.terminal = false,
+    this.viewportHeight,
     this.volumeUnit = '手',
     this.events = const [],
     this.expanded = false,
@@ -28,6 +30,8 @@ class MarketChart extends StatefulWidget {
   final String name;
   final List<Json> events;
   final bool expanded;
+  final bool terminal;
+  final double? viewportHeight;
   @override
   State<MarketChart> createState() => _MarketChartState();
 }
@@ -391,6 +395,23 @@ class _MarketChartState extends State<MarketChart> {
     }
   }
 
+  Widget _smallIcon(IconData icon, String title, VoidCallback action) =>
+      SizedBox(
+        width: 36,
+        height: 30,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          tooltip: tr(context, title),
+          onPressed: action,
+          icon: Icon(icon, size: 17),
+        ),
+      );
+  int _months(int n) => widget.unit == 'month'
+      ? n
+      : widget.unit == 'week'
+      ? {1: 4, 3: 13, 6: 26}[n]!
+      : n * 22;
   @override
   Widget build(BuildContext context) {
     if (widget.bars.isEmpty) {
@@ -403,7 +424,9 @@ class _MarketChartState extends State<MarketChart> {
     final drawVolume = compact ? true : volume,
         drawMacd = compact ? paneMode == 'all' || paneMode == 'macd' : macd,
         drawKdj = compact ? paneMode == 'all' || paneMode == 'kdj' : kdj;
-    final height = compact
+    final height = widget.terminal
+        ? math.max(160.0, (widget.viewportHeight ?? 500) - 94)
+        : compact
         ? math.max(
             paneMode == 'all' ? 460.0 : 190.0,
             MediaQuery.sizeOf(context).height -
@@ -417,120 +440,163 @@ class _MarketChartState extends State<MarketChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final item in [
-                      (
-                        '1个月',
-                        widget.unit == 'month'
-                            ? 1
-                            : widget.unit == 'week'
-                            ? 4
-                            : 22,
+        if (widget.terminal)
+          SizedBox(
+            height: 30,
+            child: Row(
+              children: [
+                for (final n in [1, 3, 6])
+                  GestureDetector(
+                    onTap: () => range(_months(n)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
                       ),
-                      (
-                        '3个月',
-                        widget.unit == 'month'
-                            ? 3
-                            : widget.unit == 'week'
-                            ? 13
-                            : 66,
-                      ),
-                      (
-                        '6个月',
-                        widget.unit == 'month'
-                            ? 6
-                            : widget.unit == 'week'
-                            ? 26
-                            : 132,
-                      ),
-                      (
-                        '1年',
-                        widget.unit == 'month'
-                            ? 12
-                            : widget.unit == 'week'
-                            ? 52
-                            : 264,
-                      ),
-                      ('全部', widget.bars.length),
-                    ])
-                      TextButton(
-                        onPressed: () => range(item.$2),
-                        child: Text(
-                          tr(context, item.$1),
-                          style: TextStyle(
-                            color: count == item.$2 ? Colors.white : muted,
-                            fontSize: 13,
-                          ),
+                      child: Text(
+                        tr(
+                          context,
+                          n == 1
+                              ? '1个月'
+                              : n == 3
+                              ? '3个月'
+                              : '6个月',
+                        ),
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1,
+                          color: count == _months(n) ? Colors.white : muted,
                         ),
                       ),
-                  ],
-                ),
-              ),
-            ),
-            IconButton(
-              onPressed: settings,
-              tooltip: tr(context, '均线参数'),
-              icon: const Icon(Icons.tune, size: 20),
-            ),
-            if (offset > 0)
-              IconButton(
-                onPressed: () => range(count),
-                tooltip: tr(context, '回到最新'),
-                icon: const Icon(Icons.skip_next),
-              ),
-            if (widget.expanded) ...[
-              if (compact)
-                PopupMenuButton<String>(
-                  tooltip: tr(context, '副图布局'),
-                  initialValue: paneMode,
-                  onSelected: (v) => setState(() => paneMode = v),
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      value: 'all',
-                      child: Text(tr(context, '全部副图 · 可纵向滚动')),
                     ),
-                    PopupMenuItem(value: 'vol', child: Text('VOL')),
-                    PopupMenuItem(
-                      value: 'macd',
-                      child: const Text('VOL + MACD'),
-                    ),
-                    PopupMenuItem(value: 'kdj', child: const Text('VOL + KDJ')),
-                  ],
-                  icon: const Icon(Icons.view_stream_outlined),
+                  ),
+                const Spacer(),
+                if (offset > 0)
+                  _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
+                _smallIcon(Icons.tune, '均线参数', settings),
+                _smallIcon(Icons.fullscreen, '展开图表', expand),
+              ],
+            ),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final item in [
+                        (
+                          '1个月',
+                          widget.unit == 'month'
+                              ? 1
+                              : widget.unit == 'week'
+                              ? 4
+                              : 22,
+                        ),
+                        (
+                          '3个月',
+                          widget.unit == 'month'
+                              ? 3
+                              : widget.unit == 'week'
+                              ? 13
+                              : 66,
+                        ),
+                        (
+                          '6个月',
+                          widget.unit == 'month'
+                              ? 6
+                              : widget.unit == 'week'
+                              ? 26
+                              : 132,
+                        ),
+                        (
+                          '1年',
+                          widget.unit == 'month'
+                              ? 12
+                              : widget.unit == 'week'
+                              ? 52
+                              : 264,
+                        ),
+                        ('全部', widget.bars.length),
+                      ])
+                        TextButton(
+                          onPressed: () => range(item.$2),
+                          child: Text(
+                            tr(context, item.$1),
+                            style: TextStyle(
+                              color: count == item.$2 ? Colors.white : muted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
+              ),
               IconButton(
-                onPressed: () => SystemChrome.setPreferredOrientations(
-                  compact
-                      ? [DeviceOrientation.portraitUp]
-                      : [
-                          DeviceOrientation.landscapeLeft,
-                          DeviceOrientation.landscapeRight,
-                        ],
+                onPressed: settings,
+                tooltip: tr(context, '均线参数'),
+                icon: const Icon(Icons.tune, size: 20),
+              ),
+              if (offset > 0)
+                IconButton(
+                  onPressed: () => range(count),
+                  tooltip: tr(context, '回到最新'),
+                  icon: const Icon(Icons.skip_next),
                 ),
-                tooltip: tr(context, '横竖屏切换'),
-                icon: const Icon(Icons.screen_rotation_outlined),
-              ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                tooltip: tr(context, '关闭全屏'),
-                icon: const Icon(Icons.close),
-              ),
-            ] else
-              IconButton(
-                onPressed: expand,
-                tooltip: tr(context, '展开图表'),
-                icon: const Icon(Icons.fullscreen),
-              ),
-          ],
-        ),
+              if (widget.expanded) ...[
+                if (compact)
+                  PopupMenuButton<String>(
+                    tooltip: tr(context, '副图布局'),
+                    initialValue: paneMode,
+                    onSelected: (v) => setState(() => paneMode = v),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'all',
+                        child: Text(tr(context, '全部副图 · 可纵向滚动')),
+                      ),
+                      PopupMenuItem(value: 'vol', child: Text('VOL')),
+                      PopupMenuItem(
+                        value: 'macd',
+                        child: const Text('VOL + MACD'),
+                      ),
+                      PopupMenuItem(
+                        value: 'kdj',
+                        child: const Text('VOL + KDJ'),
+                      ),
+                    ],
+                    icon: const Icon(Icons.view_stream_outlined),
+                  ),
+                IconButton(
+                  onPressed: () => SystemChrome.setPreferredOrientations(
+                    compact
+                        ? [DeviceOrientation.portraitUp]
+                        : [
+                            DeviceOrientation.landscapeLeft,
+                            DeviceOrientation.landscapeRight,
+                          ],
+                  ),
+                  tooltip: tr(context, '横竖屏切换'),
+                  icon: const Icon(Icons.screen_rotation_outlined),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  tooltip: tr(context, '关闭全屏'),
+                  icon: const Icon(Icons.close),
+                ),
+              ] else
+                IconButton(
+                  onPressed: expand,
+                  tooltip: tr(context, '展开图表'),
+                  icon: const Icon(Icons.fullscreen),
+                ),
+            ],
+          ),
         _ChartLegend(
           compact: compact,
+          dense: widget.terminal,
           children: mas
               .map(
                 (ma) => InkWell(
@@ -554,42 +620,97 @@ class _MarketChartState extends State<MarketChart> {
                     'MA${ma.period} ${ma.enabled ? fixed(indicators.averages[ma.period]?[idx]) : '—'}',
                     style: TextStyle(
                       color: ma.enabled ? ma.color : muted,
-                      fontSize: 13,
+                      fontSize: widget.terminal ? 12 : 13,
+                      height: 1.1,
                     ),
                   ),
                 ),
               )
               .toList(),
         ),
-        SizedBox(height: compact ? 4 : 14),
-        Wrap(
-          spacing: 12,
-          runSpacing: 6,
-          children: [
-            Text(
-              '${widget.expanded ? '${widget.name.isEmpty ? '' : '${widget.name} · '}${widget.symbol} · ' : ''}${c.time}',
-              style: const TextStyle(fontSize: 13, color: muted),
-            ),
-            for (final pair in [
-              ('开', c.open),
-              ('高', c.high),
-              ('低', c.low),
-              ('收', c.close),
-            ])
-              Text(
-                '${tr(context, pair.$1)} ${pair.$2.toStringAsFixed(2)}',
-                style: TextStyle(
-                  color: pair.$1 == '低'
-                      ? down
-                      : pair.$1 == '高'
-                      ? up
-                      : Colors.white,
-                  fontSize: 13,
-                ),
-              ),
-          ],
+        SizedBox(
+          height: widget.terminal
+              ? 0
+              : compact
+              ? 4
+              : 14,
         ),
-        SizedBox(height: compact ? 4 : 10),
+        if (widget.terminal)
+          SizedBox(
+            height: 24,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Text(
+                    c.time,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      height: 1,
+                      color: muted,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  for (final p in [
+                    ('开', c.open),
+                    ('高', c.high),
+                    ('低', c.low),
+                    ('收', c.close),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        '${tr(context, p.$1)} ${fixed(p.$2)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1,
+                          color: p.$1 == '高'
+                              ? up
+                              : p.$1 == '低'
+                              ? down
+                              : Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            children: [
+              Text(
+                '${widget.expanded ? '${widget.name.isEmpty ? '' : '${widget.name} · '}${widget.symbol} · ' : ''}${c.time}',
+                style: const TextStyle(fontSize: 13, color: muted),
+              ),
+              for (final pair in [
+                ('开', c.open),
+                ('高', c.high),
+                ('低', c.low),
+                ('收', c.close),
+              ])
+                Text(
+                  '${tr(context, pair.$1)} ${pair.$2.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: pair.$1 == '低'
+                        ? down
+                        : pair.$1 == '高'
+                        ? up
+                        : Colors.white,
+                    fontSize: 13,
+                  ),
+                ),
+            ],
+          ),
+        SizedBox(
+          height: widget.terminal
+              ? 0
+              : compact
+              ? 4
+              : 10,
+        ),
         LayoutBuilder(
           builder: (context, constraints) => Listener(
             onPointerDown: (e) {
@@ -684,7 +805,7 @@ class _MarketChartState extends State<MarketChart> {
             ),
           ),
         ),
-        if (!compact)
+        if (!compact && !widget.terminal)
           Wrap(
             spacing: 6,
             children: [
@@ -710,7 +831,7 @@ class _MarketChartState extends State<MarketChart> {
               ),
             ],
           ),
-        if (!compact)
+        if (!compact && !widget.terminal)
           Text(
             tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
             style: const TextStyle(fontSize: 12, color: muted),
@@ -721,11 +842,48 @@ class _MarketChartState extends State<MarketChart> {
 }
 
 class _ChartLegend extends StatelessWidget {
-  const _ChartLegend({required this.compact, required this.children});
+  const _ChartLegend({
+    required this.compact,
+    required this.children,
+    this.dense = false,
+  });
+  final bool dense;
   final bool compact;
   final List<Widget> children;
   @override
-  Widget build(BuildContext context) => compact
+  Widget build(BuildContext context) => dense
+      ? SizedBox(
+          height: 40,
+          child: LayoutBuilder(
+            builder: (context, c) => Column(
+              children: [
+                for (var row = 0; row < 2; row++)
+                  SizedBox(
+                    height: 20,
+                    child: Row(
+                      children: children
+                          .skip(row * 4)
+                          .take(4)
+                          .map(
+                            (w) => SizedBox(
+                              width: c.maxWidth / 4,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: w,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        )
+      : compact
       ? SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -768,6 +926,11 @@ class _FullscreenChartState extends State<FullscreenChart> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     timer = Timer.periodic(const Duration(seconds: 60), (_) => refresh());
   }
 
@@ -817,11 +980,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
   @override
   void dispose() {
     timer?.cancel();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
@@ -1175,7 +1334,14 @@ class ChartPainter extends CustomPainter {
 }
 
 class IntradayChart extends StatelessWidget {
-  const IntradayChart(this.data, {super.key});
+  const IntradayChart(
+    this.data, {
+    super.key,
+    this.height = 280,
+    this.showSource = true,
+  });
+  final double height;
+  final bool showSource;
   final Json data;
   @override
   Widget build(BuildContext context) {
@@ -1188,13 +1354,13 @@ class IntradayChart extends StatelessWidget {
           style: const TextStyle(color: muted, fontSize: 13),
         ),
         SizedBox(
-          height: 280,
+          height: height,
           width: double.infinity,
           child: CustomPaint(
             painter: _IntradayPainter(points, numOf(data['previous'])),
           ),
         ),
-        SourceLine(data),
+        if (showSource) SourceLine(data),
       ],
     );
   }

@@ -1,6 +1,6 @@
 # Market Atlas mobile
 
-iOS-first Flutter client for the existing Market Atlas production API. This is a native Material 3 interface, not a WebView wrapper. Default API: https://personal-market-atlas.nzs.workers.dev.
+iOS-first Flutter client for the existing Market Atlas production API. The app uses native Flutter screens, compact quote/chart controls and Cupertino phone navigation. It is independently organized for mobile rather than reusing the web layout. Default API: https://personal-market-atlas.nzs.workers.dev.
 
 ## Run
 
@@ -20,7 +20,7 @@ For a different deployed service, add `--dart-define=ATLAS_API_BASE=https://your
 
 | Web workspace | Native interface |
 | --- | --- |
-| Stock workspace / watchlist | Watch tab; swipe to remove, hold to move first, search by name or code. Stock detail uses a pinned name/price header and horizontal context tabs. |
+| Stock workspace / watchlist | Watch tab; swipe to remove, hold to move first, search by name or code. Stock detail dedicates its first screen to the quote strip and complete candle/VOL/MACD/KDJ stack. A fixed bottom bar switches chart, guide, sectors, news and F10; quote details, order book and chips use draggable sheets. |
 | Candles | Native canvas: daily/weekly/monthly, 8 editable MA periods/colors/toggles, volume, MACD, KDJ, crosshair, pinch zoom, pan, fullscreen and dated guide events. |
 | Intraday / order book | Public minute chart, five-level book, recent aggregated ticks and attributed flow. No licensed L2 claim. |
 | Five MA guide | Shared `/api/analysis` rules, stock character, original checklist, confirmation/invalidations, weekly/monthly resonance, evidence and risk conditions. |
@@ -33,7 +33,7 @@ For a different deployed service, add `--dart-define=ATLAS_API_BASE=https://your
 | News / research | 7x24 feed, source/importance/topic filters, original-source reader, bookmarks, global overview, seven industry chains, archived events. |
 | Settings | Chinese/English, 18/20/22 text sizes plus system scaling, watchlist import/export, foreground price reminders. |
 
-Phone uses bottom navigation, sheets and push/pop details. Wider screens use a navigation rail. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app is inactive. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
+Phone workspaces use portrait bottom navigation, sheets and push/pop details. Chart fullscreen unlocks device rotation and restores portrait on exit. Tablets use a navigation rail. Settings and coverage details in the screener/signal center are collapsed so candidates and events remain prominent. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app is inactive. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
 
 ## Native push (reserved, not enabled by default)
 
@@ -64,7 +64,7 @@ The iOS-focused chart pass adds accumulated slow dragging in the natural directi
 
 Fullscreen follows device rotation and has an explicit rotation button. Landscape defaults to volume plus MACD, switches to volume plus KDJ, and offers an all-indicator view with vertical scrolling at a readable minimum height. Portrait retains all three subpanels together. Default eight MA colors and adjustable periods are retained. Indicator readouts follow the selected candle, including the current candle before the first touch.
 
-`flutter test` covers slow drags, zoom anchoring, new listings, preserved refresh anchors, crosshair persistence and landscape subpanel selection. The iOS CI additionally boots an actual iPhone Simulator runtime and runs `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d <simulator-id>`, including MA editing and portrait/landscape screenshots. Integration fixtures are deterministic test candles, not production prices. Production interfaces continue to use source-attributed live APIs.
+`flutter test` covers slow drags, zoom anchoring, new listings, preserved refresh anchors, crosshair persistence, landscape subpanel selection, the 390px first screen at 22px text, and chart refresh failure/background behavior. Intraday charts refresh every 15 seconds while visible; weekly/monthly candles refresh every 60 seconds and retain the last chart on source errors. The iOS CI additionally boots an actual iPhone Simulator runtime and runs `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d <simulator-id>`, including the complete stock first screen at 18px and 22px, MA editing and portrait/landscape screenshots. Integration fixtures are deterministic test candles, not production prices. Production interfaces continue to use source-attributed live APIs.
 
 ## TestFlight signing and upload
 

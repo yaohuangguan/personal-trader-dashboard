@@ -21,13 +21,13 @@ class Panel extends StatelessWidget {
   const Panel({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(18),
+    this.padding = const EdgeInsets.all(12),
   });
   final Widget child;
   final EdgeInsets padding;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.only(bottom: 10),
     child: Material(
       color: surface,
       shape: RoundedRectangleBorder(
@@ -228,22 +228,44 @@ class Chips extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onSelected;
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    padding: const EdgeInsets.symmetric(vertical: 10),
-    child: Row(
-      children: values.entries
-          .map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                selected: selected == e.key,
-                label: Text(tr(context, e.value)),
-                onSelected: (_) => onSelected(e.key),
+  Widget build(BuildContext context) => SizedBox(
+    height: 38,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: values.entries
+            .map(
+              (e) => InkWell(
+                onTap: () => onSelected(e.key),
+                child: Container(
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 13),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: selected == e.key
+                            ? Colors.white
+                            : Colors.transparent,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    tr(context, e.value),
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1,
+                      color: selected == e.key ? Colors.white : muted,
+                      fontWeight: selected == e.key
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          )
-          .toList(),
+            )
+            .toList(),
+      ),
     ),
   );
 }
@@ -271,28 +293,32 @@ class PageTitle extends StatelessWidget {
   final String title, subtitle;
   final Widget? trailing;
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 12, bottom: 22),
+  Widget build(BuildContext context) => SizedBox(
+    height: 42,
     child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                tr(context, title),
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                tr(context, subtitle),
-                style: const TextStyle(color: muted, height: 1.6),
-              ),
-            ],
+          child: Text(
+            tr(context, title),
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
           ),
         ),
+        if (subtitle.isNotEmpty)
+          IconButton(
+            tooltip: tr(context, subtitle),
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              useSafeArea: true,
+              builder: (ctx) => Padding(
+                padding: const EdgeInsets.all(22),
+                child: Text(
+                  tr(context, subtitle),
+                  style: const TextStyle(fontSize: 16, height: 1.7),
+                ),
+              ),
+            ),
+            icon: const Icon(Icons.info_outline, size: 17, color: muted),
+          ),
         ?trailing,
       ],
     ),

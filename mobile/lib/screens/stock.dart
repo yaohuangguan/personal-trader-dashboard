@@ -9,6 +9,7 @@ import '../core/store.dart';
 import '../core/indicators.dart';
 import '../widgets/common.dart';
 import '../widgets/market_chart.dart';
+import '../widgets/live_chart_feed.dart';
 import 'guide.dart';
 import 'f10.dart';
 import 'news.dart';
@@ -27,22 +28,24 @@ class StockPage extends StatefulWidget {
 }
 
 class _StockPageState extends State<StockPage> {
-  Json? quote;
-  String? quoteError;
-  String tab = 'chart', timeframe = 'day';
-  bool auto = true, chips = false;
+  Json? quote, analysis;
+  String? quoteError, analysisError;
+  String tab = 'chart', timeframe = 'day', newsTab = 'news';
+  bool auto = true, loading = false;
   Timer? timer;
-  final analysisKey = GlobalKey<AsyncPanelState>();
+  int tick = 0;
   @override
   void initState() {
     super.initState();
     refreshQuote();
+    refreshAnalysis();
     timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (auto &&
           mounted &&
           context.read<AtlasStore>().foreground &&
           (ModalRoute.of(context)?.isCurrent ?? false)) {
         refreshQuote();
+        if (++tick % 12 == 0) refreshAnalysis();
       }
     });
   }
@@ -54,315 +57,395 @@ class _StockPageState extends State<StockPage> {
   }
 
   Future<void> refreshQuote() async {
-    final s = context.read<AtlasStore>();
     if (!cnStock(widget.symbol)) return;
     try {
-      final data = await s.api.get(
+      final r = await context.read<AtlasStore>().api.get(
         '/api/desk/quotes',
         parameters: {'symbols': widget.symbol},
       );
-      if (!mounted) return;
-      setState(() {
-        quote = rows(data['items']).firstOrNull;
-        quoteError = null;
-      });
+      if (mounted) {
+        setState(() {
+          quote = rows(r['items']).firstOrNull;
+          quoteError = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => quoteError = e.toString());
     }
   }
 
+  Future<void> refreshAnalysis() async {
+    if (loading) return;
+    loading = true;
+    try {
+      final api = context.read<AtlasStore>().api;
+      final r = cnStock(widget.symbol)
+          ? await api.get(
+              '/api/analysis',
+              parameters: {'symbol': widget.symbol},
+            )
+          : {
+              'market': await api.get(
+                '/api/market',
+                parameters: {'symbol': widget.symbol},
+              ),
+            };
+      if (mounted) {
+        setState(() {
+          analysis = r;
+          analysisError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => analysisError = e.toString());
+    } finally {
+      loading = false;
+    }
+  }
+
+  Json get q =>
+      quote ??
+      {
+        'name': obj(analysis?['market'])['name'],
+        'price': obj(analysis?['market'])['last'],
+        'changePercent': obj(analysis?['market'])['changePercent'],
+        'asOf': obj(analysis?['market'])['asOf'],
+      };
+  String get volumeUnit =>
+      str(obj(analysis?['market'])['provider'], '').startsWith('新浪') ||
+          RegExp(r'^68[89]').hasMatch(widget.symbol)
+      ? '股'
+      : '手';
+  List<Bar> get bars =>
+      rows(obj(analysis?['market'])['candles']).map(Bar.fromJson).toList();
+  Future<void> sheet(String title, Widget child) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: surface,
+    builder: (ctx) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: .75,
+      minChildSize: .4,
+      maxChildSize: .96,
+      builder: (ctx, controller) => Column(
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.only(top: 10, bottom: 8),
+            decoration: BoxDecoration(
+              color: muted,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    tr(ctx, title),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close, size: 20),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
   Future<void> alert() async {
-    final price = TextEditingController(text: fixed(quote?['price'])),
-        s = context.read<AtlasStore>();
+    final price = TextEditingController(text: fixed(q['price']));
     var direction = 'above';
-    await showModalBottomSheet(
+    ModalRoute<dynamic>? route;
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            22,
-            20,
-            22,
-            MediaQuery.viewInsetsOf(ctx).bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(s.t('价格提醒'), style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 15),
-              Notice(s.t('本页打开且盘中行情有效时触发')),
-              DropdownButtonFormField<String>(
-                initialValue: direction,
-                items: [
-                  DropdownMenuItem(value: 'above', child: Text(s.t('价格达到或高于'))),
-                  DropdownMenuItem(value: 'below', child: Text(s.t('价格达到或低于'))),
+      builder: (ctx) {
+        route = ModalRoute.of(ctx);
+        return StatefulBuilder(
+          builder: (ctx, update) => Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              MediaQuery.viewInsetsOf(ctx).bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(tr(ctx, '价格提醒'), style: const TextStyle(fontSize: 20)),
+                  const SizedBox(height: 12),
+                  Notice(tr(ctx, '价格阈值提醒在 App 前台、自选行情有效时检查。全市场信号扫描在服务端独立运行。')),
+                  DropdownButtonFormField<String>(
+                    initialValue: direction,
+                    items: [
+                      DropdownMenuItem(
+                        value: 'above',
+                        child: Text(tr(ctx, '价格达到或高于')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'below',
+                        child: Text(tr(ctx, '价格达到或低于')),
+                      ),
+                    ],
+                    onChanged: (v) => direction = v!,
+                  ),
+                  TextField(
+                    controller: price,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(labelText: tr(ctx, '提醒目标价格')),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () {
+                      final n = double.tryParse(price.text);
+                      if (n == null || n <= 0) return;
+                      context.read<AtlasStore>().addAlert(
+                        widget.symbol,
+                        n,
+                        direction,
+                      );
+                      Navigator.pop(ctx);
+                    },
+                    child: Text(tr(ctx, '添加提醒')),
+                  ),
                 ],
-                onChanged: (v) => direction = v!,
               ),
-              TextField(
-                controller: price,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(labelText: s.t('提醒目标价格')),
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: () {
-                  final value = double.tryParse(price.text);
-                  if (value == null || value <= 0) return;
-                  s.addAlert(widget.symbol, value, direction);
-                  Navigator.pop(ctx);
-                },
-                child: Text(s.t('添加提醒')),
-              ),
+            ),
+          ),
+        );
+      },
+    );
+    await route?.completed;
+    price.dispose();
+  }
+
+  Widget mini(String text, VoidCallback action, {Color? color}) => InkWell(
+    onTap: action,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      child: Text(
+        tr(context, text),
+        style: TextStyle(fontSize: 12, height: 1, color: color ?? muted),
+      ),
+    ),
+  );
+  void more() {
+    sheet(
+      '行情详情',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 26,
+            runSpacing: 18,
+            children: [
+              LabelValue('今开', fixed(q['open'])),
+              LabelValue('昨收', fixed(q['previous'])),
+              LabelValue('最高', fixed(q['high'])),
+              LabelValue('最低', fixed(q['low'])),
+              LabelValue('成交额', amount(q['amount'])),
+              LabelValue('换手率', '${fixed(q['turnover'])}%'),
+              LabelValue('量比', fixed(q['volumeRatio'])),
+              LabelValue('市盈率 TTM', fixed(q['pe'])),
+              LabelValue('总市值', amount(q['marketCap'])),
             ],
           ),
-        ),
+          const Divider(height: 30),
+          SourceLine(q),
+          if (quoteError != null) Notice(quoteError!),
+          ListTile(
+            leading: const Icon(Icons.notifications_none),
+            title: Text(tr(context, '价格提醒')),
+            onTap: () {
+              Navigator.pop(context);
+              alert();
+            },
+          ),
+          SwitchListTile(
+            title: Text(tr(context, '自动')),
+            value: auto,
+            onChanged: (v) {
+              setState(() => auto = v);
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.refresh),
+            title: Text(tr(context, '刷新数据')),
+            onTap: () {
+              Navigator.pop(context);
+              refreshQuote();
+              refreshAnalysis();
+            },
+          ),
+          Notice(tr(context, '公开五档和约3秒聚合分笔；没有授权十档、逐笔委托队列或完整交易所 Level-2。')),
+        ],
       ),
     );
-    price.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>(),
-        name = str(quote?['name'], widget.symbol);
+    final s = context.watch<AtlasStore>(), name = str(q['name'], widget.symbol);
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 80,
+        toolbarHeight: 44,
+        centerTitle: true,
         title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 19,
+                fontSize: 17,
                 height: 1.1,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 5),
-            Wrap(
-              spacing: 10,
-              children: [
-                Text(
-                  fixed(quote?['price']),
-                  style: TextStyle(
-                    color: tone(quote?['changePercent']),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 23,
-                    height: 1.1,
-                  ),
-                ),
-                Text(
-                  percent(quote?['changePercent']),
-                  style: TextStyle(
-                    color: tone(quote?['changePercent']),
-                    fontSize: 15,
-                    height: 1.1,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 2),
+            Text(
+              widget.symbol,
+              style: const TextStyle(fontSize: 10, height: 1, color: muted),
             ),
           ],
         ),
         actions: [
           IconButton(
-            onPressed: () => s.toggleWatch(widget.symbol),
             tooltip: s.t('我的自选'),
+            onPressed: () => s.toggleWatch(widget.symbol),
             icon: Icon(
               s.watchlist.contains(widget.symbol)
                   ? Icons.star
                   : Icons.star_border,
+              size: 20,
               color: s.watchlist.contains(widget.symbol) ? Colors.amber : muted,
             ),
           ),
           IconButton(
-            onPressed: cnStock(widget.symbol) ? alert : null,
-            tooltip: s.t('价格提醒'),
-            icon: const Icon(Icons.notifications_none),
+            tooltip: s.t('行情详情'),
+            onPressed: more,
+            icon: const Icon(Icons.more_horiz, size: 22),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(58),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Chips(
-              values: const {
-                'chart': '看盘',
-                'guide': '五线开花',
-                'sector': '板块联动',
-                'news': '个股资讯',
-                'f10': 'F10 资料',
-                'evidence': '公告财报',
-              },
-              selected: tab,
-              onSelected: (v) => setState(() => tab = v),
-            ),
-          ),
-        ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await refreshQuote();
-          await analysisKey.currentState?.refresh();
-        },
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (quoteError != null)
-                Notice('${s.t('刷新失败，保留上一快照')} · $quoteError'),
-              if (tab == 'chart') ...[
-                _quotePanel(s),
-                Wrap(
-                  children: [
-                    IconButton(
-                      onPressed: () => setState(() => auto = !auto),
-                      icon: Icon(auto ? Icons.pause : Icons.play_arrow),
-                    ),
-                    Text(s.t(auto ? '自动' : '已暂停轮询')),
-
-                    Text(
-                      str(quote?['asOf']),
-                      style: const TextStyle(fontSize: 12, color: muted),
-                    ),
-                  ],
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            _quoteStrip(),
+            if (tab == 'chart') ...[
+              _periodBar(),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (ctx, c) => _chart(c.maxHeight, name),
                 ),
-              ],
-              if (tab == 'chart' || tab == 'guide')
-                AsyncPanel(
-                  key: analysisKey,
-                  refreshSeconds: auto ? 60 : 0,
-                  load: () => cnStock(widget.symbol)
-                      ? s.api.get(
-                          '/api/analysis',
-                          parameters: {'symbol': widget.symbol},
-                        )
-                      : s.api
-                            .get(
-                              '/api/market',
-                              parameters: {'symbol': widget.symbol},
-                            )
-                            .then((m) => {'market': m}),
-                  builder: (data) {
-                    final market = obj(data['market']),
-                        bars = rows(market['candles'])
-                            .map(Bar.fromJson)
-                            .toList();
-                    if (tab == 'guide') {
-                      return cnStock(widget.symbol)
-                          ? GuidePanel(widget.symbol, data)
-                          : Notice(s.t('当前公开接口覆盖 A 股'));
-                    }
-                    return Panel(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+              ),
+              _sourceBar(),
+            ] else
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                  children: [
+                    if (tab == 'guide')
+                      if (analysis != null)
+                        GuidePanel(widget.symbol, analysis!)
+                      else
+                        _waiting(),
+                    if (tab == 'sector') StockSectors(widget.symbol),
+                    if (tab == 'f10') F10Page(widget.symbol),
+                    if (tab == 'news') ...[
+                      Row(
                         children: [
-                          Chips(
-                            values: const {
-                              'intraday': '分时',
-                              'day': '日 K',
-                              'week': '周 K',
-                              'month': '月 K',
-                            },
-                            selected: timeframe,
-                            onSelected: (v) => setState(() => timeframe = v),
+                          mini(
+                            '个股资讯',
+                            () => setState(() => newsTab = 'news'),
+                            color: newsTab == 'news' ? Colors.white : null,
                           ),
-                          if (timeframe == 'intraday')
-                            AsyncPanel(
-                              key: ValueKey('${widget.symbol}-minute'),
-                              refreshSeconds: auto ? 15 : 0,
-                              load: () => s.api.get(
-                                '/api/desk/intraday',
-                                parameters: {'symbol': widget.symbol},
-                              ),
-                              builder: (r) => IntradayChart(r),
-                            )
-                          else if (timeframe == 'day')
-                            MarketChart(
-                              name: name,
-                              bars: bars,
-                              symbol: widget.symbol,
-                              events: rows(obj(data['guide'])['events']),
-                              volumeUnit:
-                                  str(
-                                        market['provider'],
-                                        '',
-                                      ).startsWith('新浪') ||
-                                      RegExp(r'^68[89]').hasMatch(widget.symbol)
-                                  ? '股'
-                                  : '手',
-                            )
-                          else
-                            AsyncPanel(
-                              key: ValueKey('${widget.symbol}-$timeframe'),
-                              load: () => s.api.get(
-                                '/api/desk/history',
-                                parameters: {
-                                  'symbol': widget.symbol,
-                                  'period': timeframe,
-                                },
-                              ),
-                              builder: (r) => Column(
-                                children: [
-                                  MarketChart(
-                                    name: name,
-                                    bars: rows(r['candles'])
-                                        .map(Bar.fromJson)
-                                        .toList(),
-                                    symbol: widget.symbol,
-                                    unit: timeframe,
-                                    volumeUnit: str(r['volumeUnit']),
-                                  ),
-                                  SourceLine(r),
-                                ],
-                              ),
-                            ),
-                          if (timeframe == 'day' && cnStock(widget.symbol)) ...[
-                            const SizedBox(height: 14),
-                            OutlinedButton.icon(
-                              onPressed: () => setState(() => chips = !chips),
-                              icon: const Icon(Icons.bar_chart),
-                              label: Text(s.t('筹码峰')),
-                            ),
-                            if (chips)
-                              ChipProfile(
-                                bars: bars,
-                                symbol: widget.symbol,
-                                quote: quote ?? {},
-                                volumeUnit:
-                                    str(
-                                          market['provider'],
-                                          '',
-                                        ).startsWith('新浪') ||
-                                        RegExp(r'^68[89]')
-                                            .hasMatch(widget.symbol)
-                                    ? '股'
-                                    : '手',
-                              ),
-                          ],
-                          SourceLine(market, extra: str(market['notice'], '')),
+                          mini(
+                            '公告财报',
+                            () => setState(() => newsTab = 'evidence'),
+                            color: newsTab == 'evidence' ? Colors.white : null,
+                          ),
                         ],
                       ),
-                    );
-                  },
+                      if (newsTab == 'news')
+                        StockNews(widget.symbol)
+                      else
+                        EvidencePanel(widget.symbol),
+                    ],
+                  ],
                 ),
-              if (tab == 'chart' && cnStock(widget.symbol))
-                BookPanel(widget.symbol, quote ?? {}),
-              if (tab == 'sector') StockSectors(widget.symbol),
-              if (tab == 'news') StockNews(widget.symbol),
-              if (tab == 'f10') F10Page(widget.symbol),
-              if (tab == 'evidence') EvidencePanel(widget.symbol),
+              ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          height: 50,
+          decoration: const BoxDecoration(
+            color: Color(0xff131316),
+            border: Border(
+              top: BorderSide(color: Color(0xff303038), width: .5),
+            ),
+          ),
+          child: Row(
+            children: [
+              for (final item in [
+                ('chart', '看盘', Icons.candlestick_chart_outlined),
+                ('guide', '五线开花', Icons.auto_graph),
+                ('sector', '板块', Icons.hub_outlined),
+                ('news', '资讯', Icons.article_outlined),
+                ('f10', 'F10', Icons.business_outlined),
+              ])
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => tab = item.$1),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          item.$3,
+                          size: 18,
+                          color: tab == item.$1 ? Colors.white : muted,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          s.t(item.$2),
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1,
+                            color: tab == item.$1 ? Colors.white : muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -370,32 +453,242 @@ class _StockPageState extends State<StockPage> {
     );
   }
 
-  Widget _quotePanel(AtlasStore s) => Panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 25,
-          runSpacing: 20,
-          children: [
-            LabelValue('今开', fixed(quote?['open'])),
-            LabelValue('最高', fixed(quote?['high'])),
-            LabelValue('最低', fixed(quote?['low'])),
-            LabelValue('成交额', amount(quote?['amount'])),
-            LabelValue('换手率', '${fixed(quote?['turnover'])}%'),
-            LabelValue('量比', fixed(quote?['volumeRatio'])),
-            LabelValue('市盈率 TTM', fixed(quote?['pe'])),
-            LabelValue('总市值', amount(quote?['marketCap'])),
-          ],
+  Widget _quoteStrip() => InkWell(
+    onTap: more,
+    child: Container(
+      height: 78,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xff24242a), width: .5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    fixed(q['price']),
+                    style: TextStyle(
+                      fontSize: 31,
+                      height: 1,
+                      fontWeight: FontWeight.w600,
+                      color: tone(q['changePercent']),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${fixed(q['change'])}  ${percent(q['changePercent'])}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1,
+                    color: tone(q['changePercent']),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _statColumn(
+                    '今开',
+                    fixed(q['open']),
+                    '最低',
+                    fixed(q['low']),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _statColumn(
+                    '最高',
+                    fixed(q['high']),
+                    '换手率',
+                    '${fixed(q['turnover'])}%',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  Widget _statColumn(String a, String av, String b, String bv) => Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      for (final pair in [(a, av), (b, bv)])
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            children: [
+              Text(
+                tr(context, pair.$1),
+                style: const TextStyle(fontSize: 11, height: 1, color: muted),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    pair.$2,
+                    style: const TextStyle(fontSize: 13, height: 1),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-        Text(
-          '${s.t(quote?['stale'] == true
-              ? '快照已过期'
-              : quote?['session'] == 'trading'
-              ? '盘中快照'
-              : '已收盘')} · ${s.t('公开五档快照')}',
-          style: const TextStyle(color: muted, fontSize: 13),
+    ],
+  );
+  Widget _periodBar() => Container(
+    height: 36,
+    decoration: const BoxDecoration(
+      border: Border(bottom: BorderSide(color: Color(0xff303038), width: .5)),
+    ),
+    child: Row(
+      children: [
+        for (final p in [
+          ('intraday', '分时'),
+          ('day', '日 K'),
+          ('week', '周 K'),
+          ('month', '月 K'),
+        ])
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => timeframe = p.$1),
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: timeframe == p.$1 ? up : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  tr(context, p.$2),
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1,
+                    color: timeframe == p.$1 ? Colors.white : muted,
+                    fontWeight: timeframe == p.$1
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+  Widget _waiting() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: analysisError == null
+          ? const CircularProgressIndicator(strokeWidth: 1.5)
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  analysisError!,
+                  style: const TextStyle(fontSize: 13, color: muted),
+                ),
+                TextButton(
+                  onPressed: refreshAnalysis,
+                  child: Text(tr(context, '重试数据源')),
+                ),
+              ],
+            ),
+    ),
+  );
+  Widget _chart(double height, String name) {
+    if (analysis == null) return _waiting();
+    if (timeframe == 'day') {
+      return MarketChart(
+        key: ValueKey('${widget.symbol}-day'),
+        bars: bars,
+        name: name,
+        symbol: widget.symbol,
+        volumeUnit: volumeUnit,
+        events: rows(obj(analysis?['guide'])['events']),
+        terminal: true,
+        viewportHeight: height,
+      );
+    }
+    return LiveChartFeed(
+      key: ValueKey('${widget.symbol}-$timeframe'),
+      refreshSeconds: timeframe == 'intraday' ? 15 : 60,
+      load: () => context.read<AtlasStore>().api.get(
+        timeframe == 'intraday' ? '/api/desk/intraday' : '/api/desk/history',
+        parameters: {
+          'symbol': widget.symbol,
+          if (timeframe != 'intraday') 'period': timeframe,
+        },
+      ),
+      builder: (r) {
+        return timeframe == 'intraday'
+            ? IntradayChart(
+                r,
+                height: math.max(150, height - 30),
+                showSource: false,
+              )
+            : MarketChart(
+                key: ValueKey('${widget.symbol}-$timeframe'),
+                bars: rows(r['candles']).map(Bar.fromJson).toList(),
+                name: name,
+                symbol: widget.symbol,
+                unit: timeframe,
+                volumeUnit: str(r['volumeUnit']),
+                terminal: true,
+                viewportHeight: height,
+              );
+      },
+    );
+  }
+
+  Widget _sourceBar() => Container(
+    height: 32,
+    decoration: const BoxDecoration(
+      border: Border(top: BorderSide(color: Color(0xff25252b), width: .5)),
+    ),
+    child: Row(
+      children: [
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '${str(q['asOf'], '').replaceFirst('T', ' ').replaceFirst('+08:00', '')} · ${tr(context, q['stale'] == true
+                ? '快照已过期'
+                : q['session'] == 'trading'
+                ? '盘中快照'
+                : '已收盘')}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10, height: 1, color: muted),
+          ),
+        ),
+        mini('盘口', () => sheet('五档盘口', BookPanel(widget.symbol, q))),
+        mini(
+          '筹码',
+          () => sheet(
+            '筹码峰',
+            ChipProfile(
+              bars: bars,
+              symbol: widget.symbol,
+              quote: q,
+              volumeUnit: volumeUnit,
+            ),
+          ),
         ),
       ],
     ),

@@ -106,7 +106,7 @@ class _WatchPageState extends State<WatchPage> {
     return RefreshIndicator(
       onRefresh: s.refreshQuotes,
       child: ListView(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         children: [
           PageTitle(
             '我的自选',
@@ -158,7 +158,7 @@ class _WatchPageState extends State<WatchPage> {
                   border: Border(bottom: BorderSide(color: Color(0xff303038))),
                 ),
                 child: ListTile(
-                  minVerticalPadding: 20,
+                  minVerticalPadding: 14,
                   title: Text(
                     str(q['name'], symbol),
                     style: const TextStyle(
@@ -240,7 +240,7 @@ class SettingsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(s.t('设置'))),
       body: ListView(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         children: [
           Panel(
             child: Column(

@@ -41,14 +41,21 @@ Widget chartHarness(AtlasStore store, ValueNotifier<List<Bar>> prices) =>
       child: MaterialApp(
         theme: ThemeData.dark(useMaterial3: true),
         home: Scaffold(
-          appBar: AppBar(title: const Text('Chart interaction validation')),
-          body: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: ValueListenableBuilder<List<Bar>>(
-                valueListenable: prices,
-                builder: (_, bars, _) =>
-                    MarketChart(bars: bars, symbol: '300545.SZ'),
+          appBar: AppBar(
+            toolbarHeight: 44,
+            title: const Text(
+              'iPhone chart validation',
+              style: TextStyle(fontSize: 16),
+            ),
+          ),
+          body: LayoutBuilder(
+            builder: (context, c) => ValueListenableBuilder<List<Bar>>(
+              valueListenable: prices,
+              builder: (_, bars, _) => MarketChart(
+                bars: bars,
+                symbol: '300545.SZ',
+                terminal: true,
+                viewportHeight: c.maxHeight,
               ),
             ),
           ),

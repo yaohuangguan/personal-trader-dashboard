@@ -311,7 +311,7 @@
   "领涨": "Leader",
   "读取板块中…": "Loading sectors…",
   "公开快照，来源未提供交易日期；热度按涨幅衡量。": "Public snapshot with no source trading date; heat is ranked by gain.",
-  "板块": "Sector",
+  "板块": "Sectors",
   " · 成分涨幅": " · Constituent gainers",
   "个股机会榜": "Stock opportunity lists",
   "搜索本榜名称或代码": "Search this list by name or symbol",
@@ -1043,5 +1043,18 @@
   "关闭全屏": "Close fullscreen",
   "全部副图 · 可纵向滚动": "All indicators · scroll vertically",
   "自定义颜色": "Custom color",
-  "请输入 #RRGGBB 色值": "Enter a #RRGGBB color"
+  "请输入 #RRGGBB 色值": "Enter a #RRGGBB color",
+  "行情详情": "Quote details",
+  "盘口": "Order book",
+  "筹码": "Chips",
+  "指数": "Indices",
+  "热点板块": "Hot sectors",
+  "公开行情快照": "Public quote snapshot",
+  "监控设置": "Monitor settings",
+  "核验详情": "Coverage details",
+  "扫描设置": "Scan settings",
+  "筛选与导出": "Filter and export",
+  "底稿": "Baselines",
+  "暂停盯盘": "Pause",
+  "开启盯盘": "Start monitor"
 }
