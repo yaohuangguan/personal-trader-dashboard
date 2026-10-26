@@ -34,7 +34,7 @@ Potential adhesion candidates use the guide's tight range below 5%; strict launc
 
 Scanning is initiated by the user and runs while the app page remains visible. Navigating to individual stocks inside the app preserves the running scanner and displays a compact progress indicator. Universe requests and historical requests are paced; shape calculations run in a separate Web Worker. Hiding the browser page or going offline pauses scanning; a full app reload restores paused progress. IndexedDB stores versioned progress and compact results for resume, including across reloads; raw candle histories are not accumulated in browser storage. Results are paginated and can be exported to CSV. Sources can fail or rate-limit, and those symbols remain a separate incomplete list with reasons. Five consecutive history failures pause the run with saved progress. The time estimate excludes universe-loading time. No result count, source outage or empty filter is replaced with demonstration candidates.
 
-This deployment does not yet run an unattended full-market scheduled service while the browser is closed. Full scans may take substantial time at public-source request rates; the UI estimates remaining time from observed progress.
+The foreground screener above runs only while visible. Separately, the signal center supports a shared server-side full-market scanner at five-minute quote intervals, with dated coverage, missing-source counts and explicit quota errors. It continues while browsers are closed, subject to Cloudflare account quotas; native push is reserved until APNs/Firebase is configured.
 
 ## Sector outlook
 
@@ -49,3 +49,18 @@ The industry constituent adapter fetches pages in symbol order, with an 800-reco
 The combined observation and continuation/downgrade scenarios use disclosed 65%/35% participation thresholds, median change, leader concentration and the major-index snapshot. They are conditional observations rather than calibrated next-day probabilities. Missing dates, chip structures, licensed Level-2 and unverified news causality remain missing evidence rather than asserted institutional intent.
 
 New fixed-purpose endpoints are `/api/desk/universe?page=...`, `/api/desk/industries` and `/api/desk/sector-scenario?code=SN:new_*`. Page bounds and provider namespaces are validated before network calls. JSONP history is parsed as JSON data without executing upstream script text.
+
+
+## Explainable score and operations
+
+`/api/analysis` returns `strength`, `action` and `tradeMarkers`. Shape criteria contribute 50 points, supporting indicators 15, trading character 20 and launch confirmation 15. Each risk deducts four (maximum 20). Unknown evidence earns no points; missing core history returns no score. Caps are 59 before launch, 79 pending confirmation, 49 for quiet/weak-follow-through character and 39 after failed confirmation. A score is a rule match, not an estimated return or probability.
+
+Operation precedence is insufficient evidence → failed setup / MA20 support failure → overextension or multiple risks → unfinished daily candle → quiet/weak character → newly confirmed entry → holding observation → pending / wait. Buy requires the first completed 3–5-bar confirmation date and at least 70 points. Strong buy further requires 85 points, no implemented risks, active historical character, at least three non-overlapping historical breakouts and positive five-day follow-through of at least half. This historical sample is a filter, not a calibrated prospective success rate. Sell/reduce applies to existing holders; a flat investor reads it as avoid entry. Stance reasons and support levels are shown beside the score.
+
+B/S markers are generated from prefixes ending on the confirmation day. There is no buy marker on the launch day or unfinished candle. The first subsequent completed daily bar whose low loses the launch-body midpoint or whose close loses MA20 is the exit marker. Later failure does not erase a previously known confirmation. Close-based marker prices are observations, not guaranteed executable fills. This is an illustrative rule sequence rather than an account-specific position ledger; corporate actions, fees, slippage, gaps and limit-up/down liquidity are not modeled.
+
+## Chart and evidence additions
+
+Minute candles use Tencent unadjusted 5/15/30/60-minute OHLCV. 120-minute candles are synthesized only from a complete pair of 60-minute candles inside the same morning/afternoon session; incomplete pairs are omitted. Beijing exchange minute data is explicitly unavailable from this source. The visible chart has MA/BOLL(20,2 population deviation)/SAR(0.02,0.2) overlays and VOL/MACD/KDJ/RSI(14 Wilder) switches. Indicators follow the selected chart interval; guide scoring stays on fixed daily MA5/10/20/30/60.
+
+F10 adds Sina published balance sheets, income statements and cash flows plus Eastmoney major/float holder records. Reporting dates, publication dates, currency, cumulative-vs-quarter interpretation and the total-equity/free-float ownership denominators remain separate. Source failure produces a per-section notice; absent values are never zero-filled. News share URLs contain bounded plain-text metadata and summary, open the in-site reader directly and do not fetch arbitrary external documents.

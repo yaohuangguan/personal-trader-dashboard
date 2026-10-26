@@ -20,17 +20,17 @@ For a different deployed service, add `--dart-define=ATLAS_API_BASE=https://your
 
 | Web workspace | Native interface |
 | --- | --- |
-| Stock workspace / watchlist | Watch tab; swipe to remove, hold to move first, search by name or code. Stock detail dedicates its first screen to the quote strip and complete candle/VOL/MACD/KDJ stack. A fixed bottom bar switches chart, guide, sectors, news and F10; quote details, order book and chips use draggable sheets. |
-| Candles | Native canvas: daily/weekly/monthly, 8 editable MA periods/colors/toggles, volume, MACD, KDJ, crosshair, pinch zoom, pan, fullscreen and dated guide events. |
+| Stock workspace / watchlist | Watch tab; swipe to remove, hold to move first, search by name, code or pinyin initials. Persistent multi-membership groups and visible-row real intraday sparklines are supported. Stock detail dedicates its first screen to the quote strip and complete candle/VOL/MACD/KDJ stack, with no last-price label covering the newest candle. Scroll below it for operation reasons, funding, market sentiment and F10; the app bar retains name and price. A fixed bottom bar switches chart, guide, sectors, news and F10; quote details, order book and chips use draggable sheets. |
+| Candles | Native canvas: daily/weekly/monthly and 5/15/30/60/120-minute candles, 8 editable MA periods/colors/toggles, MA/BOLL/SAR overlays, volume/MACD/KDJ/RSI subpanes, crosshair, pinch zoom, pan, fullscreen and dated guide events. |
 | Intraday / order book | Public minute chart, five-level book, recent aggregated ticks and attributed flow. No licensed L2 claim. |
-| Five MA guide | Shared `/api/analysis` rules, stock character, original checklist, confirmation/invalidations, weekly/monthly resonance, evidence and risk conditions. |
+| Five MA guide | Shared `/api/analysis` rules, explainable total score and trade stance, causal historical B/S markers, stock character, original checklist, confirmation/invalidations, weekly/monthly resonance, evidence and risk conditions. |
 | Chips | Historical-turnover cost model, 70%/90% ranges, concentration, profit share, initial-seed remainder; fixed-latest-float fallback is labeled. |
-| Stock evidence | Company news, report index, F10 profile/business/financial periods/holders, announcement reader/PDF, earnings calendar, intelligence archive. |
-| Market | Major-index intraday/daily/weekly/monthly, sector gain ranking, stock gainers, Dragon/Tiger disclosures, yesterday limit-up and today's limit-up pools, disclosed sentiment formula. |
+| Stock evidence | Company news, report index, F10 profile/business, eight periods of balance/income/cash-flow statements with publication dates, top ten total/float holders and holder counts, announcement reader/PDF, earnings calendar, intelligence archive. |
+| Market | Major-index daily by default, intraday/weekly/monthly and minute intervals, sector gain ranking, stock gainers, Dragon/Tiger disclosures, yesterday limit-up and today's limit-up pools, disclosed sentiment formula. |
 | Screener | Quick sample, full-market and watch scopes; pause/resume persistence, character/ST filters, stage/risk/name filters, CSV sharing, selected candidate monitor import. |
 | Sector outlook | Market environment, full industry breadth and coverage, participation, continuation/invalidation conditions. No fabricated probability. |
 | Signal center | Defaults to all-market server scanner, coverage/warmup/failures/source dates, optional selected lists, on/off/renew, event details and native push hook. |
-| News / research | 7x24 feed, source/importance/topic filters, original-source reader, bookmarks, global overview, seven industry chains, archived events. |
+| News / research | 7x24 feed, source/importance/topic filters, original-source reader with self-contained HTTPS in-site share links that open directly, bookmarks, global overview, seven industry chains, archived events. |
 | Settings | Chinese/English, 18/20/22 text sizes plus system scaling, watchlist import/export, foreground price reminders. |
 
 Phone workspaces use portrait bottom navigation, sheets and push/pop details. Chart fullscreen unlocks device rotation and restores portrait on exit. Tablets use a navigation rail. Settings and coverage details in the screener/signal center are collapsed so candidates and events remain prominent. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app is inactive. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
