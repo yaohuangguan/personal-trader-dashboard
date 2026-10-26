@@ -1,5 +1,14 @@
 import 'dart:math' as math;
 
+/// Axis labels overlay the plot rather than reserving wide empty side gutters.
+abstract final class ChartPlot {
+  static const inset = 6.0;
+  static double width(double canvasWidth) =>
+      math.max(1, canvasWidth - inset * 2);
+  static double fraction(double x, double canvasWidth) =>
+      ((x - inset) / width(canvasWidth)).clamp(0.0, 1.0);
+}
+
 /// Viewport math is independent of gestures and price calculations.
 class ChartViewport {
   ChartViewport({this.length = 0, this.count = 66, this.offset = 0});

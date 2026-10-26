@@ -1,6 +1,6 @@
 import {universe,quotes} from './desk-data';
 import {tencentAshares,sinaAdjustedDaily,sinaBeijingDaily} from './research';
-import {evaluateLiveSignal,beijingParts,monitorWindow,nextMonitorRun,type SignalEvent} from '../shared/monitor';
+import {evaluateLiveSignal,beijingParts,monitorWindow,nextMonitorRun,MONITOR_INTERVAL_MS,MONITOR_FRESHNESS_MS,type SignalEvent} from '../shared/monitor';
 import {partitionMarket,type FullMarketStatus} from '../shared/full-market';
 import {stockCharacter} from '../shared/stock-character';
 import type {Candle} from '../shared/types';
@@ -46,13 +46,13 @@ export class MarketScanner {
  }
  private async status():Promise<FullMarketStatus>{
   const s=this.state.storage,m=await s.get<Master>('master'),reports=Object.values(await s.get<Record<string,Report>>('reports')||{}),active=await this.active();
-  const fresh=reports.filter(r=>Date.now()-r.lastRun<150000),ready=reports.reduce((n,r)=>n+r.ready,0),checked=fresh.reduce((n,r)=>n+r.checked,0),failures=reports.flatMap(r=>r.failures);
-  return {phase:!active?'idle':!m?.complete?'universe':ready<(m?.symbols.length||0)?'warming':!monitorWindow()?'closed':fresh.length<(m?.shards||0)?'partial':'scanning',registered:m?.registered||0,total:m?.symbols.length||0,pages:Math.max(0,(m?.page||1)-1),universeComplete:!!m?.complete,countMatches:!!m?.complete&&m.symbols.length===m.registered,shards:m?.shards||0,ready,checked,freshShards:fresh.length,lastRun:reports.length?Math.max(...reports.map(r=>r.lastRun)):null,lastQuoteAt:reports.map(r=>r.lastQuoteAt).filter(Boolean).sort().at(-1)||null,failures:failures.length,failureSample:failures.slice(0,60),events:await s.get<SignalEvent[]>('events')||[],source:'新浪全证券名单 + 腾讯沪深北快照 / 腾讯与新浪日线',notice:m?.error||'全量名单分片扫描，不按涨幅或自选预先缩小范围；历史不足、停牌、源失败分别计入未完成。初始化底稿需要时间，当前覆盖以就绪数量为准。',active};
+  const fresh=reports.filter(r=>Date.now()-r.lastRun<MONITOR_FRESHNESS_MS),ready=reports.reduce((n,r)=>n+r.ready,0),checked=fresh.reduce((n,r)=>n+r.checked,0),failures=reports.flatMap(r=>r.failures);
+  return {phase:!active?'idle':!m?.complete?'universe':ready<(m?.symbols.length||0)?'warming':!monitorWindow()?'closed':fresh.length<(m?.shards||0)?'partial':'scanning',registered:m?.registered||0,total:m?.symbols.length||0,pages:Math.max(0,(m?.page||1)-1),universeComplete:!!m?.complete,countMatches:!!m?.complete&&m.symbols.length===m.registered,shards:m?.shards||0,ready,checked,freshShards:fresh.length,lastRun:reports.length?Math.max(...reports.map(r=>r.lastRun)):null,lastQuoteAt:reports.map(r=>r.lastQuoteAt).filter(Boolean).sort().at(-1)||null,failures:failures.length,failureSample:failures.slice(0,60),events:await s.get<SignalEvent[]>('events')||[],source:'新浪全证券名单 + 腾讯沪深北快照 / 腾讯与新浪日线',notice:m?.error||'全量名单每5分钟分片扫描，不按涨幅或自选预先缩小范围；历史不足、停牌、源失败分别计入未完成。初始化底稿需要时间，当前覆盖以就绪数量为准。',active};
  }
  async alarm(){
   if(this.busy)return;this.busy=true;
   try{if(await this.state.storage.get('shard'))await this.runShard();else await this.runMaster();}
-  catch(e){const s=this.state.storage;const shard=await s.get<ShardConfig>('shard');if(shard?.enabled)await s.setAlarm(Date.now()+60000);else if(await this.active())await s.setAlarm(Date.now()+60000);const m=await s.get<Master>('master');if(m){m.error=e instanceof Error?e.message:'扫描源暂不可用';await s.put('master',m);}}
+  catch(e){const s=this.state.storage;const shard=await s.get<ShardConfig>('shard');if(shard?.enabled)await s.setAlarm(Date.now()+MONITOR_INTERVAL_MS);else if(await this.active())await s.setAlarm(Date.now()+MONITOR_INTERVAL_MS);const m=await s.get<Master>('master');if(m){m.error=e instanceof Error?e.message:'扫描源暂不可用';await s.put('master',m);}}
   finally{this.busy=false;}
  }
  private async runMaster(){
@@ -97,6 +97,6 @@ export class MarketScanner {
   for(const id of Object.keys(seen))if(id.slice(0,10)<new Date(Date.now()-10*86400000).toISOString().slice(0,10))delete seen[id];if(JSON.stringify(seen)!==priorSeen)await s.put('seen',seen);
   const outbox=await s.get<SignalEvent[]>('outbox')||[],unsent=[...new Map([...outbox,...events].map(e=>[e.id,e])).values()];if(events.length)await s.put('outbox',unsent);
   const report:Report={index:config.index,revision:config.revision,total:config.symbols.length,ready:baselines.size,checked,lastRun:Date.now(),lastQuoteAt,failures,events:unsent};await scannerCall(this.env.MARKET_SCANNER,'report',report);if(unsent.length)await s.put('outbox',[]);
-  const current=await s.get<ShardConfig>('shard');if(current?.enabled){await s.setAlarm(pending.length>4?Date.now()+30000:nextMonitorRun());}
+  const current=await s.get<ShardConfig>('shard');if(current?.enabled){await s.setAlarm(nextMonitorRun());}
  }
 }

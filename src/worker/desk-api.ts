@@ -1,4 +1,5 @@
 import {f10} from './f10';
+import {dailyTrend} from '../shared/daily-trend';
 import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
 
@@ -34,6 +35,18 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       return respond(await memo(kind + symbol + period, 600, () => history(symbol, period)));
     }
     if(kind==='f10')return respond(await memo('f10'+symbol,1800,()=>f10(symbol)));
+    if(kind==='trend')return respond(await memo('trend:'+symbol,30,async()=>{
+      const results=await Promise.allSettled([
+        memo('history'+symbol+'day',600,()=>history(symbol,'day')),
+        memo('quotes:'+symbol+',000300.SH',3,()=>quotes([symbol,'000300.SH'])),
+        memo('intraday'+symbol,15,()=>intraday(symbol)),
+      ]);
+      if(results[0].status==='rejected')throw new Error('走势分析需要可核验日线，当前来源不可用');
+      const daily=results[0].value,q=results[1].status==='fulfilled'?results[1].value.items:[];
+      return dailyTrend(daily.candles,{symbol,volumeUnit:daily.volumeUnit as '股'|'手',source:daily.source,
+        quote:q.find(r=>r.symbol===symbol),benchmark:q.find(r=>r.symbol==='000300.SH'),
+        intraday:results[2].status==='fulfilled'?results[2].value:undefined});
+    }));
     if (kind === 'chips')return respond(await memo(kind+symbol,600,()=>chips(symbol)));
     if (kind === 'intraday') return respond(await memo(kind + symbol, 15, () => intraday(symbol)));
     if (kind === 'ticks') return respond(await memo(kind + symbol, 15, () => ticks(symbol)));

@@ -13,8 +13,10 @@ export function beijingParts(now=new Date()){
 export function monitorWindow(now=new Date()){
  const p=beijingParts(now);return !['Sat','Sun'].includes(p.weekday)&&((p.minute>=570&&p.minute<=690)||(p.minute>=780&&p.minute<=930));
 }
-export function nextMonitorRun(now=new Date()){
- const p=beijingParts(now);if(monitorWindow(now))return now.getTime()+60000;
+export const MONITOR_INTERVAL_MS=5*60000;
+export const MONITOR_FRESHNESS_MS=MONITOR_INTERVAL_MS+90000;
+export function nextMonitorRun(now=new Date()):number{
+ const p=beijingParts(now);if(monitorWindow(now)){const next=new Date(now.getTime()+MONITOR_INTERVAL_MS);return monitorWindow(next)?next.getTime():nextMonitorRun(next);}
  if(!['Sat','Sun'].includes(p.weekday)&&p.minute>690&&p.minute<780)return Date.parse(p.date+'T13:00:00+08:00');
  let d=new Date(p.date+'T09:30:00+08:00');if(p.minute>=570)d=new Date(d.getTime()+86400000);
  while([0,6].includes(new Date(d.getTime()+8*3600000).getUTCDay()))d=new Date(d.getTime()+86400000);

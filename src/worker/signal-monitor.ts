@@ -5,7 +5,7 @@ import {buildPushPayload,type VapidKeys,type PushSubscription} from '@block65/we
 import {quotes} from './desk-data';
 import {tencentAshares,sinaAdjustedDaily,sinaBeijingDaily} from './research';
 import type {Candle} from '../shared/types';
-import {beijingParts,monitorWindow,nextMonitorRun,evaluateLiveSignal,validPushEndpoint,validMonitorSymbols,type MonitorConfig,type SignalEvent,type MonitorStatus} from '../shared/monitor';
+import {beijingParts,monitorWindow,nextMonitorRun,MONITOR_INTERVAL_MS,evaluateLiveSignal,validPushEndpoint,validMonitorSymbols,type MonitorConfig,type SignalEvent,type MonitorStatus} from '../shared/monitor';
 type Storage={get<T>(key:string):Promise<T|undefined>;put<T>(key:string,value:T):Promise<void>;delete(key:string):Promise<boolean>;setAlarm(time:number):Promise<void>;deleteAlarm():Promise<void>;getAlarm():Promise<number|null>};
 type State={storage:Storage;blockConcurrencyWhile<T>(fn:()=>Promise<T>):Promise<T>};
 export type MonitorNamespace={idFromName(name:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}};
@@ -56,7 +56,7 @@ export class SignalMonitor {
    const config=await s.get<MonitorConfig>('config')||defaults();try{await this.push({title:config.locale==='en'?'Market Atlas · Test':'Market Atlas · 通知测试',body:config.locale==='en'?'Background browser notifications are connected.':'后台浏览器通知已接通。这是测试，不是股票信号。',url:'/?view=signals',tag:'atlas-test'});return response({sent:true});}catch(e){return response({error:e instanceof Error?e.message:'推送失败'},502);}
   }
   if(action==='global'){if(!this.env?.MARKET_SCANNER)return response({error:'全市场扫描尚未部署'},503);return response(await scannerCall(this.env.MARKET_SCANNER,'status'));}
-  if(action==='check'){if(this.busy)return response({error:'后台扫描进行中'},409);const status=await this.status();if(status.lastRun&&Date.now()-status.lastRun<55000)return response({error:'每分钟最多检查一次'},429);await this.run();return response(await this.status());}
+  if(action==='check'){if(this.busy)return response({error:'后台扫描进行中'},409);const status=await this.status();if(status.lastRun&&Date.now()-status.lastRun<MONITOR_INTERVAL_MS)return response({error:'每5分钟最多检查一次'},429);await this.run();return response(await this.status());}
   return response({error:'Unknown action'},404);
  }
  private async push(data:{title:string;body:string;url:string;tag:string}){
@@ -136,7 +136,7 @@ export class SignalMonitor {
    }else status=baselines.size===config.symbols.length?'休市，等待下一交易时段':'休市，准备历史底稿';
    await this.deliver(config,events,fresh,{checked,ready:baselines.size,failures,status});
    // A stop or configuration change while fetching must not revive an old alarm.
-   const current=await s.get<MonitorConfig>('config');if(current?.enabled){const warm=ordered.length>4;await s.setAlarm(warm?Date.now()+30000:nextMonitorRun());}
+   const current=await s.get<MonitorConfig>('config');if(current?.enabled){await s.setAlarm(nextMonitorRun());}
   }finally{this.busy=false;}
  }
 }

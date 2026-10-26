@@ -358,7 +358,7 @@ class _MarketChartState extends State<MarketChart> {
   }
 
   void selectAt(Offset p, double width) {
-    final i = viewport.select((p.dx - 52) / (width - 106));
+    final i = viewport.select(ChartPlot.fraction(p.dx, width));
     if (i != hover &&
         DateTime.now().difference(hapticAt).inMilliseconds >= 80) {
       hapticAt = DateTime.now();
@@ -412,6 +412,60 @@ class _MarketChartState extends State<MarketChart> {
       : widget.unit == 'week'
       ? {1: 4, 3: 13, 6: 26}[n]!
       : n * 22;
+  Widget _portraitHeader() => SizedBox(
+    height: 32,
+    child: Row(
+      children: [
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '${widget.name} ${widget.symbol}'.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, height: 1),
+          ),
+        ),
+        SizedBox(
+          width: 36,
+          height: 30,
+          child: PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
+            tooltip: tr(context, '副图布局'),
+            onSelected: (v) => setState(() {
+              if (v == 'markers') {
+                markers = !markers;
+                return;
+              }
+              volume = true;
+              macd = v == 'all' || v == 'macd';
+              kdj = v == 'all' || v == 'kdj';
+            }),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'all', child: Text(tr(context, '全部副图'))),
+              const PopupMenuItem(value: 'vol', child: Text('VOL')),
+              const PopupMenuItem(value: 'macd', child: Text('VOL + MACD')),
+              const PopupMenuItem(value: 'kdj', child: Text('VOL + KDJ')),
+              CheckedPopupMenuItem(
+                value: 'markers',
+                checked: markers,
+                child: Text(tr(context, '交叉 / 展开标记')),
+              ),
+            ],
+            icon: const Icon(Icons.view_stream_outlined, size: 17),
+          ),
+        ),
+        _smallIcon(
+          Icons.screen_rotation_outlined,
+          '横竖屏切换',
+          () => SystemChrome.setPreferredOrientations([
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]),
+        ),
+        _smallIcon(Icons.close, '关闭全屏', () => Navigator.pop(context)),
+      ],
+    ),
+  );
   @override
   Widget build(BuildContext context) {
     if (widget.bars.isEmpty) {
@@ -425,13 +479,17 @@ class _MarketChartState extends State<MarketChart> {
         drawMacd = compact ? paneMode == 'all' || paneMode == 'macd' : macd,
         drawKdj = compact ? paneMode == 'all' || paneMode == 'kdj' : kdj;
     final height = widget.terminal
-        ? math.max(160.0, (widget.viewportHeight ?? 500) - 94)
+        ? math.max(
+            160.0,
+            (widget.viewportHeight ?? 500) - (widget.expanded ? 126 : 94),
+          )
         : compact
         ? math.max(
             paneMode == 'all' ? 460.0 : 190.0,
-            MediaQuery.sizeOf(context).height -
-                MediaQuery.paddingOf(context).vertical -
-                138,
+            (widget.viewportHeight ??
+                    (MediaQuery.sizeOf(context).height -
+                        MediaQuery.paddingOf(context).vertical)) -
+                94,
           )
         : widget.expanded
         ? math.max(450.0, MediaQuery.sizeOf(context).height - 280)
@@ -440,6 +498,7 @@ class _MarketChartState extends State<MarketChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.terminal && widget.expanded) _portraitHeader(),
         if (widget.terminal)
           SizedBox(
             height: 30,
@@ -474,7 +533,8 @@ class _MarketChartState extends State<MarketChart> {
                 if (offset > 0)
                   _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
                 _smallIcon(Icons.tune, '均线参数', settings),
-                _smallIcon(Icons.fullscreen, '展开图表', expand),
+                if (!widget.expanded)
+                  _smallIcon(Icons.fullscreen, '展开图表', expand),
               ],
             ),
           )
@@ -720,9 +780,10 @@ class _MarketChartState extends State<MarketChart> {
                     (pointers.values.first - pointers.values.last).distance;
                 viewport.beginPinch(
                   pinchDistance!,
-                  ((pointers.values.first.dx + pointers.values.last.dx) / 2 -
-                          52) /
-                      (constraints.maxWidth - 106),
+                  ChartPlot.fraction(
+                    (pointers.values.first.dx + pointers.values.last.dx) / 2,
+                    constraints.maxWidth,
+                  ),
                 );
                 hover = null;
               }
@@ -736,10 +797,11 @@ class _MarketChartState extends State<MarketChart> {
                   setState(
                     () => viewport.pinch(
                       distance,
-                      ((pointers.values.first.dx + pointers.values.last.dx) /
-                                  2 -
-                              52) /
-                          (constraints.maxWidth - 106),
+                      ChartPlot.fraction(
+                        (pointers.values.first.dx + pointers.values.last.dx) /
+                            2,
+                        constraints.maxWidth,
+                      ),
                     ),
                   );
                 }
@@ -761,7 +823,10 @@ class _MarketChartState extends State<MarketChart> {
               onHorizontalDragUpdate: (e) {
                 if (pointers.length < 2) {
                   setState(
-                    () => viewport.pan(e.delta.dx, constraints.maxWidth - 106),
+                    () => viewport.pan(
+                      e.delta.dx,
+                      ChartPlot.width(constraints.maxWidth),
+                    ),
                   );
                 }
               },
@@ -926,6 +991,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
@@ -980,6 +1046,10 @@ class _FullscreenChartState extends State<FullscreenChart> {
   @override
   void dispose() {
     timer?.cancel();
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
@@ -987,10 +1057,11 @@ class _FullscreenChartState extends State<FullscreenChart> {
   @override
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: MarketChart(
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final portrait =
+              MediaQuery.orientationOf(context) == Orientation.portrait;
+          final chart = MarketChart(
             bars: bars,
             symbol: widget.symbol,
             name: widget.name,
@@ -998,8 +1069,11 @@ class _FullscreenChartState extends State<FullscreenChart> {
             volumeUnit: widget.volumeUnit,
             events: events,
             expanded: true,
-          ),
-        ),
+            terminal: portrait,
+            viewportHeight: c.maxHeight,
+          );
+          return portrait ? chart : SingleChildScrollView(child: chart);
+        },
       ),
     ),
   );
@@ -1033,6 +1107,7 @@ class ChartPainter extends CustomPainter {
     Offset p, {
     Color color = muted,
     double? size,
+    bool background = false,
   }) {
     final t = TextPainter(
       text: TextSpan(
@@ -1042,20 +1117,48 @@ class ChartPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
+    if (background) {
+      c.drawRRect(
+        RRect.fromRectAndRadius(
+          (p & t.size).inflate(2),
+          const Radius.circular(2),
+        ),
+        Paint()..color = const Color(0xe609090b),
+      );
+    }
     t.paint(c, p);
   }
+
+  double textWidth(String text, {double? size}) => (TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(fontSize: size ?? font),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout()).width;
 
   @override
   void paint(Canvas c, Size size) {
     if (data.bars.isEmpty) return;
-    const left = 52.0, right = 54.0;
-    final width = size.width - left - right,
+    const left = ChartPlot.inset, right = ChartPlot.inset;
+    final width = ChartPlot.width(size.width),
         n = end - start,
         step = width / math.max(1, n),
         parts = 1 + (volume ? 1 : 0) + (macd ? 1 : 0) + (kdj ? 1 : 0),
         priceHeight = parts == 1
             ? size.height - 28
-            : (size.height * .49).clamp(95.0, 285.0),
+            : math.max(
+                95.0,
+                math.min(
+                  size.height *
+                      (parts == 2
+                          ? .76
+                          : parts == 3
+                          ? .67
+                          : .60),
+                  size.height - 28 - (parts - 1) * 54,
+                ),
+              ),
         small = (size.height - priceHeight - 28) / math.max(1, parts - 1);
     double x(int i) => left + (i - start + .5) * step;
     final visible = data.bars.sublist(start, end);
@@ -1082,7 +1185,6 @@ class ChartPainter extends CustomPainter {
     for (var i = 0; i < gridCount; i++) {
       final value = lo + (hi - lo) * i / (gridCount - 1), py = y(value);
       c.drawLine(Offset(left, py), Offset(size.width - right, py), grid);
-      label(c, value.toStringAsFixed(2), Offset(1, py - 7));
     }
     c.save();
     c.clipRect(Rect.fromLTRB(left, 15, size.width - right, priceHeight));
@@ -1159,13 +1261,22 @@ class ChartPainter extends CustomPainter {
       }
     }
     c.restore();
-    final last = data.bars[end - 1];
+    for (var i = 0; i < gridCount; i++) {
+      final value = lo + (hi - lo) * i / (gridCount - 1);
+      label(
+        c,
+        value.toStringAsFixed(2),
+        Offset(left, y(value) - 7),
+        background: true,
+      );
+    }
+    final last = data.bars[end - 1], latest = last.close.toStringAsFixed(2);
     label(
       c,
-      last.close.toStringAsFixed(2),
-      Offset(size.width - right + 3, y(last.close) - 7),
+      latest,
+      Offset(size.width - right - textWidth(latest), y(last.close) - 7),
       color: last.close >= last.open ? up : down,
-      size: font,
+      background: true,
     );
     var top = priceHeight + 4;
     void pane(
@@ -1197,18 +1308,6 @@ class ChartPainter extends CustomPainter {
         Offset(size.width - right, top + 20),
         grid,
       );
-      label(
-        c,
-        volumeBars ? amount(max) : max.toStringAsFixed(2),
-        Offset(1, top + 18),
-      );
-      if (small >= 60) {
-        label(
-          c,
-          volumeBars ? '0' : min.toStringAsFixed(2),
-          Offset(1, top + h - 10),
-        );
-      }
       for (var k = 0; k < values.length; k++) {
         final path = Path();
         var first = true;
@@ -1245,6 +1344,20 @@ class ChartPainter extends CustomPainter {
             ..color = colors[k]
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.1,
+        );
+      }
+      label(
+        c,
+        volumeBars ? amount(max) : max.toStringAsFixed(2),
+        Offset(left, top + 18),
+        background: true,
+      );
+      if (small >= 60) {
+        label(
+          c,
+          volumeBars ? '0' : min.toStringAsFixed(2),
+          Offset(left, top + h - 10),
+          background: true,
         );
       }
       {
@@ -1296,7 +1409,21 @@ class ChartPainter extends CustomPainter {
         c,
         data.bars[index].time.substring(5),
         Offset(
-          (x(index) - 15).clamp(left, size.width - right - 25),
+          (x(index) -
+                  textWidth(
+                        data.bars[index].time.substring(5),
+                        size: font - 1,
+                      ) /
+                      2)
+              .clamp(
+                left,
+                size.width -
+                    right -
+                    textWidth(
+                      data.bars[index].time.substring(5),
+                      size: font - 1,
+                    ),
+              ),
           size.height - 17,
         ),
         size: font - 1,

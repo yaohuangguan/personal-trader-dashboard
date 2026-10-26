@@ -103,6 +103,18 @@ void main() {
             return http.Response('{"error":"Monitoring quota exhausted"}', 503);
           }
           final data = switch (r.url.path) {
+            '/api/desk/trend' => {
+              'score': 81,
+              'label': '强势',
+              'date': '2026-10-26',
+              'current': true,
+              'provisional': true,
+              'coveredWeight': 75,
+              'observations': ['现价高于分时价量均价估算 23.00'],
+              'dimensions': [],
+              'risks': ['盘中评分随行情变化，等待收盘复核'],
+              'levels': {'support': 22.8, 'resistance': 24.1},
+            },
             '/api/monitor/status' => {
               'config': {'enabled': globalUnavailable},
               'events': [],
@@ -261,6 +273,15 @@ void main() {
       reason: 'No large chart action buttons on the trading first screen',
     );
     expect(tester.takeException(), isNull);
+    await tester.tap(find.text('走势 81'));
+    await tester.pumpAndSettle();
+    expect(find.text('当日走势分析'), findsOneWidget);
+    expect(find.text('81'), findsOneWidget);
+    expect(find.text('现价高于分时价量均价估算 23.00'), findsOneWidget);
+    expect(find.textContaining('75/100'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

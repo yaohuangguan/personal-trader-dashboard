@@ -1,4 +1,5 @@
 import F10Panel from './F10Panel';
+import DailyTrendPanel from './DailyTrendPanel';
 import {t as uiText} from '../preferences';
 import { useEffect, useMemo, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
@@ -139,6 +140,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
       <div className="desk-center">
         <div className="desk-mobile-security">{securityCard}</div>
 
+        {chinese && <DailyTrendPanel symbol={symbol} />}
         {uiText(analysis && <GuideSummary data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
         <section className="desk-chart-card"><Tabs.Root value={chartMode} onValueChange={setChartMode}>
           <div className="desk-chart-heading"><Tabs.List className="desk-tabs" aria-label={uiText("行情图表类型")}><Tabs.Trigger value="intraday" disabled={!chinese}>{uiText("分时")}</Tabs.Trigger><Tabs.Trigger value="daily">{uiText("日 K")}</Tabs.Trigger><Tabs.Trigger value="week" disabled={!chinese}>{uiText("周 K")}</Tabs.Trigger><Tabs.Trigger value="month" disabled={!chinese}>{uiText("月 K")}</Tabs.Trigger></Tabs.List><span>MA · VOL · MACD · KDJ</span></div>

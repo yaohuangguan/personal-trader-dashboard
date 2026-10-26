@@ -163,6 +163,13 @@ class _SignalsPageState extends State<SignalsPage> {
               style: const TextStyle(fontSize: 13, color: muted),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              s.t('盘中每5分钟扫描，休市等待开盘。'),
+              style: const TextStyle(fontSize: 12, color: muted),
+            ),
+          ),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
             title: Text(s.t('监控设置'), style: const TextStyle(fontSize: 14)),
@@ -375,7 +382,7 @@ class _SignalsPageState extends State<SignalsPage> {
                             '全市场底稿就绪',
                             '${market?['ready'] ?? 0} / ${market?['total'] ?? 0}',
                           ),
-                          LabelValue('最近150秒有效核验', str(market?['checked'])),
+                          LabelValue('最近6分30秒有效核验', str(market?['checked'])),
                           LabelValue('最近行情源时间', str(market?['lastQuoteAt'])),
                         ],
                       ),

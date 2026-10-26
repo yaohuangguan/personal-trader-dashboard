@@ -88,3 +88,11 @@ Register **space.ps6.marketAtlas** and create its Market Atlas app record in you
 The workflow extracts the team ID from the profile, rejects a different bundle ID, expired/development/ad-hoc/enterprise profiles, creates an ephemeral signing keychain, and builds with a unique build number. It never commits signing material to the repository. Configure the secrets through GitHub Settings, not in a chat message. The already connected Mac currently has an Apple Development identity; that is separate from the distribution signing material needed here.
 
 After a successful explicit upload, wait for Apple's processing, then select the build for your internal TestFlight group in App Store Connect. External groups may require beta review. See [Apple upload documentation](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds) and [Flutter's iOS release guide](https://docs.flutter.dev/deployment/ios).
+
+## Full-width charts and daily trend
+
+The chart now uses a six-point inset on each side, with axis labels inside the canvas. Gesture hit coordinates share the same plot geometry. The main pane grows with screen height; portrait fullscreen uses a bounded layout and landscape uses the available height. All three indicators remain available.
+
+The stock source bar includes a compact Trend score link. The matching web workspace has an expandable daily analysis panel. Both use `/api/desk/trend`: observed price momentum normalized by ATR (25%), location in the observed session range (20%), performance since open (20%), relative CSI 300 performance (25%), and a minute price/volume weighted estimate (10%). Missing inputs are shown and available weights are normalized; volume is described separately without projecting the full day. This is a descriptive, uncalibrated strength score, not a probability. Historical data, provisional intraday states, one-price sessions and corporate-action mismatches are explicit.
+
+Shared quote scanning and source-failure retries now wait five minutes per round. The status freshness window is six minutes and thirty seconds to cover staggered shard execution. Intraday source validity still requires fresh source timestamps; lower scan frequency does not accept older quotes. Device notification collection is separate from fetching market quotes.

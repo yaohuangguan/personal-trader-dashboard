@@ -9,6 +9,7 @@ import '../core/store.dart';
 import '../core/indicators.dart';
 import '../widgets/common.dart';
 import '../widgets/market_chart.dart';
+import '../widgets/daily_trend.dart';
 import '../widgets/live_chart_feed.dart';
 import 'guide.dart';
 import 'f10.dart';
@@ -28,7 +29,9 @@ class StockPage extends StatefulWidget {
 }
 
 class _StockPageState extends State<StockPage> {
-  Json? quote, analysis;
+  Json? quote, analysis, trend;
+  String? trendError;
+  bool trendLoading = false;
   String? quoteError, analysisError;
   String tab = 'chart', timeframe = 'day', newsTab = 'news';
   bool auto = true, loading = false;
@@ -39,13 +42,17 @@ class _StockPageState extends State<StockPage> {
     super.initState();
     refreshQuote();
     refreshAnalysis();
+    refreshTrend();
     timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (auto &&
           mounted &&
           context.read<AtlasStore>().foreground &&
           (ModalRoute.of(context)?.isCurrent ?? false)) {
         refreshQuote();
-        if (++tick % 12 == 0) refreshAnalysis();
+        if (++tick % 12 == 0) {
+          refreshAnalysis();
+          refreshTrend();
+        }
       }
     });
   }
@@ -103,6 +110,38 @@ class _StockPageState extends State<StockPage> {
     }
   }
 
+  Future<void> refreshTrend() async {
+    if (trendLoading || !cnStock(widget.symbol)) return;
+    trendLoading = true;
+    try {
+      final value = await context.read<AtlasStore>().api.get(
+        '/api/desk/trend',
+        parameters: {'symbol': widget.symbol},
+      );
+      if (mounted) {
+        setState(() {
+          trend = value;
+          trendError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => trendError = e.toString());
+    } finally {
+      trendLoading = false;
+    }
+  }
+
+  void openTrend() => sheet(
+    '当日走势分析',
+    AsyncPanel(
+      refreshSeconds: 60,
+      load: () => context.read<AtlasStore>().api.get(
+        '/api/desk/trend',
+        parameters: {'symbol': widget.symbol},
+      ),
+      builder: (r) => DailyTrendPanel(r),
+    ),
+  );
   Json get q =>
       quote ??
       {
@@ -277,6 +316,14 @@ class _StockPageState extends State<StockPage> {
           const Divider(height: 30),
           SourceLine(q),
           if (quoteError != null) Notice(quoteError!),
+          ListTile(
+            leading: const Icon(Icons.insights),
+            title: Text(tr(context, '当日走势分析')),
+            onTap: () {
+              Navigator.pop(context);
+              openTrend();
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.notifications_none),
             title: Text(tr(context, '价格提醒')),
@@ -678,6 +725,12 @@ class _StockPageState extends State<StockPage> {
             style: const TextStyle(fontSize: 10, height: 1, color: muted),
           ),
         ),
+        if (cnStock(widget.symbol))
+          mini(
+            '${tr(context, '走势')} ${fixed(trend?['score'], 0)}',
+            openTrend,
+            color: Colors.white,
+          ),
         mini('盘口', () => sheet('五档盘口', BookPanel(widget.symbol, q))),
         mini(
           '筹码',

@@ -5,6 +5,12 @@ import 'package:market_atlas/core/chart_viewport.dart';
 import 'support/chart_harness.dart';
 
 void main() {
+  test('phone plot fills the width and touch fractions match both edges', () {
+    expect(ChartPlot.width(390), 378);
+    expect(ChartPlot.fraction(6, 390), 0);
+    expect(ChartPlot.fraction(384, 390), 1);
+    expect(ChartPlot.fraction(195, 390), .5);
+  });
   test('slow pan accumulates subpixel deltas in the natural direction', () {
     final v = ChartViewport(length: 300);
     v.beginPan();
@@ -57,6 +63,16 @@ void main() {
     await tester.ensureVisible(find.byTooltip('展开图表'));
     await tester.tap(find.byTooltip('展开图表'));
     await tester.pumpAndSettle();
+    final full = tester.getRect(
+      find.byKey(const ValueKey('candlestick-canvas')).last,
+    );
+    expect(full.width, 390);
+    expect(
+      full.bottom,
+      greaterThan(820),
+      reason: 'Portrait fullscreen must fill the available screen',
+    );
+    expect(tester.takeException(), isNull);
     tester.view.physicalSize = const Size(844, 390);
     await tester.pumpAndSettle();
     expect(find.byTooltip('副图布局'), findsOneWidget);
