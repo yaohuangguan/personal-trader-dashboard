@@ -67,9 +67,12 @@ export class MarketScanner {
    }
    m.error=undefined;await s.put('master',m);
    if(!m.complete){await s.setAlarm(Date.now()+5000);return;}
-   const partitions=partitionMarket(m.symbols);const old=m.shards;m.shards=partitions.length;await s.put('master',m);await s.put('reports',{});
-   for(let start=0;start<Math.max(old,m.shards);start+=6)await Promise.all(Array.from({length:Math.min(6,Math.max(old,m.shards)-start)},(_,j)=>{const i=start+j;return this.send(i,'configure',{index:i,symbols:partitions[i]||[],revision:m!.revision,enabled:i<m!.shards});}));
+   await s.put('reports',{});
   }
+  // Reconcile even when today's universe is already loaded: a paused or lost shard must resume.
+  const partitions=partitionMarket(m.symbols),old=m.shards;m.shards=partitions.length;await s.put('master',m);
+  for(let start=0;start<Math.max(old,m.shards);start+=6)await Promise.all(Array.from({length:Math.min(6,Math.max(old,m.shards)-start)},(_,j)=>{const i=start+j;return this.send(i,'configure',{index:i,symbols:partitions[i]||[],revision:m!.revision,enabled:i<m!.shards});}));
+  if(m.error){m.error=undefined;await s.put('master',m);}
   await s.setAlarm(Math.min(Date.now()+60000,nextMonitorRun()));
  }
  private async loadBaseline(symbol:string):Promise<Baseline>{
