@@ -1421,6 +1421,17 @@ class ChartPainter extends CustomPainter {
             ..lineTo(px + 4, py + (isDeath ? -3 : 3))
             ..close();
           c.drawPath(path, Paint()..color = isDeath ? down : up);
+          label(
+            c,
+            isDeath ? '卖' : '买',
+            Offset(
+              (px - 8).clamp(left, size.width - right - 22),
+              (py + (isDeath ? -20 : 7)).clamp(14, priceHeight - 16),
+            ),
+            color: isDeath ? down : up,
+            size: 12,
+            background: true,
+          );
         }
       }
     }
@@ -1446,13 +1457,13 @@ class ChartPainter extends CustomPainter {
                 : y(data.bars[index].high) - 24;
         label(
           c,
-          buy ? 'B ↑' : 'S ↓',
+          buy ? '买 ↑' : '卖 ↓',
           Offset(
             (px - 8).clamp(left, size.width - right - 24),
             py.clamp(15, priceHeight - 15),
           ),
           color: buy ? up : down,
-          size: 11,
+          size: 13,
           background: true,
         );
       }
@@ -1709,7 +1720,7 @@ class _IntradayPainter extends CustomPainter {
         max = prices.reduce(math.max),
         lo = math.min(min, previous ?? min) * .999,
         hi = math.max(max, previous ?? max) * 1.001;
-    final width = size.width - 85, height = size.height - 45;
+    final width = size.width - 61, height = (size.height - 45) * .72;
     double y(double value) => 15 + (hi - value) / (hi - lo) * height;
     final path = Path();
     for (var i = 0; i < prices.length; i++) {
@@ -1752,6 +1763,49 @@ class _IntradayPainter extends CustomPainter {
         Offset(width + 8, y(previous!)),
         Paint()..color = Colors.amber.withValues(alpha: .4),
       );
+    }
+    final volumes = points
+            .map((p) => math.max(0, numOf(p['volume']) ?? 0))
+            .toList(),
+        maxVolume = volumes.fold<double>(
+          0,
+          (n, v) => math.max(n, v).toDouble(),
+        ),
+        volTop = height + 35,
+        volBottom = size.height - 25,
+        barWidth = math.max(.8, width / math.max(1, points.length) * .7);
+    final title = TextPainter(
+      text: TextSpan(
+        text: 'VOL  ${amount(volumes.last)}',
+        style: TextStyle(color: muted, fontSize: 12),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    title.paint(c, Offset(8, volTop - 17));
+    c.drawLine(
+      Offset(8, volTop),
+      Offset(8 + width, volTop),
+      Paint()..color = atlasColor(0xff303038),
+    );
+    if (maxVolume > 0) {
+      for (var i = 0; i < points.length; i++) {
+        final px = 8 + i / math.max(1, points.length - 1) * width,
+            barHeight =
+                volumes[i] / maxVolume * math.max(5, volBottom - volTop);
+        c.drawRect(
+          Rect.fromLTWH(
+            px - barWidth / 2,
+            volBottom - barHeight,
+            barWidth,
+            barHeight,
+          ),
+          Paint()
+            ..color =
+                prices[i] >= (i == 0 ? previous ?? prices[i] : prices[i - 1])
+                ? up
+                : down,
+        );
+      }
     }
     for (final pair in [
       (0, str(points.first['clock'])),

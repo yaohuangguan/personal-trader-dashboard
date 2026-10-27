@@ -350,6 +350,8 @@ class GuideActionPanel extends StatelessWidget {
             style: TextStyle(color: muted, fontSize: 12),
           ),
           const SizedBox(height: 12),
+          if (obj(analysis['context']).isNotEmpty)
+            GuideContext(obj(analysis['context'])),
           ...((a['reasons'] as List?) ?? []).map(
             (r) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -391,6 +393,68 @@ class GuideActionPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class GuideContext extends StatelessWidget {
+  const GuideContext(this.data, {super.key});
+  final Json data;
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AtlasStore>();
+    return Column(
+      children: [
+        for (final pair in [('structure', '当前结构与周期'), ('priceVolume', '量价解读')])
+          Builder(
+            builder: (context) {
+              final item = obj(data[pair.$1]),
+                  color = item['direction'] == 'bullish'
+                      ? up
+                      : item['direction'] == 'bearish'
+                      ? down
+                      : muted;
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border(left: BorderSide(color: color, width: 3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      s.t(pair.$2),
+                      style: TextStyle(fontSize: 12, color: muted),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      s.t(str(item['state'] ?? item['label'])),
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (item['period'] != null)
+                      Text(
+                        s.t(str(item['period'])),
+                        style: TextStyle(fontSize: 12, color: muted),
+                      ),
+                    const SizedBox(height: 7),
+                    Text(
+                      s.t(str(item['detail'] ?? item['explanation'])),
+                      style: TextStyle(fontSize: 14, color: ink, height: 1.6),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
     );
   }
 }

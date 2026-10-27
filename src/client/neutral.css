@@ -11,3 +11,5 @@ html,body,#root{background:var(--atlas-09090b,#09090b)}body{font-family:Inter,'M
 .nav-item{font-size:0.9375rem}.sidebar-bottom small{font-size:0.75rem}
 
 .reader-backdrop{background:var(--atlas-000000bb,#000b)}.reader-modal{background:var(--atlas-15151a,#15151a);border-color:var(--atlas-383842,#383842);border-radius:8px}.pwa-update-banner{border-color:var(--atlas-41414b,#41414b);background:var(--atlas-22222a,#22222a);color:var(--atlas-a9a9ba,#a9a9ba);font-size:0.875rem;padding:10px;border-radius:6px}.pwa-update-banner button{background:var(--atlas-3d3d4a,#3d3d4a);color:var(--atlas-e0e0ed,#e0e0ed);font-size:0.8125rem}
+
+.close-signal-center .signal-config{border-radius:13px;overflow:hidden}.close-signal-center .signal-status{gap:15px;margin-bottom:22px}.close-signal-center .signal-events>button{display:flex;gap:16px;align-items:center;width:100%;padding:17px 12px;border:0;border-bottom:1px solid var(--atlas-34343b,#34343b);background:none;color:var(--atlas-dddddd,#ddd);text-align:left;border-radius:0}.close-signal-center .signal-events>button>b{flex:1}.close-signal-center .signal-events>button>small{color:var(--atlas-9999a6,#9999a6)}

@@ -118,7 +118,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
             time: chartTime(signal.time), position: signal.kind === 'death' ? 'aboveBar' : 'belowBar',
             shape: signal.kind === 'bloom' ? 'circle' : signal.kind === 'golden' ? 'arrowUp' : 'arrowDown',
             color: signal.kind === 'bloom' ? '#f6cb70' : signal.kind === 'golden' ? UP : DOWN,
-            text: signal.kind === 'bloom' ? uiText('均线展开') : '', size: signal.kind === 'bloom' ? 1 : 0.7,
+            text: signal.kind === 'bloom' ? uiText('均线展开') : uiText(signal.kind==='golden'?'买':'卖'), size: signal.kind === 'bloom' ? 1 : 0.7,
           }));
           for (const event of guideEvents || []) {
             points.push({ time: chartTime(event.date), position: 'belowBar', shape: 'circle', color: '#d9c89f', text: uiText('指南启动'), size: 1 });
@@ -126,7 +126,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
             if (event.invalidationDate) points.push({ time: chartTime(event.invalidationDate), position: 'aboveBar', shape: 'arrowDown', color: '#c99a9a', text: uiText('确认失效'), size: 1 });
           }
           points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-          for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:p.label,size:1});
+          for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:uiText(p.side==='buy'?'买':'卖'),size:1});
           points.sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time)));
           prices.setMarkers(points);
         }

@@ -180,7 +180,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.sensors).last);
     await tester.pumpAndSettle();
     expect(find.text('Monitoring quota exhausted'), findsOneWidget);
-    expect(find.text('暂停盯盘'), findsOneWidget);
+    expect(find.text('暂停收盘推送'), findsOneWidget);
     expect(find.text('开启盯盘'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

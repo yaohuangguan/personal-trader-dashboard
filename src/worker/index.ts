@@ -1,3 +1,5 @@
+import {marketContext} from '../shared/market-context';
+import {scannerCall} from './full-market-scanner';
 import {level2,type Level2Env} from './level2';
 import {shareRoute,type ShareStore} from './shares';
 import {guideAction,guideTradeMarkers} from '../shared/guide-action';
@@ -6,9 +8,9 @@ import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
 import {stockCharacter} from '../shared/stock-character';
 import {screenCandidate} from '../shared/screening';
 import {history as deskHistory,quotes as deskQuotes} from './desk-data';
-export {MarketScanner} from './full-market-scanner';
+export {CloseCoordinator as MarketScanner} from './close-coordinator';
 import {monitorRoute,type MonitorNamespace} from './signal-monitor';
-export {SignalMonitor} from './signal-monitor';
+export {CloseSignalMonitor as SignalMonitor} from './close-monitor';
 import { deskRoute } from './desk-api';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
@@ -16,7 +18,7 @@ import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from 
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env extends Level2Env { SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env { SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
@@ -374,7 +376,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const guide=analyzeGuide(data.candles),character=guide.asOf?stockCharacter(data.candles,guide.asOf):null;
   const candidate=screenCandidate({symbol,name:data.name,price:data.last,changePercent:data.changePercent,amount:null,turnover:null},guide,data.provider);if(candidate){candidate.character=character;candidate.risks=[...candidate.risks,...(character?.warnings||[])];}
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
-  return json({available:true,strength:guideScore(guide,character),action:guideAction(guide,character),tradeMarkers:guideTradeMarkers(data.candles,guide),market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
+  return json({available:true,context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:guideAction(guide,character),tradeMarkers:guideTradeMarkers(data.candles,guide),market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
   providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',
@@ -489,6 +491,9 @@ export default {
   try {
    const share=await shareRoute(request,env.SHARES);if(share)return share;
    const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
+   const closeUrl=new URL(request.url);
+   if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET'){if(!env.MARKET_SCANNER)return json({report:null});return json(await scannerCall(env.MARKET_SCANNER,'results'));}
+   if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||request.headers.get('Authorization')!=='Bearer '+env.SCREEN_JOB_TOKEN)return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);return json(await scannerCall(env.MARKET_SCANNER,action!,JSON.parse(raw)));}
    const desk=await deskRoute(request);if(desk)return desk;
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});

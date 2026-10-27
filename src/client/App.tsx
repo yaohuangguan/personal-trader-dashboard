@@ -177,7 +177,7 @@ export default function App(){
 
  return <div className={'app-shell '+(view==='research'?'stock-workspace-shell':'')}>
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
-   <div className="brand"><Logo/><div className="brand-copy"><strong>MARKET ATLAS</strong><span>PERSONAL MARKET DESK</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
+   <div className="brand"><Logo/><div className="brand-copy"><strong>观澜 · ATLAS</strong><span>MARKET RESEARCH</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
    {view==='research'&&!workspaceNav?<WatchSidebar watchlist={watchlist} markets={markets} selected={selected} onStock={chooseSymbol} onSearch={()=>setSearchOpen(true)} onRemove={toggleWatch} onWorkspace={()=>setWorkspaceNav(true)} onClose={()=>setMobileNav(false)}/>:<><div className="nav-label">WORKSPACE</div>
    <nav className="nav-list">{uiText(NAV.map(([id,label,Icon])=><button key={id} onClick={()=>{if(id==='news')setNewsCategory('all');changeView(id);}} className={'nav-item '+(view===id?'active':'')}><Icon size={17}/><span>{uiText(label)}</span>{uiText(id==='saved'&&saved.length>0&&<small className="nav-count">{uiText(saved.length)}</small>)}</button>))}</nav>
    <div className="sidebar-section">
@@ -287,7 +287,7 @@ export default function App(){
      <p className="section-subtitle">{uiText("快速保存值得二次验证的原始报道；只存当前浏览器，不会上传你的研究列表。")}</p>
      <div className="panel article-panel">{uiText(saved.length?saved.map(x=><NewsRow key={x.url} item={x} save={toggleSave} saved/>):<Blank title={uiText("还没有收藏情报")} detail={uiText("打开全球快讯，点击书签图标保存重要新闻")}/>)}</div>
     </>)}
-    <footer className="app-footer"><span>MARKET ATLAS <i>·</i> PERSONAL RESEARCH SYSTEM</span><span>{uiText("公开来源研究 · 非实时交易数据 · 非投资建议")}</span></footer>
+    <footer className="app-footer"><span>观澜 · MARKET ATLAS <i>·</i> PERSONAL RESEARCH</span><span>{uiText("公开来源研究 · 非实时交易数据 · 非投资建议")}</span></footer>
    </main>
   </div>
   <Dialog.Root open={searchOpen} onOpenChange={setSearchOpen}><Dialog.Portal><Dialog.Overlay className="search-overlay"/>

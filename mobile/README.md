@@ -98,3 +98,7 @@ The stock source bar includes a compact Trend score link. The matching web works
 Shared quote scanning and source-failure retries now wait five minutes per round. The status freshness window is six minutes and thirty seconds to cover staggered shard execution. Intraday source validity still requires fresh source timestamps; lower scan frequency does not accept older quotes. Device notification collection is separate from fetching market quotes.
 
 Pattern definitions, source units and short-share / Level-2 configuration: [implementation notes](../docs/pattern-screener.md).
+
+## Shared closing radar
+
+The screener opens on automatic ranking, with independent patterns as a separate mode. Closing results come from the shared daily job; manual verification uses up to four concurrent symbols. Watch rows show dated daily strength, five-line advice and daily structure; stock prices follow daily direction. Intraday charts include minute VOL; crossover/trade labels explicitly read 买/卖. See [closing-screen architecture](../docs/closing-screen.md). The owner requested the updated mobile experience and a new sam iPhone installation attempt.

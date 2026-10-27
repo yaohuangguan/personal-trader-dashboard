@@ -109,29 +109,40 @@ class ScreenerController extends ChangeNotifier {
         notifyListeners();
         while (active()) {
           final page = (numOf(state['page']) ?? 1).toInt();
-          final result = await store.api.get(
-            '/api/desk/universe',
-            parameters: {'page': '$page'},
+          final pages = await Future.wait(
+            List.generate(
+              (numOf(state['total']) ?? 0) > 0
+                  ? (((numOf(state['total']) ?? 0) / 80).ceil() - page + 1)
+                        .clamp(1, 4)
+                  : 1,
+              (i) => store.api.get(
+                '/api/desk/universe',
+                parameters: {'page': '${page + i}'},
+              ),
+            ),
           );
           if (!active()) break;
           final all = Map<String, Json>.fromEntries(
-            [
-              ...rows(state['universe']),
-              ...rows(result['items']),
-            ].map((r) => MapEntry(str(r['symbol']), r)),
+            rows(state['universe']).map((r) => MapEntry(str(r['symbol']), r)),
           );
-          state['universe'] = all.values.toList();
-          state['total'] = result['total'];
-          state['page'] = page + 1;
-          if ((numOf(result['sourceRows']) ?? 0) <
-              (numOf(result['pageSize']) ?? 80)) {
-            state['universeComplete'] = true;
-            break;
+          for (final result in pages) {
+            for (final r in rows(result['items'])) {
+              all[str(r['symbol'])] = r;
+            }
+            state['total'] = result['total'];
+            state['page'] = (numOf(result['page']) ?? page).toInt() + 1;
+            if ((numOf(result['sourceRows']) ?? 0) <
+                    (numOf(result['pageSize']) ?? 80) ||
+                all.length >= (numOf(result['total']) ?? double.infinity)) {
+              state['universeComplete'] = true;
+              break;
+            }
           }
-          if (page >= 100) throw StateError('证券名单超过已验证范围');
+          state['universe'] = all.values.toList();
           notifyListeners();
-          if (page % 4 == 0) await save();
-          await Future<void>.delayed(const Duration(milliseconds: 900));
+          await save();
+          if (state['universeComplete'] == true) break;
+          if (page >= 97) throw StateError('证券名单超过已验证范围');
         }
       }
       if (!active()) {
@@ -174,57 +185,61 @@ class ScreenerController extends ChangeNotifier {
       for (
         var i = (numOf(state['cursor']) ?? 0).toInt();
         i < targets.length && active();
-        i++
+        i += 4
       ) {
-        final stock = targets[i];
+        final batch = targets.skip(i).take(4).toList(),
+            options = obj(state['options']);
         try {
-          final options = obj(state['options']);
           final result = await store.api.get(
-            '/api/desk/screen',
+            '/api/desk/screen-batch',
             parameters: {
-              'symbol': str(stock['symbol']),
+              'symbols': batch.map((s) => str(s['symbol'])).join(','),
               ...options.map((k, v) => MapEntry(k, '$v')),
             },
           );
-          if (result['unverified'] == true) {
-            throw StateError(str(result['reason']));
-          }
-          if (result['candidate'] == null) {
-            final reason = str(result['reason']),
-                counts = obj(state['rejected']);
-            counts[reason] = (numOf(counts[reason]) ?? 0) + 1;
-            state['rejected'] = counts;
-          }
-          final candidate = obj(result['candidate']);
-          if (candidate.isNotEmpty) {
-            if (str(candidate['name'], '').isEmpty) {
-              candidate['name'] = stock['name'];
+          if (!active()) break;
+          for (final item in rows(result['items'])) {
+            if (item['unverified'] == true) {
+              state['failed'] = [
+                ...rows(state['failed']),
+                {'symbol': item['symbol'], 'reason': item['reason']},
+              ];
+              consecutive++;
+              continue;
             }
-            state['candidates'] = [
-              ...candidates.where((c) => c['symbol'] != candidate['symbol']),
-              candidate,
-            ];
+            consecutive = 0;
+            final candidate = obj(item['candidate']);
+            if (candidate.isNotEmpty) {
+              state['candidates'] = [
+                ...candidates.where((c) => c['symbol'] != candidate['symbol']),
+                candidate,
+              ];
+            } else {
+              final reason = str(item['reason']),
+                  counts = obj(state['rejected']);
+              counts[reason] = (numOf(counts[reason]) ?? 0) + 1;
+              state['rejected'] = counts;
+            }
           }
-
-          consecutive = 0;
         } catch (e) {
           if (!active()) break;
           state['failed'] = [
             ...rows(state['failed']),
-            {'symbol': stock['symbol'], 'reason': e.toString()},
+            ...batch.map(
+              (s) => {'symbol': s['symbol'], 'reason': e.toString()},
+            ),
           ];
-          consecutive++;
+          consecutive += batch.length;
         }
-        state['cursor'] = i + 1;
+        state['cursor'] = i + batch.length;
         state['updatedAt'] = DateTime.now().toIso8601String();
         notifyListeners();
-        if (i % 8 == 0) await save();
+        await save();
         if (consecutive >= 5) {
-          state['message'] = '连续5只来源失败，已暂停；失败不代表没有形态。';
+          state['message'] = '来源连续失败，已暂停并保留进度。';
           await pause();
           return;
         }
-        await Future<void>.delayed(const Duration(milliseconds: 900));
       }
       if (id == generation) state['phase'] = active() ? 'complete' : 'paused';
     } catch (e) {

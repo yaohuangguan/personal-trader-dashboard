@@ -1,0 +1,43 @@
+name: Daily closing screen
+on:
+  schedule:
+    - cron: '20 7 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      previous_close:
+        description: 'Warm the latest closed session when today has not closed'
+        type: boolean
+        default: false
+concurrency:
+  group: daily-closing-screen
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/atlas-close
+          key: eod-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: eod-v1-
+      - name: Build one shared close report
+        env:
+          SCREEN_JOB_TOKEN: ${{ secrets.SCREEN_JOB_TOKEN }}
+          ALLOW_PREVIOUS_CLOSE: ${{ inputs.previous_close && '1' || '0' }}
+        run: node --import tsx .github/scripts/close-screen.mts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: closing-screen-report
+          path: close-report/report.json
+          if-no-files-found: ignore
+          retention-days: 14

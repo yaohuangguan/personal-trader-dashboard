@@ -1,4 +1,5 @@
-import {patternScreen} from './pattern-screen';
+import {watchInsight} from './watch-insight';
+import {patternScreen,patternBatch} from './pattern-screen';
 import {f10} from './f10';
 import {dailyTrend} from '../shared/daily-trend';
 import {gainers,marketPools,dragon,chips} from './market-overview';
@@ -12,6 +13,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
   const symbol = url.searchParams.get('symbol') || '';
   const kind = url.pathname.slice('/api/desk/'.length);
   try {
+    if(kind==='screen-batch'){const symbols=[...new Set((url.searchParams.get('symbols')||'').split(','))];if(!symbols.length||symbols.length>4||symbols.some(s=>!/^\d{6}\.(SH|SZ|BJ)$/.test(s)))return respond({error:'请提供1至4个证券代码'},400);return respond(await patternBatch(symbols,url.searchParams));}
     if (kind === 'quotes') {
       const symbols = [...new Set((url.searchParams.get('symbols') || '').split(',').filter(Boolean))].sort();
       if (!symbols.length || symbols.length > 60 || symbols.some(s => !/^\d{6}\.(SH|SZ|BJ)$/.test(s))) return respond({ error: '请提供1至60个带市场后缀的证券代码' }, 400);
@@ -30,6 +32,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       return respond(await memo('peers:' + code, 45, () => peers(code)));
     }
     if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) return respond({ available: false, reason: '此公开接口暂只覆盖沪深北市场，其他市场使用原有授权行情源。' }, 400);
+    if(kind==='insight')return respond(await memo('insight:'+symbol,30,()=>watchInsight(symbol)));
     if(kind==='screen')return respond(await patternScreen(symbol,url.searchParams));
     if (kind === 'history') {
       const period = url.searchParams.get('period') || '';

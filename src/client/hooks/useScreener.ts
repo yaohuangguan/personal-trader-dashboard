@@ -1,7 +1,6 @@
 import {DEFAULT_SCREEN,type ScreenOptions} from '../../shared/pattern-screen';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuotesPayload } from '../../shared/desk-types';
-import type { MarketPayload } from '../../shared/types';
 import type { UniverseItem, UniversePage, ScreenCandidate } from '../../shared/screening';
 
 export type ScanScope = 'quick' | 'all' | 'watchlist';
@@ -21,14 +20,6 @@ async function storage(action: 'read' | 'write', value?: ScanState): Promise<Sca
       tx.oncomplete = () => { db.close(); resolve(saved); };
       tx.onerror = () => { db.close(); reject(tx.error); };
     };
-  });
-}
-function rest(ms: number, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    const done = () => { signal.removeEventListener('abort', abort); resolve(); };
-    const timer = setTimeout(done, ms);
-    const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(new DOMException('Paused', 'AbortError')); };
-    if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
   });
 }
 function quickTargets(items: UniverseItem[], excludeST: boolean, minAmount: number) {
@@ -57,18 +48,16 @@ export function useScreener() {
     const ac = new AbortController(); control.current = ac;
     let active = { ...initial }, segmentStart = performance.now(), previousElapsed = initial.elapsedMs, historyStart: number | null = initial.universeComplete ? performance.now() : null, previousHistory = initial.historyElapsedMs || 0, consecutiveFailures = 0;
     const update = (changes: Partial<ScanState>) => { active = { ...active, ...changes, updatedAt: Date.now(), elapsedMs: previousElapsed + performance.now() - segmentStart, historyElapsedMs: previousHistory + (historyStart === null ? 0 : performance.now() - historyStart) }; publish(active); };
-    const fetchJson = async <T,>(url: string) => { const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.any([ac.signal, AbortSignal.timeout(18000)]) }); const result = await response.json(); if (!response.ok || result.available === false || result.error) throw new Error(String(result.reason || result.error || '数据暂不可用') + (result.details ? '：' + String(result.details).replace(/(api[_-]?key|token|secret)=[^ &]+/gi,'$1=[redacted]').slice(0,240) : '')); return result as T; };
+    const fetchJson = async <T,>(url: string) => { const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35000)]) }); const result = await response.json(); if (!response.ok || result.available === false || result.error) throw new Error(String(result.reason || result.error || '数据暂不可用') + (result.details ? '：' + String(result.details).replace(/(api[_-]?key|token|secret)=[^ &]+/gi,'$1=[redacted]').slice(0,240) : '')); return result as T; };
     try {
       if (!active.universeComplete) {
         update({ phase: 'universe', message: '正在分页读取沪深北证券池，尚未声称全市场覆盖。' });
-        for (let page = active.nextPage; !ac.signal.aborted; page++) {
-          const result = await fetchJson<UniversePage>('/api/desk/universe?page=' + page);
-          const universe = [...new Map([...active.universe, ...result.items].map(r => [r.symbol, r])).values()];
-          update({ universe, total: result.total, nextPage: page + 1 });
-          if ((result.sourceRows ?? result.items.length) < result.pageSize) { update({ universeComplete: true }); break; }
-          if (page >= 100) throw new Error('证券池超过已验证的8000条范围，停止并保留已读进度');
-          if (page % 4 === 0) await save(active);
-          await rest(900, ac.signal);
+        for (let page=active.nextPage;page<=100&&!ac.signal.aborted;page=active.nextPage){
+          const pages=await Promise.all(Array.from({length:Math.min(4,101-page,active.total?Math.max(1,Math.ceil(active.total/80)-page+1):1)},(_,i)=>fetchJson<UniversePage>('/api/desk/universe?page='+(page+i))));
+          ac.signal.throwIfAborted();let universe=active.universe,complete=false,nextPage=page;
+          for(const result of pages){universe=[...new Map([...universe,...result.items].map(r=>[r.symbol,r])).values()];nextPage=result.page+1;if((result.sourceRows??result.items.length)<result.pageSize||universe.length>=result.total){complete=true;break;}}
+          update({universe,total:pages[0].total,nextPage,universeComplete:complete});await save(active);if(complete)break;
+          if(page+4>100)throw new Error('证券池超过已验证范围，进度已保留');
         }
       }
       if (ac.signal.aborted) return;
@@ -81,25 +70,17 @@ export function useScreener() {
       }
       if (!active.targets.length && !active.cursor) update({ targets: active.scope === 'quick' ? quickTargets(active.universe, active.excludeST, active.minAmount) : active.universe.filter(s => (active.scope === 'watchlist' || s.price !== null && s.price > 0) && (!active.excludeST || !/ST|退/i.test(s.name)) && (s.amount || 0) >= 2e8) });
       update({ phase: 'scanning', message: '使用原始日线逐只核验，已命中候选会持续显示。' });
-      for (let index = active.cursor; index < active.targets.length; index++) {
-        ac.signal.throwIfAborted();
-        const stock = active.targets[index];
-        try {
-          const params=new URLSearchParams({symbol:stock.symbol,modes:active.options.modes.join(','),concentration:String(active.options.concentration),recentLimitUp:active.options.recentLimitUp?'1':'0',maxCap:active.options.maxMarketCap===null?'':String(active.options.maxMarketCap/1e8),activity:active.options.activity?'1':'0'});
-          const output=await fetchJson<{candidate:ScreenCandidate|null;reason?:string;unverified?:boolean}>('/api/desk/screen?'+params);
-          if(output.unverified)throw new Error(output.reason);
-          if(!output.candidate&&output.reason)update({rejected:{...active.rejected,[output.reason]:(active.rejected[output.reason]||0)+1}});
-          consecutiveFailures = 0;
-          update({ cursor: index + 1, candidates: output.candidate ? [...active.candidates.filter(c => c.symbol !== stock.symbol), output.candidate] : active.candidates, insufficient: active.insufficient });
-        } catch (error) {
-          if (ac.signal.aborted) throw error;
-          consecutiveFailures++;
-          const reason=error instanceof Error?error.message:'日线不可用';
-          update({ cursor: index + 1, failed: [...new Set([...active.failed, stock.symbol])], failedReasons:{...active.failedReasons,[stock.symbol]:reason}, message: stock.symbol + ' 日线不可用，已单独记为未完成。' });
-          if (consecutiveFailures >= 5) {update({phase:'paused',message:'连续5只日线请求失败，已暂停并保存进度；稍后可继续，失败标的保留原因，不视为形态未命中。'});return;}
-        }
-        if (index % 8 === 0) await save(active);
-        await rest(900, ac.signal);
+      for(let index=active.cursor;index<active.targets.length;index+=4){
+        ac.signal.throwIfAborted();const batch=active.targets.slice(index,index+4),params=new URLSearchParams({symbols:batch.map(s=>s.symbol).join(','),modes:active.options.modes.join(','),strategy:active.options.auto?'auto':'patterns',concentration:String(active.options.concentration),recentLimitUp:active.options.recentLimitUp?'1':'0',maxCap:active.options.maxMarketCap===null?'':String(active.options.maxMarketCap/1e8),activity:active.options.activity?'1':'0'});
+        try{
+          const output=await fetchJson<{items:{symbol:string;candidate:ScreenCandidate|null;reason?:string;unverified?:boolean}[]}>('/api/desk/screen-batch?'+params);ac.signal.throwIfAborted();
+          for(const item of output.items){
+            if(item.unverified){consecutiveFailures++;update({failed:[...new Set([...active.failed,item.symbol])],failedReasons:{...active.failedReasons,[item.symbol]:item.reason||'来源失败'}});}
+            else{consecutiveFailures=0;if(item.candidate)update({candidates:[...active.candidates.filter(c=>c.symbol!==item.symbol),item.candidate]});else if(item.reason)update({rejected:{...active.rejected,[item.reason]:(active.rejected[item.reason]||0)+1}});}
+          }
+        }catch(error){if(ac.signal.aborted)throw error;consecutiveFailures+=batch.length;const reason=error instanceof Error?error.message:'来源失败';update({failed:[...new Set([...active.failed,...batch.map(s=>s.symbol)])],failedReasons:{...active.failedReasons,...Object.fromEntries(batch.map(s=>[s.symbol,reason]))}});}
+        update({cursor:index+batch.length,message:'每批并行核验4只，收盘任务按交易日期复用历史缓存。 '});await save(active);
+        if(consecutiveFailures>=5){update({phase:'paused',message:'来源连续失败，已暂停并保留进度；失败不等于没有形态。'});return;}
       }
       update({ phase: 'complete', message: '当前范围已处理完毕；失败标的和样本不足标的单独列出，未视为通过或全覆盖。' });
     } catch (error) {

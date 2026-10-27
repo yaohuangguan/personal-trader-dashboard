@@ -10,10 +10,10 @@ export default defineConfig({
    injectRegister:null,
    includeAssets:['favicon.svg','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png'],
    manifest:{
-    id:'/',name:'Market Atlas · 全球金融情报终端',short_name:'Market Atlas',
+    id:'/',name:'观澜 · Market Atlas',short_name:'观澜',
     description:'全球信息、产业催化、证券研究与公告，统一站内阅读。',
     start_url:'/',scope:'/',display:'standalone',display_override:['window-controls-overlay','standalone'],
-    theme_color:'#0a111d',background_color:'#090f19',lang:'zh-CN',
+    theme_color:'#101012',background_color:'#101012',lang:'zh-CN',
     categories:['finance','news','productivity'],
     icons:[
      {src:'/icons/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any'},

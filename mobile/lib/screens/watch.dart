@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -348,7 +349,7 @@ class _WatchPageState extends State<WatchPage> {
               onTap: () => openStock(context, symbol),
               onLongPress: () => stockActions(s, symbol),
               child: Container(
-                height: 76,
+                height: cnStock(symbol) ? 112 : 76,
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
@@ -357,69 +358,78 @@ class _WatchPageState extends State<WatchPage> {
                     ),
                   ),
                 ),
-                child: Row(
+                child: Column(
                   children: [
                     Expanded(
-                      flex: 4,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            str(q['name'], symbol),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 18,
-                            ),
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            symbol,
-                            style: TextStyle(fontSize: 12, color: muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      flex: 3,
-                      child: SizedBox(
-                        height: 42,
-                        child: cnStock(symbol)
-                            ? MiniIntraday(symbol)
-                            : Center(
-                                child: Text(
-                                  '—',
-                                  style: TextStyle(color: muted),
+                          Expanded(
+                            flex: 4,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  str(q['name'], symbol),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 18,
+                                  ),
                                 ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 84,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            fixed(q['price']),
-                            style: const TextStyle(
-                              fontSize: 21,
-                              fontWeight: FontWeight.w600,
+                                const SizedBox(height: 5),
+                                Text(
+                                  symbol,
+                                  style: TextStyle(fontSize: 12, color: muted),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            percent(q['changePercent']),
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: tone(q['changePercent']),
+                          Expanded(
+                            flex: 3,
+                            child: SizedBox(
+                              height: 42,
+                              child: cnStock(symbol)
+                                  ? MiniIntraday(symbol)
+                                  : Center(
+                                      child: Text(
+                                        '—',
+                                        style: TextStyle(color: muted),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 84,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  fixed(q['price']),
+                                  style: TextStyle(
+                                    color: tone(q['changePercent']),
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  percent(q['changePercent']),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: tone(q['changePercent']),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
+                    if (cnStock(symbol)) WatchRowInsight(symbol),
+                    const SizedBox(height: 6),
                   ],
                 ),
               ),
@@ -717,5 +727,84 @@ class SettingsPage extends StatelessWidget {
       ),
     );
     controller.dispose();
+  }
+}
+
+class WatchRowInsight extends StatefulWidget {
+  const WatchRowInsight(this.symbol, {super.key});
+  final String symbol;
+  @override
+  State<WatchRowInsight> createState() => _WatchRowInsightState();
+}
+
+class _WatchRowInsightState extends State<WatchRowInsight> {
+  Json? data;
+  Timer? timer;
+  @override
+  void initState() {
+    super.initState();
+    load();
+    timer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted &&
+          context.read<AtlasStore>().foreground &&
+          (ModalRoute.of(context)?.isCurrent ?? true)) {
+        load();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> load() async {
+    try {
+      final r = await context.read<AtlasStore>().api.get(
+        '/api/desk/insight',
+        parameters: {'symbol': widget.symbol},
+      );
+      if (mounted) setState(() => data = r);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AtlasStore>(),
+        trend = obj(data?['trend']),
+        action = obj(data?['operation']),
+        structure = obj(data?['structure']),
+        score = numOf(trend['score']);
+    return Row(
+      children: [
+        Text(
+          '${s.t(trend['current'] == true
+              ? '今日走势'
+              : str(trend['date'], '').isEmpty
+              ? '走势'
+              : str(trend['date']).substring(5))} ${score?.toStringAsFixed(0) ?? '—'}',
+          style: TextStyle(
+            fontSize: 12,
+            color: score == null
+                ? muted
+                : score >= 60
+                ? up
+                : score < 40
+                ? down
+                : muted,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '${s.t(str(action['action'], '五线待核验'))} · ${s.t(str(structure['state'], '—'))}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: muted),
+          ),
+        ),
+      ],
+    );
   }
 }

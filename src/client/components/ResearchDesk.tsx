@@ -1,3 +1,4 @@
+import WatchInsight from './WatchInsight';
 import Level2Panel from './Level2Panel';
 import {stockCharacter} from '../../shared/stock-character';
 import {guideTradeMarkers} from '../../shared/guide-action';
@@ -138,7 +139,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
         <div className="desk-block-heading"><h2>{uiText("我的自选")}<small>{uiText(watchlist.length)}</small></h2><button type="button" className="desk-icon" aria-label={uiText("搜索并添加自选")} onClick={onSearch}><Plus size={16} /></button></div>
         <div className="desk-watch-filters">{uiText([['all', '全部'], ['cn', 'A股'], ['us', '美股']].map(([id, label]) => <button type="button" aria-pressed={watchFilter === id} className={watchFilter === id ? 'active' : ''} onClick={() => setWatchFilter(id)} key={id}>{uiText(label)}</button>))}</div>
         <div className="desk-watch-labels"><span>{uiText("名称 / 代码")}</span><span>{uiText("价格 / 涨跌")}</span></div>
-        <div className="desk-watch-items">{uiText(visibleWatch.map(s => { const d = row(s); return <button type="button" key={s} className={'desk-watch-item ' + (s === symbol ? 'active' : '')} onClick={() => onSelect(s)}><span><b>{(d.name)}</b><small>{uiText(s)}</small></span><span><b>{uiText(number(d.price))}</b><small className={tone(d.change)}>{uiText(pct(d.change))}</small></span></button>; }))}{uiText(!visibleWatch.length && <Empty text={uiText("暂无自选，点击 + 添加")} />)}</div>
+        <div className="desk-watch-items">{uiText(visibleWatch.map(s => { const d = row(s); return <button type="button" key={s} className={'desk-watch-item ' + (s === symbol ? 'active' : '')} onClick={() => onSelect(s)}><span><b>{(d.name)}</b><small>{uiText(s)}</small></span><span><b className={tone(d.change)}>{uiText(number(d.price))}</b><small className={tone(d.change)}>{uiText(pct(d.change))}</small></span></button>; }))}{uiText(!visibleWatch.length && <Empty text={uiText("暂无自选，点击 + 添加")} />)}</div>
         <div className="desk-watch-bottom"><button type="button" onClick={() => setAlertOpen(true)}><Bell size={14} /><span>{uiText("价格提醒")}</span><b>{uiText(rules.filter(r => !r.firedAt).length)}</b></button><p>{uiText("本页打开且盘中行情有效时触发")}</p></div>
       </aside>
 
@@ -146,7 +147,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
         <div className="desk-mobile-security">{securityCard}</div>
 
         {chinese && <DailyTrendPanel symbol={symbol} />}
-        {uiText(analysis && <GuideSummary character={character} data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
+        {uiText(analysis && <GuideSummary candles={market?.candles} character={character} data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
         <section className="desk-chart-card"><Tabs.Root value={chartMode} onValueChange={setChartMode}>
           <div className="desk-chart-heading"><Tabs.List className="desk-tabs" aria-label={uiText("行情图表类型")}><Tabs.Trigger value="intraday" disabled={!chinese}>{uiText("分时")}</Tabs.Trigger><Tabs.Trigger value="daily">{uiText("日 K")}</Tabs.Trigger><Tabs.Trigger value="week" disabled={!chinese}>{uiText("周 K")}</Tabs.Trigger><Tabs.Trigger value="month" disabled={!chinese}>{uiText("月 K")}</Tabs.Trigger><select aria-label={uiText('分钟周期')} value={chartMode.startsWith('m')&&chartMode!=='month'?chartMode:''} onChange={e=>{if(e.target.value)setChartMode(e.target.value);}}><option value="">{uiText('周期')}</option>{[5,15,30,60,120].map(n=><option key={n} value={'m'+n}>{n} {uiText('分钟')}</option>)}</select></Tabs.List><span>MA · VOL · MACD · KDJ</span></div>
           <Tabs.Content value="daily">{uiText(market?.candles.length ? <MarketChart candles={market.candles} symbol={symbol} guideEvents={analysis?.events} tradeMarkers={tradeMarkers} chipFloatShares={quote?.floatCap&&quote.price?quote.floatCap/quote.price:undefined} volumeUnit={market.provider.startsWith('新浪') ? '股' : market.provider.startsWith('腾讯') ? /^68[89]/.test(symbol) ? '股' : '手' : undefined} /> : marketError ? <><Empty text={uiText("原始K线暂不可用，保留第三方参考图")} /><TradingViewWidget symbol={symbol} /></> : <Empty loading />)}</Tabs.Content>
@@ -163,7 +164,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
           <Tabs.Content value="reports">{uiText(reportData.data?.items.length ? <div className="desk-reports">{uiText(reportData.data.items.map((r, i) => <button type="button" key={r.url + i} onClick={() => openNews({ id: r.url, title: r.title, publishedAt: r.date + 'T00:00:00+08:00', source: r.organization, url: r.url, category: 'all', originalTitle: r.title, summary: '机构：' + r.organization + (r.rating ? '；来源评级：' + r.rating : '') })}><span>{uiText(r.date)}<b>{uiText(r.organization)}</b></span><strong>{(r.title)}</strong><small>{uiText(r.rating || '未提供评级')} <ChevronRight size={13} /></small></button>))}</div> : <Empty loading={reportData.loading} text={uiText(reportData.error || '来源在当前窗口未列出研报')} />)}<Source text={uiText("东方财富研报索引 · 评级保留来源表述")} /></Tabs.Content>
           <Tabs.Content value="evidence"><StockResearchExtras symbol={symbol} onStock={onSelect} /></Tabs.Content>
           <Tabs.Content value="f10"><F10Panel symbol={symbol}/></Tabs.Content>
-          <Tabs.Content value="guide">{uiText(analysis ? <GuidePanel character={character} data={analysis} weekly={guideWeekly.data?.candles} monthly={guideMonthly.data?.candles} weekError={!chinese ? '当前周期接口未覆盖此市场' : guideWeekly.error} monthError={!chinese ? '当前周期接口未覆盖此市场' : guideMonthly.error} loading={guideWeekly.loading || guideMonthly.loading} /> : <Empty text={uiText("等待有效日线以核验指南条件")} />)}</Tabs.Content>
+          <Tabs.Content value="guide">{uiText(analysis ? <GuidePanel candles={market?.candles} character={character} data={analysis} weekly={guideWeekly.data?.candles} monthly={guideMonthly.data?.candles} weekError={!chinese ? '当前周期接口未覆盖此市场' : guideWeekly.error} monthError={!chinese ? '当前周期接口未覆盖此市场' : guideMonthly.error} loading={guideWeekly.loading || guideMonthly.loading} /> : <Empty text={uiText("等待有效日线以核验指南条件")} />)}</Tabs.Content>
         </Tabs.Root></section>
       </div>
 

@@ -88,7 +88,7 @@ class AtlasApp extends StatelessWidget {
           ),
         );
         return MaterialApp(
-          title: 'Market Atlas',
+          title: '观澜 · Market Atlas',
           debugShowCheckedModeBanner: false,
           theme: base.copyWith(
             textTheme:
@@ -145,7 +145,7 @@ class AtlasShell extends StatefulWidget {
 class _AtlasShellState extends State<AtlasShell> {
   int index = 0;
   StreamSubscription<String>? messages, pushClicks;
-  static const names = ['我的自选', '市场全景', '五线选股器', '盘中信号中心', '7×24 快讯'];
+  static const names = ['我的自选', '市场全景', '五线选股器', '收盘信号中心', '7×24 快讯'];
   static const icons = [
     Icons.star_outline,
     Icons.show_chart,
@@ -227,7 +227,7 @@ class _AtlasShellState extends State<AtlasShell> {
       appBar: AppBar(
         toolbarHeight: 46,
         title: Text(
-          index == 0 ? 'MARKET ATLAS' : s.t(names[index]),
+          index == 0 ? '观澜 · ATLAS' : s.t(names[index]),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
@@ -259,7 +259,7 @@ class _AtlasShellState extends State<AtlasShell> {
               const Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'MARKET ATLAS',
+                  '观澜 · ATLAS',
                   style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
                 ),
               ),

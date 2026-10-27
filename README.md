@@ -1,57 +1,50 @@
-# Market Atlas · Global Financial Intelligence Terminal
+# 观澜 · Market Atlas
 
-**Personal research desk, not a trading or P&L app.** Follow global events, seven industry catalyst chains, U.S. and A-share daily candles, individual company disclosures, and explainable technical trends — from one screen.
+**观量价之澜，辨市场之势。** 一套以个股看盘、五线研究与全市场收盘筛选为中心的个人行情工作台，提供 React 网页 / PWA 与 Flutter iOS 客户端。
 
-**Production:** https://personal-market-atlas.nzs.workers.dev
+[打开观澜](https://personal-market-atlas.nzs.workers.dev/) · [个股工作台](https://personal-market-atlas.nzs.workers.dev/?symbol=300545.SZ) · [选股雷达](https://personal-market-atlas.nzs.workers.dev/?view=screener) · [iOS 开发说明](mobile/README.md)
 
-This is the only supported deployment. `wrangler.toml` pins the production Worker and Cloudflare account.
+## 能做什么
 
-The default view is now the neutral-black individual-stock workspace. Open [300545.SZ](https://personal-market-atlas.nzs.workers.dev/?symbol=300545.SZ), search any supported security, or keep a browser-local watchlist. See [workspace data sources and limits](docs/desk-workspace.md).
+| 模块 | 体验 |
+| --- | --- |
+| 个股工作台 | 图表为中心；持续可见的股票名称、价格、涨跌、走势评分、五线总分、建议与具体理由 |
+| 专业图表 | 可调 MA5/13/20/30/60/120/144/250；分时、日周月与5/15/30/60/120分钟；VOL / MACD / KDJ / BOLL / RSI / SAR、筹码峰模型、买卖文字标记 |
+| 自选与分组 | 多分组、分时缩略图、按涨跌变色的股价、当天走势分、五线建议、日线结构状态；只对可见行加载附加数据 |
+| 五线研究 | 五线粘合—启动—确认流程；多头/空头/箱体/交织状态；量增价跌等量价解读带文字方向与克制的红绿灰配色 |
+| 自动优选 | 量价30、形态30、股性20、筹码20的可解释综合排序；相关形态取最高项，避免重复加分 |
+| 独立形态 | 五线开花、多头排列、一阳多线、美人肩、金蜘蛛、多方炮、近10日涨停；多选命中任意一种即可 |
+| 收盘汇总 | 北京时间15:20启动共享全市场任务，完成后合并推送一次；按交易日去重，非交易日跳过，来源失败单独标注 |
+| 基本面与联动 | 资金面备用源、F10三张财报/股东/主营、市场情绪、行业板块成分、7×24快讯、公告与站内短链接分享 |
+| 外观与移动端 | 中性黑 / 明亮白、中英文、大字号；Flutter按手机看盘操作重构，支持图表横屏、手势缩放与指标切换 |
 
-The guide-based analysis, full source-universe screener and conditional sector outlook follow [your v10.4 guide](https://trade.ps6.space/). See [rule correspondence, screening coverage and limits](docs/guide-and-screener.md).
+所有形态的共同底线：**成交额≥2亿元、90%模型筹码集中度<20%**。一阳多线另要求集中度<15%；默认市值上限1000亿，可调整。股性过滤可开关。近10日涨停既可单独筛，也可附加到其他形态。
 
-## What is implemented
+五线分析基于[姚记五线开花 v10.4 指南](https://trade.ps6.space/)。[形态定义](docs/pattern-screener.md) · [收盘任务与排序口径](docs/closing-screen.md) · [数据源与边界](docs/desk-workspace.md)
 
-| Workspace | Capabilities | Data limitations |
-|---|---|---|
-| Intelligence overview | Global macro + sector RSS, original links, source dates, cross-asset ticker tape, 24h new-event stats | RSS may be blocked; sources fall back to BBC/CNBC/GDELT. Headline does not verify a thesis. |
-| Event history | D1-backed deduplicated article keys; first seen, last seen, sightings, topic and deterministic ticker/sector matches; 24h filters | Classification is based on feed topic/headline keywords, not an AI-confirmed business relationship. |
-| Catalyst radar | Seven sector lines, related companies, news/timeline navigation | Revenue, orders and margins are **not** inferred from media headlines. |
-| Markets | Browser-local watchlists; A-share OHLCV; U.S. fallback TradingView official embed | Unlicensed endpoints can rate-limit; quotes are never represented as real-time exchange feeds. |
-| Guide screener | Quick sample, deep source-universe or Chinese watchlist scan; stage/reason/risk/date cards; Web Worker calculation; pause/resume in IndexedDB; CSV export | Public-source coverage is explicit. Browser must remain open; missing/stale histories stay incomplete. |
-| Sector outlook | Dated index context, full-constituent breadth, source-estimated stock flow and attributed catalyst leads; conditional continuation/downgrade scenarios | Industry source lacks trading dates; count inconsistencies stop whole-industry conclusions. No uncalibrated next-day probability. |
-| Individual stock | Adjustable MA5/13/20/30/60/120/144/250, VOL/MACD/KDJ, intraday/day/week/month views, public five-level snapshots and aggregated ticks, local price reminders, sector peers/industry rotation/fund flow, company news/reports/disclosures | Public five-level/aggregated data is not licensed exchange Level-2. Provider coverage and freshness are explicit; reminders require an open page. |
-| 7×24 newsroom | Attributed CLS + Wallstreetcn source feeds, important/source filters, 60-second browser refresh and in-app reading | No server archive or background push is configured. Source outages remain visible. |
-| A-share announcements | Eastmoney index titles/dates/categories; fetch original indexed notice body and PDF link on demand; title-keyword event tags; CNINFO official verification link | Third-party index can fail. Extracted text and tags are **not** audited or financial statement extraction. |
-| US filings | SEC EDGAR official 10-K/10-Q/8-K list and XBRL annual revenue / income when SEC_USER_AGENT is configured | Filing dates are historical, not earnings predictions. |
-| Earnings calendar | Scheduled and reported EPS/date via optional authorized FMP account | With no entitlement, the UI explicitly says unavailable rather than guessing dates. |
+## 为什么扫描更快
 
-## Data provider priority
+- 先用批量快照排除成交额不足的股票，再获取历史日线。
+- 手动扫描每批并行4只，去掉逐只900ms等待；共享任务最多并行8只。
+- 收盘任务保存日线缓存，下一次优先补最近3根；复权重叠价变化就重新获取完整历史。
+- 所有设备共用一份收盘排名，查看或调整条件时不必重新扫描全市场。
+- 分项分析复用已计算的指南结果；只有命中形态或蓄势结构后才计算股性、筹码。
 
-1. Financial Modeling Prep **stable EOD full** (requires key and allowed symbol entitlement).
-2. Twelve Data daily historical bars (optional key).
-3. Alpha Vantage daily (optional key; free plan usually only ~100 candles, enough for the 65-bar core but insufficient for long MA120/250 context).
-4. For **A shares**, the Tencent public historical API, with ~500 forward-adjusted daily candles during current testing; labels identify the feed as unofficial/unlicensed and not guaranteed for future uptime.
-5. Sina daily history plus independently parsed effective forward-adjustment factors for Shanghai/Shenzhen equities; raw, explicitly unadjusted Sina daily history for Beijing equities. Raw OHLC and factor parsing do not execute upstream scripts.
-6. Yahoo chart (best effort, currently returns 429 from Mac for tested US stocks), Stooq, Eastmoney fallback.
-7. When raw OHLCV is unavailable, official TradingView embeds still provide a reference chart; the local Five-Line model does **not** fabricate a score.
+这是批处理、有限并发与增量计算；首次全市场任务仍受来源响应速度影响，**不承诺指数级提速**。GitHub定时任务也可能延迟启动。
 
-When a D1 `DB` binding is configured, successful OHLCV responses are persisted as a last-success snapshot. The current production configuration has no D1 binding. Stale/fallback snapshots carry an explicit notice, provider, fetch timestamp and as-of date. Source rows are normalized, validated and sorted before computing signals.
+## 数据说明
 
-Before commercial use, negotiate licensed, exchange-entitled data; **do not assume a publicly reachable market API gives redistribution rights**.
+主要使用 [a-stock-data](https://github.com/simonlin1212/a-stock-data) 所整理的腾讯、东方财富、新浪等公开接口，并保留来源、日期、单位和失败状态。指数与证券代码明确区分。
 
-## Architecture
+- 公开五档和聚合分笔不属于授权 Level-2。服务端网关与两端界面已预留，需自行取得行情商权限后配置。
+- 筹码分布是 OHLCV/换手率模型，包含历史股本变化误差；近10日涨停是未复权日线规则估算。
+- 分数表示规则匹配或观察优先级，不是收益概率。买卖文字区分均线交叉参考与严格的指南收盘确认。
+- 浏览器/PWA关页推送需要设备允许通知；iOS原生关页推送仍需 Firebase/APNs。本站不执行证券交易。
+- U.S.行情和财务覆盖取决于数据商权限；缺失时展示明确空状态与来源信息。
 
-- **Frontend:** React + TypeScript + Vite + lightweight-charts, keyboard Cmd/Ctrl+K search, responsive dark UI.
-- **Backend:** Cloudflare Worker static assets + API.
-- **Optional durable storage:** Cloudflare D1 tables: intel_events, intel_sector_links, intel_scan_runs, market_snapshots.
-- **Scheduled ingestion:** available when a production D1 DB binding and Cron trigger are configured. Neither is currently configured in production; latest news and market queries remain available on demand.
-- **Security:** no trading execution, no brokerage auth, no private portfolio server-side; all keys are Worker secrets; public article archive only. Watchlist/bookmarks use browser localStorage.
-- **Verification:** deterministic analysis tests, ID stability tests, invalid candle rejection, Wrangler build + historical D1 repeated-ingestion smoke tests.
+## 本地运行
 
-## Develop and deploy
-
-Requires Node.js 22+ on Windows, macOS or Linux.
+需要 Node.js 22+。
 
 ```bash
 git clone https://github.com/yaohuangguan/personal-trader-dashboard.git
@@ -61,7 +54,11 @@ npm test
 npm run dev
 ```
 
-Deploy the single production Worker:
+Flutter iOS：见 [mobile/README.md](mobile/README.md)。
+
+## 部署与收盘任务
+
+生产地址为 `personal-market-atlas.nzs.workers.dev`，Cloudflare账户由 `wrangler.toml` 固定。
 
 ```bash
 npx wrangler login
@@ -69,70 +66,23 @@ npx wrangler whoami
 npm run deploy
 ```
 
-The account pinned in `wrangler.toml` owns `personal-market-atlas.nzs.workers.dev`. Use a login with access to that account on every computer. The separate Mac preview Worker was retired on 2026-10-25; its deployment config and npm scripts have been removed.
+`SHARES` KV保存资讯短链接；Durable Objects保存共享收盘报告与设备通知状态。GitHub Actions的 [Daily closing screen](.github/workflows/close-screen.yml) 每个工作日07:20 UTC启动，只有来源交易日期正确才发布。报告分块上传后原子切换，保留缺失数据计数。
 
-### Secrets
+任务调用凭证 `SCREEN_JOB_TOKEN` 必须同时配置为 GitHub Actions Secret 和 Worker Secret，不能提交到Git。日线缓存放在Actions Cache。其他可选密钥包括 `FMP_API_KEY`、`TWELVE_DATA_API_KEY`、`SEC_USER_AGENT`；原生推送与授权Level-2须另行配置。
 
-Configure only the features you need:
+## 验证
 
 ```bash
-npx wrangler secret put FMP_API_KEY
-npx wrangler secret put TWELVE_DATA_API_KEY
-npx wrangler secret put SEC_USER_AGENT
-# Optional protected manual ingestion endpoint, after configuring D1:
-npx wrangler secret put INGEST_SECRET
+npm test
+npm run build
+cd mobile
+flutter analyze
+flutter test
+flutter build ios --release --no-codesign
 ```
 
-Keep credentials out of Git and logs. `SEC_USER_AGENT` must contain legitimate application identity and a contact email.
+测试覆盖成交量单位、未来数据隔离、收盘去重、旧盘中任务停用、复权缓存失效、形态OR筛选、缺失来源、图表手势和大字号布局。GitHub CI提供网页检查与iOS无签名构建；设备签名材料不提交仓库。
 
-### Optional event archive
+## English
 
-Create a D1 database in the production account and add its `DB` binding to `wrangler.toml` before applying `migrations/` or enabling scheduled ingestion. The retired preview's database belongs to another account and is not a production binding. Its data has not been migrated or deleted.
-
-When a D1 binding and a local database are configured, run `npx wrangler dev --test-scheduled`, invoke `/cdn-cgi/handler/scheduled`, and verify `/api/intelligence/summary`. Repeating an unchanged scan should add no new events. The cloud manual endpoint is `POST /api/admin/ingest`; it requires `INGEST_SECRET` and bearer authorization.
-
-## Methodology and audit standard
-
-- **Five-Line Blossom:** the user’s v10.4 guide drives a causal adhesion → launch → 3–5 completed-bar confirmation → multi-cycle checklist, using core MA5/10/20/30/60. Core needs 65 valid daily bars; long-cycle context warms up separately. No score is converted into a win probability.
-- **Volume–Price–Time–Space:** 20-day relative volume, MA price structure, days above MA20, 120-day range/breakout and ATR risk context. Each dimension shows evidence instead of a naked buy/sell verdict.
-- **News -> Order -> Revenue -> Profit:** media headlines start with evidence stage `media_lead`. Primary validation and investment conclusions require human inspection of filings; this version never marks orders or earnings "verified" merely because a story repeats.
-- **Historical truth:** source URLs, timestamps, observed dates, provider labels and feed warnings remain visible. Missing data is labeled, not replaced with demos.
-
-## Next engineering decisions
-
-1. For dependable U.S. and commercial A-share analysis: activate a licensed FMP/Twelve Data/EODHD or equivalent feed with sufficient history for the selected long averages and appropriate exchange rights.
-2. For complete A-share financial statements: add an authorized structured filing feed and accounting-period parsing, rather than infer revenue from notice titles.
-3. For richer catalyst reasoning: add structured thesis hypotheses, source attachments, manual verification and a change-detection graph beyond headline similarity.
-
-This is a personal information and research system, **not investment advice, predictive trading or trade execution**.
-
-## In-app reading and installable PWA
-
-Market Atlas now uses an integrated reader rather than opening an external website when a user taps a headline or disclosure record.
-
-- News headlines, bookmarks, company news and historical event timelines all open the **same site-local reader** with publisher/source attribution, timestamp and source-provided RSS excerpt. The source may not license full-text redistribution: when the source provides no synopsis, the reader **plainly states that no content is available** instead of silently fetching and republishing a copyrighted article.
-- For US corporate filings, the app can retrieve short HTML/text extracts from a validated SEC filing document matching the official submission index, with the SEC User-Agent configured. Report typography/tables may be incomplete. When the contact header is missing, the reader displays an unavailability explanation.
-- For A-share disclosures, the existing Eastmoney document index and text extract remain in-app. PDF attachments load through **same-origin** `GET /api/announcement-pdf?code=AN...`; the Worker resolves attachments itself, allowlists `pdf.dfcfw.com`, validates magic bytes and enforces a 12 MB limit. No arbitrary fetch URL is accepted.
-- Charts are still powered by market-data providers, and fallback TradingView embeds may load third-party resources; application-controlled links do not navigate away. Commercial use requires appropriate market-data redistribution rights.
-
-The site is now an installable **Progressive Web App** (PWA): manifest, installable 192/512 and maskable icons, Apple touch icon, standalone display, service worker precache, offline app-shell support, install instructions, update prompt and offline status. On iOS, use **Safari → Share → Add to Home Screen**. Chrome/Edge desktop and Android may show an install button. An installation is not a native App Store application.
-
-**Offline behavior is intentionally conservative:** UI assets and on-device saved articles are accessible as stored; API calls are `NetworkOnly` to ensure the UI does not silently claim stale quotes and articles are live. Opening a detail page with no source-provided excerpt will not manufacture a summary. Chrome third-party widgets and official PDF assets require connectivity.
-
-To test locally, run `npm run build` and inspect `dist/manifest.webmanifest`, `dist/sw.js`, offline service-worker behavior and the `/api/announcement-pdf` response. Tests assert that app-owned article elements do not open new tabs.
-
-## Configurable chart terminal
-
-All symbols with valid OHLCV data share the same chart component; it is independent of the built-in example catalog.
-
-- Default moving averages: MA5 / MA13 / MA20 / MA30 / MA60 / MA120 / MA144 / MA250. Each period, color and visibility can be changed; settings persist in the current browser.
-- Separate, synchronized VOL (MA5/20), MACD (12/26/9) and KDJ (9/3/3) panels. MACD histogram is 2 × (DIF − DEA); KDJ uses recursive smoothing seeded at 50, retaining J outside 0–100.
-- Main candles and volume use red for up and teal for down. Date presets, pan/zoom, expanded view and crosshairs are linked across panels.
-- Averages are computed on the complete provider history before applying the visible date range. A newly listed symbol can display a partial history while long-period averages remain unavailable.
-- Cross markers use the two shortest enabled periods. An expansion marker requires all enabled periods in bullish order, higher averages than five sessions earlier, close above the shortest average and positive MACD histogram. It marks the first qualifying session. Fixed-guide launch/confirmation/failure markers are computed separately from the displayed MA preferences; see docs/guide-and-screener.md.
-- Public Chinese-market code/name search supplements the local catalog. Shanghai ETF, explicit exchange/index prefixes and Beijing symbol normalization are recognized. Actual coverage and history remain dependent on the configured provider; no missing candles or averages are synthesized.
-
-## Flutter mobile app
-
-The iOS-first Flutter client is in [mobile](mobile/README.md), with mobile navigation, touch charts, the same guide-analysis API and full-market signal service. Firebase / APNs delivery is optional and disabled until configured. First-phase CI validates an unsigned iOS app and iPhone Simulator gestures; TestFlight distribution uses the optional manual signing workflow. Android builds are disabled.
-
+**Guanlan · Market Atlas** is a personal market research desk with a web/PWA terminal and a Flutter iOS client. It combines focused stock charts, explainable price/volume and MA analysis, independent chart-pattern filters, and one shared closing ranking per trading day. Signals and scores are transparent research rules, not calibrated return probabilities or trade execution.

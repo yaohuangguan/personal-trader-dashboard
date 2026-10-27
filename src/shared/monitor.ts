@@ -2,10 +2,10 @@ import type {Candle} from './types';
 import type {Snapshot} from './desk-types';
 import {analyzeGuide} from './guide-analysis';
 import {stockCharacter} from './stock-character';
-export type SignalKind='intraday'|'launch-close'|'confirmed'|'invalidated';
+export type SignalKind='intraday'|'launch-close'|'confirmed'|'invalidated'|'daily-candidate';
 export type SignalEvent={id:string;symbol:string;name:string;date:string;asOf:string;kind:SignalKind;price:number;gain:number|null;volumeRatio:number|null;launchDate:string|null;delivery:'pending'|'sent'|'failed'|'none';deliveryError?:string;observedAt?:number;activityEligible?:boolean};
-export type MonitorConfig={enabled:boolean;scope?:'all'|'selected';symbols:string[];activityFilter:boolean;locale:'zh-CN'|'en';updatedAt:number;expiresAt:number};
-export type MonitorStatus={available:boolean;configured:boolean;config:MonitorConfig;subscribed:boolean;nativeAvailable?:boolean;nativeSubscribed?:boolean;events:SignalEvent[];lastRun:number|null;nextRun:number|null;checked:number;ready:number;failures:{symbol:string;reason:string}[];status:string;deliveryError?:string;pending:number;market?:import('./full-market').FullMarketStatus};
+export type MonitorConfig={enabled:boolean;scope?:'all'|'selected';symbols:string[];activityFilter:boolean;locale:'zh-CN'|'en';updatedAt:number;expiresAt:number;cadence?:'close'};
+export type MonitorStatus={available:boolean;configured:boolean;config:MonitorConfig;subscribed:boolean;nativeAvailable?:boolean;nativeSubscribed?:boolean;events:SignalEvent[];lastRun:number|null;nextRun:number|null;checked:number;ready:number;failures:{symbol:string;reason:string}[];status:string;deliveryError?:string;pending:number;digestDate?:string;report?:import('./close-report').CloseManifest;market?:import('./full-market').FullMarketStatus};
 export function beijingParts(now=new Date()){
  const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now),get=(s:string)=>p.find(v=>v.type===s)!.value;
  return {date:get('year')+'-'+get('month')+'-'+get('day'),minute:Number(get('hour'))*60+Number(get('minute')),weekday:get('weekday')};
@@ -15,13 +15,14 @@ export function monitorWindow(now=new Date()){
 }
 export const MONITOR_INTERVAL_MS=5*60000;
 export const MONITOR_FRESHNESS_MS=MONITOR_INTERVAL_MS+90000;
+/** One daily close report, 15:20 Beijing; source timestamps exclude holidays. */
 export function nextMonitorRun(now=new Date()):number{
- const p=beijingParts(now);if(monitorWindow(now)){const next=new Date(now.getTime()+MONITOR_INTERVAL_MS);return monitorWindow(next)?next.getTime():nextMonitorRun(next);}
- if(!['Sat','Sun'].includes(p.weekday)&&p.minute>690&&p.minute<780)return Date.parse(p.date+'T13:00:00+08:00');
- let d=new Date(p.date+'T09:30:00+08:00');if(p.minute>=570)d=new Date(d.getTime()+86400000);
- while([0,6].includes(new Date(d.getTime()+8*3600000).getUTCDay()))d=new Date(d.getTime()+86400000);
- return d.getTime();
+ const p=beijingParts(now);let day=new Date(p.date+'T15:20:00+08:00');
+ if(p.minute>=920)day=new Date(day.getTime()+86400000);
+ while([0,6].includes(new Date(day.getTime()+8*3600000).getUTCDay()))day=new Date(day.getTime()+86400000);
+ return day.getTime();
 }
+export function afterClose(now=new Date()){const p=beijingParts(now);return !['Sat','Sun'].includes(p.weekday)&&p.minute>=920;}
 export function evaluateLiveSignal(history:Candle[],volumeUnit:'股'|'手',quote:Snapshot,now=new Date(),activityFilter=true){
  const p=beijingParts(now),closed=p.minute>=900;
  if(!monitorWindow(now)||quote.asOf.slice(0,10)!==p.date||!Number.isFinite(Date.parse(quote.asOf))||now.getTime()-Date.parse(quote.asOf)<-60000||now.getTime()-Date.parse(quote.asOf)>(closed?90*60000:120000))return {reason:'休市或快照不是本交易日的有效数据',signals:[]};

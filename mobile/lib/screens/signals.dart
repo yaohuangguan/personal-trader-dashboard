@@ -28,9 +28,6 @@ class _SignalsPageState extends State<SignalsPage> {
     super.initState();
     scope = widget.imported ? 'candidates' : 'all';
     refresh();
-    timer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (mounted && context.read<AtlasStore>().foreground) refresh();
-    });
   }
 
   @override
@@ -115,8 +112,8 @@ class _SignalsPageState extends State<SignalsPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         children: [
           PageTitle(
-            '盘中信号中心',
-            '全市场分片扫描 · 浏览器 / PWA 推送',
+            '收盘信号中心',
+            '每日收盘汇总 · 浏览器 / PWA 推送',
             trailing: IconButton(
               onPressed: refresh,
               icon: const Icon(Icons.refresh),
@@ -134,25 +131,32 @@ class _SignalsPageState extends State<SignalsPage> {
                   style: TextStyle(fontSize: 13, color: muted),
                 ),
               ),
-              FilledButton.icon(
-                onPressed:
-                    busy ||
-                        scope != 'all' && (items.isEmpty || items.length > 60)
-                    ? null
-                    : () => action(
-                        () => s.api.post('/api/monitor/config', {
-                          'enabled': config['enabled'] != true,
-                          'scope': scope == 'all' ? 'all' : 'selected',
-                          'symbols': scope == 'all' ? [] : items,
-                          'activityFilter': activity,
-                          'locale': s.locale,
-                        }, token: s.deviceToken),
-                      ),
-                icon: Icon(
-                  config['enabled'] == true ? Icons.pause : Icons.play_arrow,
-                  size: 16,
+              Flexible(
+                child: FilledButton.icon(
+                  onPressed:
+                      busy ||
+                          scope != 'all' && (items.isEmpty || items.length > 60)
+                      ? null
+                      : () => action(
+                          () => s.api.post('/api/monitor/config', {
+                            'enabled': config['enabled'] != true,
+                            'scope': scope == 'all' ? 'all' : 'selected',
+                            'symbols': scope == 'all' ? [] : items,
+                            'activityFilter': activity,
+                            'locale': s.locale,
+                          }, token: s.deviceToken),
+                        ),
+                  icon: Icon(
+                    config['enabled'] == true ? Icons.pause : Icons.play_arrow,
+                    size: 16,
+                  ),
+                  label: Text(
+                    s.t(config['enabled'] == true ? '暂停收盘推送' : '开启收盘推送'),
+                    style: const TextStyle(fontSize: 13),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                label: Text(s.t(config['enabled'] == true ? '暂停盯盘' : '开启盯盘')),
               ),
             ],
           ),
@@ -166,7 +170,7 @@ class _SignalsPageState extends State<SignalsPage> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              s.t('盘中每5分钟扫描，休市等待开盘。'),
+              s.t('每日15:20北京时间启动收盘任务，完成后合并推送一次。'),
               style: TextStyle(fontSize: 12, color: muted),
             ),
           ),
@@ -206,9 +210,7 @@ class _SignalsPageState extends State<SignalsPage> {
                     const SizedBox(height: 16),
                     Text(
                       s.t(
-                        scope == 'all'
-                            ? '自动读取完整证券名单，分片持续核验；无需先加入自选。'
-                            : '自定义名单最多60只',
+                        scope == 'all' ? '全市场共用一份收盘报告；无需先加入自选。' : '自定义名单最多60只',
                       ),
                       style: TextStyle(color: muted, height: 1.7),
                     ),
@@ -250,12 +252,12 @@ class _SignalsPageState extends State<SignalsPage> {
                                     'activityFilter': activity,
                                     'locale': s.locale,
                                   }, token: s.deviceToken),
-                                  '后台盯盘已开启；关闭页面后任务继续运行。',
+                                  '收盘汇总已开启；每交易日完成后推送一次。',
                                 ),
                           icon: const Icon(Icons.play_arrow),
                           label: Text(
                             s.t(
-                              config['enabled'] == true ? '更新监控名单' : '开启后台盯盘',
+                              config['enabled'] == true ? '更新收盘推送' : '开启收盘推送',
                             ),
                             style: const TextStyle(fontSize: 15),
                           ),
@@ -387,7 +389,7 @@ class _SignalsPageState extends State<SignalsPage> {
                             '全市场底稿就绪',
                             '${market?['ready'] ?? 0} / ${market?['total'] ?? 0}',
                           ),
-                          LabelValue('最近6分30秒有效核验', str(market?['checked'])),
+                          LabelValue('最近收盘深度核验', str(market?['checked'])),
                           LabelValue('最近行情源时间', str(market?['lastQuoteAt'])),
                         ],
                       ),
@@ -409,7 +411,8 @@ class _SignalsPageState extends State<SignalsPage> {
                   Text(
                     s.t(
                       const {
-                            'intraday': '盘中候选',
+                            'daily-candidate': '收盘候选',
+                            'intraday': '历史盘中候选',
                             'launch-close': '收盘启动',
                             'confirmed': '开花确认',
                             'invalidated': '确认失效',

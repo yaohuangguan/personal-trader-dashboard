@@ -8,7 +8,7 @@ import type {Candle} from '../shared/types';
 import {beijingParts,monitorWindow,nextMonitorRun,MONITOR_INTERVAL_MS,evaluateLiveSignal,validPushEndpoint,validMonitorSymbols,type MonitorConfig,type SignalEvent,type MonitorStatus} from '../shared/monitor';
 type Storage={get<T>(key:string):Promise<T|undefined>;put<T>(key:string,value:T):Promise<void>;delete(key:string):Promise<boolean>;setAlarm(time:number):Promise<void>;deleteAlarm():Promise<void>;getAlarm():Promise<number|null>};
 type State={storage:Storage;blockConcurrencyWhile<T>(fn:()=>Promise<T>):Promise<T>};
-export type MonitorNamespace={idFromName(name:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}};
+export type MonitorNamespace={idFromName(name:string):unknown;idFromString?(id:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}};
 type Baseline={candles:Candle[];volumeUnit:'股'|'手';loaded:number;date:string;source:string};
 const response=(value:unknown,status=200)=>Response.json(value,{status,headers:{'cache-control':'no-store','x-content-type-options':'nosniff'}});
 const defaults=():MonitorConfig=>({enabled:false,scope:'all',symbols:[],activityFilter:true,locale:'zh-CN',updatedAt:0,expiresAt:0});
@@ -59,10 +59,10 @@ export class SignalMonitor {
   if(action==='check'){if(this.busy)return response({error:'后台扫描进行中'},409);const status=await this.status();if(status.lastRun&&Date.now()-status.lastRun<MONITOR_INTERVAL_MS)return response({error:'每5分钟最多检查一次'},429);await this.run();return response(await this.status());}
   return response({error:'Unknown action'},404);
  }
- private async push(data:{title:string;body:string;url:string;tag:string}){
+ protected async push(data:{title:string;body:string;url:string;tag:string},ttl=300){
   const sub=await this.state.storage.get<PushSubscription>('subscription'),native=await this.state.storage.get<string>('native-token');if(!sub){if(native&&this.env?.FIREBASE_SERVICE_ACCOUNT){await sendNativePush(this.env.FIREBASE_SERVICE_ACCOUNT,native,data,this.state.storage);return;}throw new Error('尚未订阅设备通知');}
   if(!validPushEndpoint(sub.endpoint))throw new Error('通知服务地址无效');
-  const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl:300}},sub,await this.keys());
+  const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl}},sub,await this.keys());
   const r=await fetch(sub.endpoint,{...payload,redirect:'error',signal:AbortSignal.timeout(7000)});
   if(r.status===404||r.status===410)await this.state.storage.delete('subscription');
   if(!r.ok)throw new Error('通知服务 HTTP '+r.status);
@@ -87,7 +87,7 @@ export class SignalMonitor {
    await s.put('events',events.slice(0,200));
    let deliveryError='';const pending=events.filter(e=>e.delivery==='pending'&&Date.now()-Date.parse(e.asOf)<5*60000);
    if(pending.length&&subscribed){
-    const english=config.locale==='en',labels={intraday:english?'Intraday candidate':'盘中候选','launch-close':english?'Closed launch':'收盘启动',confirmed:english?'Confirmed bloom':'开花确认',invalidated:english?'Invalidated':'确认失效'};
+    const english=config.locale==='en',labels={'daily-candidate':english?'Closing candidate':'收盘候选',intraday:english?'Intraday candidate':'盘中候选','launch-close':english?'Closed launch':'收盘启动',confirmed:english?'Confirmed bloom':'开花确认',invalidated:english?'Invalidated':'确认失效'};
     const first=pending[0],body=pending.slice(0,5).map(e=>`${e.name} ${e.symbol} · ${labels[e.kind]} · ${e.price.toFixed(2)}`).join('\n');
     try{await this.push({title:`Market Atlas · ${pending.length}${english?' signals':'个信号'}`,body,url:pending.length===1?'/?symbol='+first.symbol:'/?view=signals',tag:first.id});for(const e of pending)e.delivery='sent';}
     catch(e){deliveryError=e instanceof Error?e.message:'推送失败';for(const e of pending){e.delivery='failed';e.deliveryError=deliveryError;}}

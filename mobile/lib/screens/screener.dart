@@ -1,3 +1,5 @@
+import 'auto_screener.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -20,7 +22,7 @@ class ScreenerPage extends StatefulWidget {
 
 class _ScreenerPageState extends State<ScreenerPage> {
   String scope = 'all',
-      tab = 'scan',
+      tab = 'auto',
       stage = 'all',
       character = 'potential',
       query = '';
@@ -55,6 +57,10 @@ class _ScreenerPageState extends State<ScreenerPage> {
     }).toList();
     const rank = {'开花确认': 4, '启动待确认': 3, '回踩观察': 2, '粘合蓄势': 1};
     candidates.sort((a, b) {
+      final byScore = (numOf(obj(b['ranking'])['score']) ?? 0).compareTo(
+        numOf(obj(a['ranking'])['score']) ?? 0,
+      );
+      if (byScore != 0) return byScore;
       final byStage = (rank[b['bucket']] ?? 0).compareTo(
         rank[a['bucket']] ?? 0,
       );
@@ -72,12 +78,18 @@ class _ScreenerPageState extends State<ScreenerPage> {
       children: [
         PageTitle('五线开花选股器', '寻找值得看图的候选。按你的指南逐项核验，显示形成阶段、缺项和失效条件。'),
         Chips(
-          values: const {'scan': '形态选股', 'sector': '板块研判 · 天时地利人和'},
+          values: const {
+            'auto': '自动优选',
+            'scan': '独立形态',
+            'sector': '板块研判 · 天时地利人和',
+          },
           selected: tab,
           onSelected: (v) => setState(() => tab = v),
         ),
         if (tab == 'sector')
           const SectorOutlook()
+        else if (tab == 'auto')
+          const AutomaticScreenPanel()
         else ...[
           Panel(
             child: Column(
@@ -415,14 +427,14 @@ class _ScreenerPageState extends State<ScreenerPage> {
                               ),
                             );
                           },
-                    child: Text(s.t('加入盘中监控')),
+                    child: Text(s.t('加入收盘推送')),
                   ),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Notice(s.t('均线粘合不是启动信号，股性、量能、突破延续与板块需要共同核验。全市场盘中发现请使用盘中信号中心。')),
+          Notice(s.t('均线粘合不是启动信号，股性、量能、突破延续与板块需要共同核验。收盘后共享精选请使用收盘信号中心。')),
           if (candidates.isEmpty)
             Notice(
               s.t(
@@ -622,5 +634,5 @@ class _SignalsAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
   @override
   Widget build(BuildContext context) =>
-      AppBar(title: Text(tr(context, '盘中信号中心')));
+      AppBar(title: Text(tr(context, '收盘信号中心')));
 }
