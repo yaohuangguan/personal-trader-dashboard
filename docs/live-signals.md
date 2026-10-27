@@ -10,6 +10,8 @@ The market overview adds daily, weekly and monthly index charts, retaining intra
 
 ## Background monitoring
 
+The intraday monitoring description below is retained as implementation history. Production now exports `CloseCoordinator` and `CloseSignalMonitor` under the existing Durable Object class bindings. It runs one shared report after the verified trading close, starting at 15:20 Beijing time, and delivers at most one successful digest per device/date. Old intraday detections remain historical records; their five-minute alarms no longer fetch market data. Manual research is a separate resumable server job and sends no intraday push. See [current architecture and measurements](closing-screen.md). Browser permissions, capability isolation and encrypted delivery described below remain applicable.
+
 `SignalMonitor` is a SQLite-backed Durable Object, bound as `SIGNAL_MONITOR`. Its alarms, configuration, price baselines, detection IDs, VAPID keys and optional push subscription survive closing the page. No D1, external bot or scheduled workstation is required. It runs only after the owner enables a task; one activation expires after 30 days.
 
 Each browser stores a random 256-bit device capability in localStorage. The server maps it to a private object; all monitor requests require it in Authorization, never in a URL. Cross-origin mutations are rejected. Each device is separate; clearing local storage loses the management capability, so tasks must be paused first when possible. The bounded expiry still prevents indefinite orphan scans. The app does not silently prompt for notification permission or enable tasks.

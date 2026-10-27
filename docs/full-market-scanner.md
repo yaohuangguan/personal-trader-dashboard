@@ -1,4 +1,6 @@
-# Shared full-market monitoring
+# Archived intraday scanner architecture
+
+This document describes the retired intraday implementation kept as unexported reference classes. Production uses the [daily closing coordinator and resumable on-demand research job](closing-screen.md). Its old shard alarms retire without requesting market data. The five-minute schedules below are historical behavior, not the production schedule.
 
 The default monitor scope is now the complete SH / SZ / BJ source universe. It does not require watchlist membership or limit discovery to 60 names. Explicit custom/watchlist subscriptions remain an optional scope; only those custom lists have a 60-name limit.
 
