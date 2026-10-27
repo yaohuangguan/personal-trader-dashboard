@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../core/snapshot.dart';
 import '../core/store.dart';
 import '../core/indicators.dart';
 import '../widgets/common.dart';
@@ -29,6 +30,8 @@ class StockPage extends StatefulWidget {
 }
 
 class _StockPageState extends State<StockPage> {
+  final snapshotKey = GlobalKey();
+  bool snapshotBusy = false;
   Json? quote, analysis, trend;
   String? trendError;
   bool trendLoading = false;
@@ -99,6 +102,9 @@ class _StockPageState extends State<StockPage> {
             };
       if (mounted) {
         setState(() {
+          if (obj(r['strategy']).isNotEmpty) {
+            r['tradeMarkers'] = obj(r['strategy'])['signals'];
+          }
           analysis = r;
           analysisError = null;
         });
@@ -210,6 +216,71 @@ class _StockPageState extends State<StockPage> {
       ),
     ),
   );
+  Future<void> snapshot({bool copyOnly = false}) async {
+    if (snapshotBusy) return;
+    snapshotBusy = true;
+    try {
+      final png = await StockSnapshot.capture(
+        snapshotKey,
+        pixelRatio: math.min(MediaQuery.devicePixelRatioOf(context), 3),
+      );
+      if (!mounted) return;
+      if (copyOnly) {
+        await StockSnapshot.copy(png);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(tr(context, '截图已复制，可在微信中粘贴发送'))),
+          );
+        }
+      } else {
+        final box = snapshotKey.currentContext!.findRenderObject() as RenderBox;
+        try {
+          await StockSnapshot.share(
+            png,
+            widget.symbol,
+            box.localToGlobal(Offset.zero) & box.size,
+          );
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(tr(context, '分享未完成，可复制截图后在微信粘贴')),
+                action: SnackBarAction(
+                  label: tr(context, '复制截图'),
+                  onPressed: () async {
+                    try {
+                      await StockSnapshot.copy(png);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(tr(context, '截图已复制，可在微信中粘贴发送')),
+                          ),
+                        );
+                      }
+                    } catch (_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(tr(context, '复制失败，请重试'))),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(tr(context, '截图失败，请稍后重试'))));
+      }
+    } finally {
+      snapshotBusy = false;
+    }
+  }
+
   Future<void> alert() async {
     final price = TextEditingController(text: fixed(q['price']));
     var direction = 'above';
@@ -332,6 +403,16 @@ class _StockPageState extends State<StockPage> {
               alert();
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.copy_all_outlined),
+            title: Text(tr(context, '复制当前画面')),
+            subtitle: Text(tr(context, '图片复制到剪贴板，不保存到相册')),
+            onTap: () async {
+              Navigator.pop(context);
+              await Future<void>.delayed(const Duration(milliseconds: 350));
+              if (mounted) await snapshot(copyOnly: true);
+            },
+          ),
           SwitchListTile(
             title: Text(tr(context, '自动')),
             value: auto,
@@ -356,7 +437,10 @@ class _StockPageState extends State<StockPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      RepaintBoundary(key: snapshotKey, child: buildPage(context));
+
+  Widget buildPage(BuildContext context) {
     final s = context.watch<AtlasStore>(), name = str(q['name'], widget.symbol);
     return Scaffold(
       appBar: AppBar(
@@ -386,6 +470,11 @@ class _StockPageState extends State<StockPage> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: s.t('分享当前画面'),
+            onPressed: snapshot,
+            icon: const Icon(Icons.ios_share, size: 20),
+          ),
           IconButton(
             tooltip: s.t('我的自选'),
             onPressed: () => s.toggleWatch(widget.symbol),

@@ -1,8 +1,10 @@
+import {analyzeStrategy} from '../shared/strategy';
+import {evaluateStrategyHistory} from '../shared/strategy-backtest';
 import {marketContext} from '../shared/market-context';
 import {scannerCall} from './full-market-scanner';
 import {level2,type Level2Env} from './level2';
 import {shareRoute,type ShareStore} from './shares';
-import {guideAction,guideTradeMarkers} from '../shared/guide-action';
+import {guideAction} from '../shared/guide-action';
 import {guideScore} from '../shared/guide-score';
 import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
 import {stockCharacter} from '../shared/stock-character';
@@ -376,7 +378,8 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const guide=analyzeGuide(data.candles),character=guide.asOf?stockCharacter(data.candles,guide.asOf):null;
   const candidate=screenCandidate({symbol,name:data.name,price:data.last,changePercent:data.changePercent,amount:null,turnover:null},guide,data.provider);if(candidate){candidate.character=character;candidate.risks=[...candidate.risks,...(character?.warnings||[])];}
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
-  return json({available:true,context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:guideAction(guide,character),tradeMarkers:guideTradeMarkers(data.candles,guide),market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
+  const strategy=analyzeStrategy(data.candles,{symbol});
+  return json({available:true,strategy,strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
   providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',

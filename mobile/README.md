@@ -102,3 +102,7 @@ Pattern definitions, source units and short-share / Level-2 configuration: [impl
 ## Shared closing radar
 
 The screener opens on automatic ranking, with independent patterns as a separate mode. Closing results come from the shared daily job; manual verification uses up to four concurrent symbols. Watch rows show dated daily strength, five-line advice and daily structure; stock prices follow daily direction. Intraday charts include minute VOL; crossover/trade labels explicitly read 买/卖. See [closing-screen architecture](../docs/closing-screen.md). The owner requested the updated mobile experience and a new sam iPhone installation attempt.
+
+### 个股截图与结构量价计划
+
+右上角分享图标直接分享当前可见画面；行情详情 → 复制当前画面可复制PNG到剪贴板后在微信粘贴，不写相册。五线开花栏目首屏重构为结论、结构节奏、入场区间/失效价/2R计划，证据与指南明细默认折叠。金叉死叉为参考，买卖点使用结构量价v2.0；盘中仅预警。详见 [策略与分享口径](../docs/structure-volume-strategy.md)。

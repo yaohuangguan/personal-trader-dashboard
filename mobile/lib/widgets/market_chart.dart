@@ -1423,7 +1423,7 @@ class ChartPainter extends CustomPainter {
           c.drawPath(path, Paint()..color = isDeath ? down : up);
           label(
             c,
-            isDeath ? '卖' : '买',
+            isDeath ? '死叉' : '金叉',
             Offset(
               (px - 8).clamp(left, size.width - right - 22),
               (py + (isDeath ? -20 : 7)).clamp(14, priceHeight - 16),

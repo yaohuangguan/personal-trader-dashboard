@@ -1,7 +1,8 @@
+import StockSnapshot from './StockSnapshot';
+import {analyzeStrategy} from '../../shared/strategy';
 import WatchInsight from './WatchInsight';
 import Level2Panel from './Level2Panel';
 import {stockCharacter} from '../../shared/stock-character';
-import {guideTradeMarkers} from '../../shared/guide-action';
 import F10Panel from './F10Panel';
 import DailyTrendPanel from './DailyTrendPanel';
 import {t as uiText} from '../preferences';
@@ -103,7 +104,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
   const reportData = useLiveEndpoint<ReportsPayload>(chinese && contextTab === 'reports' ? '/api/desk/reports?symbol=' + symbol : null);
   const analysis = useMemo(() => market ? (() => {const result = analyzeGuide(market.candles);if(market.provider.includes('不复权')) result.warnings.push('当前历史不复权，送转与除权可能改变均线形态，需复核。');return result;})() : null, [market]);
   const character=useMemo(()=>analysis?.asOf&&market?stockCharacter(market.candles,analysis.asOf):null,[analysis,market]);
-  const tradeMarkers=useMemo(()=>analysis&&market?guideTradeMarkers(market.candles,analysis):[],[analysis,market]);
+  const tradeMarkers=useMemo(()=>market?analyzeStrategy(market.candles,{symbol}).signals:[],[market,symbol]);
   const known = CATALOG.find(item => item.symbol === symbol), name = quote?.name || market?.name || known?.name || symbol;
   const price = quote?.price ?? market?.last, change = quote?.changePercent ?? market?.changePercent;
   const benchmark = quoteMap.get('000300.SH');
@@ -127,7 +128,7 @@ export default function ResearchDesk({ symbol, market, marketError, markets, wat
 
   const securityCard=(<section className="desk-security">
           <div className="desk-security-top"><div className="desk-company"><span className="desk-market-tag">{uiText(symbol.endsWith('.SZ') ? '深' : symbol.endsWith('.SH') ? '沪' : symbol.endsWith('.BJ') ? '京' : 'US')}</span><h1>{(name)}</h1><span>{uiText(symbol)}</span><button type="button" className={'desk-icon ' + (watchlist.includes(symbol) ? 'is-starred' : '')} aria-label={uiText(watchlist.includes(symbol) ? '移出自选' : '加入自选')} onClick={() => onToggleWatch(symbol)}><Star size={16} fill={watchlist.includes(symbol) ? 'currentColor' : 'none'} /></button></div><div className={'desk-session ' + (quote?.session === 'trading' && !quote.stale && auto && !quotes.error ? 'is-trading' : '')}><i />{uiText(status)}<Hint text={uiText("盘中按5秒轮询公开行情，盘后30秒。市场时段按北京时间判断；交易日以来源快照为准，行情不保证交易所实时。")} /></div></div>
-          <div className="desk-security-main"><div className={'desk-big-price ' + tone(change)}><strong>{uiText(number(price))}</strong><div><b>{uiText(quote?.change != null ? (quote.change >= 0 ? '+' : '') + number(quote.change) : market?.change != null ? number(market.change) : '—')}</b><span>{uiText(pct(change))}</span></div></div><div className="desk-live-actions"><button type="button" onClick={() => { setAlertValue(price ? String(price) : ''); setAlertOpen(true); }}><Bell size={13} />{uiText("提醒")}</button><button type="button" onClick={() => setAuto(v => !v)} aria-pressed={!auto} aria-label={uiText(auto ? '暂停自动刷新' : '恢复自动刷新')}>{uiText(auto ? <Pause size={13} /> : <Play size={13} />)}{uiText(auto ? '自动' : '暂停')}</button><button type="button" onClick={refresh} aria-label={uiText("刷新个股工作台")}><RefreshCw size={14} /></button></div></div>
+          <div className="desk-security-main"><div className={'desk-big-price ' + tone(change)}><strong>{uiText(number(price))}</strong><div><b>{uiText(quote?.change != null ? (quote.change >= 0 ? '+' : '') + number(quote.change) : market?.change != null ? number(market.change) : '—')}</b><span>{uiText(pct(change))}</span></div></div><div className="desk-live-actions"><StockSnapshot symbol={symbol}/><button type="button" onClick={() => { setAlertValue(price ? String(price) : ''); setAlertOpen(true); }}><Bell size={13} />{uiText("提醒")}</button><button type="button" onClick={() => setAuto(v => !v)} aria-pressed={!auto} aria-label={uiText(auto ? '暂停自动刷新' : '恢复自动刷新')}>{uiText(auto ? <Pause size={13} /> : <Play size={13} />)}{uiText(auto ? '自动' : '暂停')}</button><button type="button" onClick={refresh} aria-label={uiText("刷新个股工作台")}><RefreshCw size={14} /></button></div></div>
           <div className="desk-stat-grid">{uiText([{ label: '今开', value: number(quote?.open) }, { label: '最高', value: number(quote?.high) }, { label: '最低', value: number(quote?.low) }, { label: '成交额', value: amount(quote?.amount) }, { label: '换手率', value: quote?.turnover == null ? '—' : quote.turnover.toFixed(2) + '%' }, { label: '量比', value: number(quote?.volumeRatio) }, { label: '市盈率 TTM', value: number(quote?.pe) }, { label: '总市值', value: amount(quote?.marketCap) }].map(stat => <div key={stat.label}><span>{uiText(stat.label)}</span><b>{uiText(stat.value)}</b></div>))}</div>
           <div className="desk-security-footer"><span>{uiText("快照")}{uiText(sourceDate)} {uiText("· 北京时间")}</span><span>{uiText("较沪深300")}<b className={tone(relativeStrength)}>{uiText(relativeStrength == null ? '—' : (relativeStrength >= 0 ? '+' : '') + relativeStrength.toFixed(2) + ' pct')}</b></span></div>
           {uiText(quotes.error && <Source text="" error={uiText(quote ? '刷新失败 · 当前保留上一行情快照' : quotes.error)} />)}

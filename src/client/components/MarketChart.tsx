@@ -118,7 +118,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
             time: chartTime(signal.time), position: signal.kind === 'death' ? 'aboveBar' : 'belowBar',
             shape: signal.kind === 'bloom' ? 'circle' : signal.kind === 'golden' ? 'arrowUp' : 'arrowDown',
             color: signal.kind === 'bloom' ? '#f6cb70' : signal.kind === 'golden' ? UP : DOWN,
-            text: signal.kind === 'bloom' ? uiText('均线展开') : uiText(signal.kind==='golden'?'买':'卖'), size: signal.kind === 'bloom' ? 1 : 0.7,
+            text: signal.kind === 'bloom' ? uiText('均线展开') : uiText(signal.kind==='golden'?'金叉':'死叉'), size: signal.kind === 'bloom' ? 1 : 0.7,
           }));
           for (const event of guideEvents || []) {
             points.push({ time: chartTime(event.date), position: 'belowBar', shape: 'circle', color: '#d9c89f', text: uiText('指南启动'), size: 1 });

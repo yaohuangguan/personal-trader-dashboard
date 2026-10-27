@@ -1,3 +1,7 @@
+import {analyzeGuide} from '../shared/guide-analysis';
+import {guideScore} from '../shared/guide-score';
+import {stockCharacter} from '../shared/stock-character';
+import {analyzeStrategy} from '../shared/strategy';
 import {memo,history,quotes,intraday} from './desk-data';
 import {dailyTrend} from '../shared/daily-trend';
 import {marketContext} from '../shared/market-context';
@@ -9,5 +13,6 @@ export async function watchInsight(symbol:string){
  if(q&&trend.asOf===q.asOf&&q.open!=null&&q.high!=null&&q.low!=null&&q.volume!=null){
   const day=q.asOf.slice(0,10);bars=[...bars.filter(b=>b.time<day),{time:day,open:q.open,high:q.high,low:q.low,close:q.price,volume:q.volume*(q.volumeUnit==='手'?100:1)/(daily.volumeUnit==='手'?100:1)}];
  }
- return {available:true,symbol,trend:{score:trend.score,label:trend.label,date:trend.date,asOf:trend.asOf,provisional:trend.provisional,current:trend.current,coveredWeight:trend.coveredWeight},operation:trend.operation,...marketContext(bars,trend.provisional)};
+ const strategy=analyzeStrategy(bars,{symbol,amount:q?.amount});
+ return {available:true,symbol,strategy,trend:{score:trend.score,label:trend.label,date:trend.date,asOf:trend.asOf,provisional:trend.provisional,current:trend.current,coveredWeight:trend.coveredWeight},operation:{action:strategy.plan.action,score:guideScore(analyzeGuide(bars),stockCharacter(bars,bars.at(-1)?.time||'')).score,asOf:strategy.plan.asOf,provisional:strategy.plan.provisional,reasons:strategy.plan.reasons},...marketContext(bars,trend.provisional)};
 }

@@ -5,8 +5,10 @@ import '../core/api.dart';
 import '../core/store.dart';
 import '../widgets/common.dart';
 
-class GuidePanel extends StatelessWidget {
-  const GuidePanel(this.symbol, this.analysis, {super.key});
+export 'strategy_panel.dart' show GuidePanel, GuideActionPanel;
+
+class GuideEvidencePanel extends StatelessWidget {
+  const GuideEvidencePanel(this.symbol, this.analysis, {super.key});
   final String symbol;
   final Json analysis;
   @override
@@ -18,7 +20,6 @@ class GuidePanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        GuideActionPanel(analysis),
         Panel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,157 +304,6 @@ class GuidePanel extends StatelessWidget {
             ],
           ),
         ),
-      ],
-    );
-  }
-}
-
-class GuideActionPanel extends StatelessWidget {
-  const GuideActionPanel(this.analysis, {super.key});
-  final Json analysis;
-  @override
-  Widget build(BuildContext context) {
-    final a = obj(analysis['action']),
-        strength = obj(analysis['strength']),
-        s = context.watch<AtlasStore>();
-    return Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  s.t('五线操作建议'),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                '${fixed(strength['score'], 0)} / 100',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            s.t(str(a['action'], '观望')),
-            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w600),
-          ),
-          Text(
-            '${str(a['asOf'])} · ${s.t(a['provisional'] == true ? '盘中待确认' : '收盘规则')}',
-            style: TextStyle(color: muted, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          if (obj(analysis['context']).isNotEmpty)
-            GuideContext(obj(analysis['context'])),
-          ...((a['reasons'] as List?) ?? []).map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '• ${s.t('$r')}',
-                style: const TextStyle(fontSize: 15, height: 1.6),
-              ),
-            ),
-          ),
-          if (a['invalidation'] != null)
-            Text(
-              '${s.t('失效观察')} · ${s.t('阳线半位')} ${fixed(obj(a['invalidation'])['midpoint'])} / MA20 ${fixed(obj(a['invalidation'])['ma20'])}',
-              style: TextStyle(fontSize: 14, color: muted),
-            ),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: Text(s.t('历史买卖点与规则'), style: const TextStyle(fontSize: 14)),
-            children: [
-              ...rows(analysis['tradeMarkers']).reversed
-                  .take(10)
-                  .map(
-                    (p) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        '${str(p['time'])} · ${s.t(str(p['label']))}  ${fixed(p['price'])}',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        s.t(str(p['reason'])),
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ),
-              Text(
-                s.t(str(a['notice'])),
-                style: TextStyle(color: muted, fontSize: 13, height: 1.7),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class GuideContext extends StatelessWidget {
-  const GuideContext(this.data, {super.key});
-  final Json data;
-  @override
-  Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>();
-    return Column(
-      children: [
-        for (final pair in [('structure', '当前结构与周期'), ('priceVolume', '量价解读')])
-          Builder(
-            builder: (context) {
-              final item = obj(data[pair.$1]),
-                  color = item['direction'] == 'bullish'
-                      ? up
-                      : item['direction'] == 'bearish'
-                      ? down
-                      : muted;
-              return Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: .06),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border(left: BorderSide(color: color, width: 3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.t(pair.$2),
-                      style: TextStyle(fontSize: 12, color: muted),
-                    ),
-                    const SizedBox(height: 7),
-                    Text(
-                      s.t(str(item['state'] ?? item['label'])),
-                      style: TextStyle(
-                        fontSize: 20,
-                        color: color,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (item['period'] != null)
-                      Text(
-                        s.t(str(item['period'])),
-                        style: TextStyle(fontSize: 12, color: muted),
-                      ),
-                    const SizedBox(height: 7),
-                    Text(
-                      s.t(str(item['detail'] ?? item['explanation'])),
-                      style: TextStyle(fontSize: 14, color: ink, height: 1.6),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
       ],
     );
   }
