@@ -6,6 +6,7 @@ import {sinaBeijingDaily} from '../../src/worker/research';
 import {evaluateScreen,SCREEN_MODES,DEFAULT_SCREEN} from '../../src/shared/pattern-screen';
 import {beijingParts} from '../../src/shared/monitor';
 import type {CloseReport} from '../../src/shared/close-report';
+import {isClosingSnapshot} from '../../src/shared/close-report';
 import type {ScreenCandidate,UniverseItem} from '../../src/shared/screening';
 import type {Snapshot} from '../../src/shared/desk-types';
 
@@ -17,11 +18,12 @@ const all=[...new Map([first,...pages].flatMap(p=>p.items).map(s=>[s.symbol,s]))
 const benchmark=(await retry(()=>quotes(['000001.SH']))).items[0];if(!benchmark)throw new Error('缺少大盘交易日期');const date=benchmark.asOf.slice(0,10),today=beijingParts().date;
 if(date!==today&&process.env.ALLOW_PREVIOUS_CLOSE!=='1'){console.log('No current-day market close; holiday or unavailable source. Skipped.');process.exit(0);}
 if(date===today&&beijingParts().minute<920){console.log('Market is still open. No closing report published.');process.exit(0);}
+if(!isClosingSnapshot(benchmark,date)){console.log('Index close has not been verified. No closing report published.');process.exit(0);}
 const rejected:Record<string,number>={},reject=(key:string)=>rejected[key]=(rejected[key]||0)+1;
 const stockPool=all.filter(s=>{if(/ST|退/i.test(s.name)){reject('排除ST与退市名称');return false;}return true;});
 const batches=Array.from({length:Math.ceil(stockPool.length/60)},(_,i)=>stockPool.slice(i*60,i*60+60));const snapshots=new Map<string,Snapshot>(),failures:{symbol:string;reason:string}[]=[];
 await pool(batches,4,async batch=>{try{const feed=await retry(()=>quotes(batch.map(s=>s.symbol)));for(const q of feed.items)if(q.asOf.slice(0,10)===date)snapshots.set(q.symbol,q);}catch{/* Missing quotes are explicitly recorded below. */}});
-const targets=stockPool.filter(s=>{const q=snapshots.get(s.symbol);if(!q){failures.push({symbol:s.symbol,reason:'缺少同交易日快照'});return false;}if(q.amount===null||q.amount<2e8){reject('成交额不足2亿元');return false;}if(/ST|退|^(N|C)/i.test(q.name)){reject('ST、退市或新股价格限制待核验');return false;}return true;});
+const targets=stockPool.filter(s=>{const q=snapshots.get(s.symbol);if(!isClosingSnapshot(q,date)){failures.push({symbol:s.symbol,reason:'缺少同交易日15:00以后的收盘快照'});return false;}if(q!.amount===null||q!.amount<2e8){reject('成交额不足2亿元');return false;}if(/ST|退|^(N|C)/i.test(q!.name)){reject('ST、退市或新股价格限制待核验');return false;}return true;});
 console.log(JSON.stringify({date,total:all.length,liquid:targets.length,snapshotFailures:failures.length}));
 let checked=0,cacheHits=0;const candidates:ScreenCandidate[]=[];const options={...DEFAULT_SCREEN,modes:Object.keys(SCREEN_MODES) as (keyof typeof SCREEN_MODES)[],auto:true,activity:false,maxMarketCap:null};
 await pool(targets,8,async(stock,index)=>{
