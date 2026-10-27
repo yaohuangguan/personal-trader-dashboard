@@ -10,13 +10,18 @@ export type ResearchJob={id:string;phase:'universe'|'quotes'|'cache'|'history'|'
 type Batch={candidates:ScreenCandidate[];failed:UniverseItem[]};
 type Target=UniverseItem&{snapshot?:Snapshot};
 type Cached={unit?:'手'|'股';at:number;adjusted:DayData;raw:DayData;quote:Snapshot;result:ReturnType<typeof evaluateScreen>};
-/** Same-session update from actual quote OHLCV; no historical/corporate-action assumptions across dates. */
+/** Update/append actual quote OHLCV only when its previous-close adjustment base is verified. */
 export function patchSession(data:DayData,q:Snapshot,unit:'手'|'股'):DayData|null{
- const last=data.candles.at(-1),previous=data.candles.at(-2),day=q.asOf.slice(0,10);
- if(!last||!previous||last.time!==day||q.stale||q.previous===null||Math.abs(previous.close-q.previous)>Math.max(.02,q.previous*.0005)||[q.open,q.high,q.low,q.volume].some(v=>v===null)||!(q.price>0&&q.low!>0&&q.high!>=Math.max(q.open!,q.price)&&q.low!<=Math.min(q.open!,q.price)))return null;
+ const last=data.candles.at(-1),day=q.asOf.slice(0,10);
+ if(!last||q.stale||q.previous===null||[q.price,q.open,q.high,q.low,q.volume].some(v=>v===null||!Number.isFinite(v))||!(q.price>0&&q.low!>0&&q.high!>=Math.max(q.open!,q.price)&&q.low!<=Math.min(q.open!,q.price)))return null;
+ const same=last.time===day,previous=same?data.candles.at(-2):last;
+ const gap=(Date.parse(day)-Date.parse(last.time))/86400000;
+ if(!previous||(!same&&(!(gap>0)||gap>7))||Math.abs(previous.close-q.previous)>Math.max(.005,q.previous*.0005))return null;
  const volume=q.volume!*(q.volumeUnit==='手'?100:1)/(unit==='手'?100:1);
- if(volume+Math.max(1,last.volume*.001)<last.volume)return null;
- return {...data,candles:[...data.candles.slice(0,-1),{time:day,open:q.open!,high:q.high!,low:q.low!,close:q.price,volume}]};
+ if(volume<0||same&&volume+Math.max(1,last.volume*.001)<last.volume)return null;
+ const bar={time:day,open:q.open!,high:q.high!,low:q.low!,close:q.price,volume};
+ const candles=same?[...data.candles.slice(0,-1),bar]:[...data.candles,bar].slice(-Math.max(500,data.candles.length));
+ return {...data,candles};
 }
 const PREFIX='research:v1:',key=(id:string,kind:string,n:number)=>PREFIX+id+':'+kind+':'+n;
 const OPTIONS={...DEFAULT_SCREEN,modes:Object.keys(SCREEN_MODES) as (keyof typeof SCREEN_MODES)[],auto:true,activity:false,maxMarketCap:null};
@@ -121,6 +126,7 @@ export class ResearchScreen {
         try{const [daily,unadjusted]=await Promise.all([fetchScreenDaily(stock.symbol,true,500,signal),fetchScreenDaily(stock.symbol,false,20,signal)]);adjusted=daily;raw=unadjusted;if(!q&&!daily.quote)throw new Error('缺少可核验快照');quote=daily.quote&&(!q||daily.quote.asOf>q.asOf)?daily.quote:q!;}
         catch(e){signal.throwIfAborted();if(!q)throw e;const [daily,unadjusted]=await Promise.all([sinaAdjustedDaily(stock.symbol,500,signal),sinaRawDaily(stock.symbol,20,signal)]);adjusted={candles:daily.candles,provider:'新浪复权日线（独立备用源）'};raw={candles:unadjusted.candles,provider:'新浪未复权日线'};quote=q;unit='股';}
        }
+       adjusted=patchSession(adjusted,quote,unit)||adjusted;raw=patchSession(raw,quote,unit)||raw;
        out=evaluateScreen({bars:adjusted.candles,raw:raw.candles,quote,provider:adjusted.provider,volumeUnit:unit,options:OPTIONS,now:new Date(quote.asOf)});
        if(/缺失|无效|不一致|未对齐|过期/.test(out.reason||''))throw new Error(out.reason!);
        await this.storage.put(cacheKey,{at:Date.now(),adjusted,raw,quote,result:out,unit} satisfies Cached);

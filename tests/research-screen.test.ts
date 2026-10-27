@@ -45,3 +45,10 @@ test('history circuit breaker retains unresolved stocks and a retry includes the
   const retry=await scan.start(true);assert.equal(retry.job?.targets,32);assert.equal(retry.job?.retryOf,'circuit');
  }finally{globalThis.fetch=original;ctx.mock.timers.reset();}
 });
+
+test('next-session quotes append one real bar only with a verified prior-close base and bounded date gap',()=>{
+ const data={provider:'fixture',candles:[{time:'2026-10-23',open:10,high:10.5,low:9.9,close:10.2,volume:100}]};
+ const quote={asOf:'2026-10-26T14:00:00+08:00',stale:false,previous:10.2,open:10.3,high:10.8,low:10.1,price:10.6,volume:8000,volumeUnit:'股'} as any;
+ const result=patchSession(data,quote,'手');assert.equal(result?.candles.length,2);assert.deepEqual(result?.candles[0],data.candles[0]);assert.equal(result?.candles[1].volume,80);assert.equal(result?.candles[1].close,10.6);
+ assert.equal(patchSession(data,{...quote,previous:10},'手'),null);assert.equal(patchSession(data,{...quote,asOf:'2026-11-10T14:00:00+08:00'},'手'),null);
+});
