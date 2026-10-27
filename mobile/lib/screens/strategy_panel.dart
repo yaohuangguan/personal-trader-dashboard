@@ -301,7 +301,7 @@ class GuidePanel extends StatelessWidget {
           ),
         Panel(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-          child: ExpansionTile(
+          child: OpenSection(
             tilePadding: EdgeInsets.zero,
             childrenPadding: const EdgeInsets.only(bottom: 12),
             shape: const Border(),
@@ -401,7 +401,7 @@ class GuidePanel extends StatelessWidget {
                 '${str(history['from'])} → ${str(history['to'])}',
                 style: TextStyle(fontSize: 12, color: muted),
               ),
-              ExpansionTile(
+              OpenSection(
                 tilePadding: EdgeInsets.zero,
                 shape: const Border(),
                 collapsedShape: const Border(),
@@ -463,19 +463,14 @@ class GuidePanel extends StatelessWidget {
             ],
           ),
         ),
-        Panel(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            shape: const Border(),
-            collapsedShape: const Border(),
-            title: Text(
-              tr(context, '指南原始规则与全周期共振'),
-              style: const TextStyle(fontSize: 14),
-            ),
-            children: [GuideEvidencePanel(symbol, analysis)],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 14, 4, 12),
+          child: Text(
+            tr(context, '指南原始规则与全周期共振'),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
         ),
+        GuideEvidencePanel(symbol, analysis),
       ],
     );
   }

@@ -495,6 +495,12 @@ export default {
    const share=await shareRoute(request,env.SHARES);if(share)return share;
    const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
    const closeUrl=new URL(request.url);
+   if(closeUrl.pathname==='/api/desk/screen-job'){
+    if(!env.MARKET_SCANNER)return json({error:'扫描任务存储暂不可用'},503);
+    if(request.method==='GET'){const response=json(await scannerCall(env.MARKET_SCANNER,'research-status'+(closeUrl.search||'')));response.headers.set('cache-control','no-store');return response;}
+    if(request.method==='POST'){const body=await request.json() as {retry?:boolean};const response=json(await scannerCall(env.MARKET_SCANNER,'research-start',{retry:body.retry===true}));response.headers.set('cache-control','no-store');return response;}
+    return json({error:'Method not allowed'},405);
+   }
    if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET'){if(!env.MARKET_SCANNER)return json({report:null});return json(await scannerCall(env.MARKET_SCANNER,'results'));}
    if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||request.headers.get('Authorization')!=='Bearer '+env.SCREEN_JOB_TOKEN)return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);return json(await scannerCall(env.MARKET_SCANNER,action!,JSON.parse(raw)));}
    const desk=await deskRoute(request);if(desk)return desk;

@@ -19,3 +19,15 @@ Automatic mode evaluates independent patterns and early price/volume setups; it 
 ## Watch and chart context
 
 Visible A-share watch rows load `/api/desk/insight`, with per-source caching and a 60-second foreground refresh. Daily strength and five-line advice are separate and dated; stale history is not labeled today. Daily structure uses MA5/10/20/30/60, with explicit bullish/bearish alignment, mixed alignment, correction or range criteria. Price/volume direction is labeled in words plus restrained red/green/neutral color. Intraday cumulative volume is not treated as completed daily volume. Chart crossover markers now explicitly say 买 / 卖 and remain distinguishable from the stricter guide confirmation markers. Intraday VOL uses observed incremental minute volume.
+
+## 手动全市场研究任务（独立于收盘推送）
+
+`POST /api/desk/screen-job` 只创建/连接一个共享任务，不在手机端跑逐股循环。服务端先分页完成证券名单核对，按成交额预筛，再以8只为一批并行核验。每批落盘，慢页有限重试；关闭页面继续。GET返回进度和当前候选，`id`与`count`相同只返回进度，避免反复下载完整候选。所有任务响应为no-store，防止缓存让进度停住。
+
+历史日线在Durable Object保存，下一次只取最近5根并对齐复权基准；重叠历史变化时重取500根。5分钟内相同历史复用已经验证的结果（带原来源日期），这不是每5分钟自动扫描。完成后2分钟内重复点按复用同一任务，失败标的可单独重试。盘中任务无推送；每日收盘推送仍只执行一次。
+
+2026-10-27首轮实测：名单5576只，流动性预筛后1149只，冷启动总耗时224439毫秒；产出218个未施加股性/市值筛选的规则候选，1只来源超时。初轮数据对齐问题作为未命中记录，后续已改为单独标记未核验并允许重试。没有旧方案同环境基准，不声称倍数或指数级提升。
+
+## 主题雷达
+
+概念与行业分别取新浪完整分类。当前实测概念175个，包含机器人、智能机器、创新药等。热力图面积按成交额平方根权重并限制极端权重；颜色表示涨跌，不是预测。点开后核对完整成分数量、展示上涨/下跌扩散、龙头和关联概念；关联仅代表当前领涨股相同。主题快讯按关键词匹配，未匹配时保持空。资金净额来源未提供时保持null；不把成交额当净流入。

@@ -39,6 +39,57 @@ class Panel extends StatelessWidget {
   );
 }
 
+/// Research information stays visible; the title is a section heading, not a disclosure.
+class OpenSection extends StatelessWidget {
+  const OpenSection({
+    super.key,
+    required this.title,
+    required this.children,
+    this.subtitle,
+    this.leading,
+    this.tilePadding = EdgeInsets.zero,
+    this.childrenPadding = EdgeInsets.zero,
+    this.shape,
+    this.collapsedShape,
+  });
+  final Widget title;
+  final Widget? subtitle, leading;
+  final List<Widget> children;
+  final EdgeInsetsGeometry tilePadding, childrenPadding;
+  final ShapeBorder? shape, collapsedShape;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: tilePadding,
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            child: Row(
+              children: [
+                if (leading != null) ...[leading!, const SizedBox(width: 8)],
+                Expanded(child: title),
+              ],
+            ),
+          ),
+        ),
+        if (subtitle != null)
+          Padding(padding: const EdgeInsets.only(top: 5), child: subtitle!),
+        const SizedBox(height: 12),
+        Padding(
+          padding: childrenPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class LabelValue extends StatelessWidget {
   const LabelValue(this.label, this.value, {super.key, this.color});
   final String label, value;

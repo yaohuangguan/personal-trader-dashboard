@@ -54,6 +54,7 @@ class AtlasApi {
     String path, {
     Map<String, String>? parameters,
     String? token,
+    Duration timeout = const Duration(seconds: 35),
   }) async {
     final uri = Uri.parse('$base$path').replace(queryParameters: parameters);
     final response = await client
@@ -64,7 +65,7 @@ class AtlasApi {
             if (token != null) 'Authorization': 'Bearer $token',
           },
         )
-        .timeout(const Duration(seconds: 35));
+        .timeout(timeout);
     final data = obj(jsonDecode(utf8.decode(response.bodyBytes)));
     if (response.statusCode >= 400 ||
         data['available'] == false ||
@@ -77,12 +78,12 @@ class AtlasApi {
     return data;
   }
 
-  Future<Json> post(String path, Json body, {required String token}) async {
+  Future<Json> post(String path, Json body, {String? token}) async {
     final response = await client
         .post(
           Uri.parse('$base$path'),
           headers: {
-            'Authorization': 'Bearer $token',
+            if (token != null) 'Authorization': 'Bearer $token',
             'content-type': 'application/json',
           },
           body: jsonEncode(body),

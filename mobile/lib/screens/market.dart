@@ -1,3 +1,5 @@
+import 'sector_explorer.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -11,7 +13,6 @@ import '../widgets/common.dart';
 import '../widgets/market_chart.dart';
 import '../widgets/live_chart_feed.dart';
 import 'stock.dart';
-import 'sector.dart';
 
 const indexSymbols = [
   '000001.SH',
@@ -228,44 +229,7 @@ class _MarketPageState extends State<MarketPage> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               children: [
                 if (error != null) Notice(error!),
-                if (view == 'sector')
-                  AsyncPanel(
-                    load: () => store.api.get('/api/desk/ranks'),
-                    builder: (r) => Column(
-                      children: [
-                        ...rows(r['items']).map(
-                          (b) => ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 2,
-                            ),
-                            title: Text(
-                              str(b['name']),
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                            subtitle: Text(
-                              '${store.t('领涨')} ${str(b['leader'])}',
-                              style: TextStyle(fontSize: 12, color: muted),
-                            ),
-                            trailing: Text(
-                              percent(b['changePercent']),
-                              style: TextStyle(
-                                fontSize: 17,
-                                color: tone(b['changePercent']),
-                              ),
-                            ),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    SectorPage(str(b['code']), str(b['name'])),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SourceLine(r),
-                      ],
-                    ),
-                  ),
+                if (view == 'sector') const SectorExplorer(),
                 if (view == 'mood' && sourceDate != null)
                   AsyncPanel(
                     load: () => store.api.get(

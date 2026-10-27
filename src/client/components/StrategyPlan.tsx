@@ -14,7 +14,7 @@ export default function StrategyPlan({candles,score}:{candles:Candle[];score:num
   <p>{t(p.reasons[0]||'等待有效行情')}</p>
   <div className="strategy-prices">{[['计划入场区间',zone],['结构失效价',p.stop?.toFixed(2)||'—'],['计划 2R',p.targets[0]?.toFixed(2)||'—']].map(([label,value])=><div key={label}><small>{t(label)}</small><b>{t(value)}</b></div>)}</div>
   {p.warnings.map(w=><p className="strategy-warning" key={w}>{t(w)}</p>)}
-  <details><summary>{t('触发证据与历史检验')}</summary><div className="strategy-checks">{p.checks.map(c=><div key={c.label}><span>{c.pass?'✓':'○'} {t(c.label)}</span><small>{t(c.detail)}</small></div>)}</div>
+  <details open><summary>{t('触发证据与历史检验')}</summary><div className="strategy-checks">{p.checks.map(c=><div key={c.label}><span>{c.pass?'✓':'○'} {t(c.label)}</span><small>{t(c.detail)}</small></div>)}</div>
   <p>{t('完成交易')} {history.completed} · {t('胜率')} {history.winRate===null?t('样本不足'):(history.winRate*100).toFixed(1)+'%'} · {t('最大回撤')} {history.maxDrawdown.toFixed(2)}%</p><p>{t(history.notice)}</p><p>{t(strategy.method)}</p></details>
   <small>{t('评分衡量形态条件，不是胜率；价位是条件计划，不代表实际持仓或成交。')}</small>
  </section>;

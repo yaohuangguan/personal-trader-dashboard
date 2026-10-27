@@ -135,7 +135,7 @@ class _F10PageState extends State<F10Page> {
                         LabelValue('地区', str(profile['province'])),
                       ],
                     ),
-                    ExpansionTile(
+                    OpenSection(
                       tilePadding: EdgeInsets.zero,
                       title: Text(s.t('公司简介')),
                       children: [
@@ -145,7 +145,7 @@ class _F10PageState extends State<F10Page> {
                         ),
                       ],
                     ),
-                    ExpansionTile(
+                    OpenSection(
                       tilePadding: EdgeInsets.zero,
                       title: Text(s.t('经营范围')),
                       children: [
@@ -321,9 +321,9 @@ class _F10PageState extends State<F10Page> {
                     for (final r in reportItems.take(8))
                       fact(context, str(r['name']), amount(r['value'])),
                     if (reportItems.length > 8)
-                      ExpansionTile(
+                      OpenSection(
                         tilePadding: EdgeInsets.zero,
-                        title: Text('${s.t('展开全部科目')} (${reportItems.length})'),
+                        title: Text('${s.t('全部报表科目')} (${reportItems.length})'),
                         children: [
                           for (final r in reportItems.skip(8))
                             fact(context, str(r['name']), amount(r['value'])),

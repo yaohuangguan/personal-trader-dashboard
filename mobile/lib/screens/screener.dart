@@ -79,7 +79,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
         PageTitle('五线开花选股器', '寻找值得看图的候选。按你的指南逐项核验，显示形成阶段、缺项和失效条件。'),
         Chips(
           values: const {
-            'auto': '自动优选',
+            'auto': '综合优选',
             'scan': '独立形态',
             'sector': '板块研判 · 天时地利人和',
           },
@@ -133,7 +133,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                       ),
                   ],
                 ),
-                ExpansionTile(
+                OpenSection(
                   tilePadding: EdgeInsets.zero,
                   title: Text(
                     s.t('成交额与筹码条件'),
@@ -227,7 +227,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
               ),
             ],
           ),
-          ExpansionTile(
+          OpenSection(
             tilePadding: EdgeInsets.zero,
             title: Text(s.t('扫描设置'), style: const TextStyle(fontSize: 14)),
             children: [
@@ -322,15 +322,21 @@ class _ScreenerPageState extends State<ScreenerPage> {
                 LinearProgressIndicator(
                   value: state['phase'] == 'universe'
                       ? ((numOf(state['total']) ?? 0) > 0
-                            ? universe.length / numOf(state['total'])!
+                            ? (numOf(obj(state['serverJob'])['registered']) ??
+                                      universe.length) /
+                                  numOf(state['total'])!
                             : 0)
-                      : targets.isEmpty
+                      : (numOf(obj(state['serverJob'])['targets']) ??
+                                targets.length) <=
+                            0
                       ? 0
-                      : cursor / targets.length,
+                      : cursor /
+                            (numOf(obj(state['serverJob'])['targets']) ??
+                                targets.length),
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '${state['phase'] == 'universe' ? universe.length : cursor} / ${state['phase'] == 'universe' ? state['total'] : targets.length} · ${s.t('候选')} ${scan.candidates.length}',
+                  '${state['phase'] == 'universe' ? (obj(state['serverJob'])['registered'] ?? universe.length) : cursor} / ${state['phase'] == 'universe' ? state['total'] : obj(state['serverJob'])['targets'] ?? targets.length} · ${s.t('候选')} ${scan.candidates.length}',
                 ),
                 Text(
                   '${s.t('来源失败')} ${rows(state['failed']).length} · ${s.t('历史不足')} ${state['insufficient']}',
@@ -355,7 +361,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
             selected: stage,
             onSelected: (v) => setState(() => stage = v),
           ),
-          ExpansionTile(
+          OpenSection(
             tilePadding: EdgeInsets.zero,
             title: Text(s.t('筛选与导出'), style: const TextStyle(fontSize: 14)),
             children: [
@@ -443,7 +449,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
             ),
           ...candidates.map((c) => _candidate(context, c)),
           if (obj(state['rejected']).isNotEmpty)
-            ExpansionTile(
+            OpenSection(
               title: Text(s.t('过滤原因统计')),
               children: obj(state['rejected']).entries
                   .map(
@@ -458,7 +464,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                   .toList(),
             ),
           if (rows(state['failed']).isNotEmpty)
-            ExpansionTile(
+            OpenSection(
               title: Text('${s.t('未完成标的')} ${rows(state['failed']).length}'),
               children: rows(state['failed'])
                   .map(

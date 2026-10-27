@@ -1,3 +1,4 @@
+import {sectorMap,sectorDetail,sectorNews} from './sector-map';
 import {watchInsight} from './watch-insight';
 import {patternScreen,patternBatch} from './pattern-screen';
 import {f10} from './f10';
@@ -13,6 +14,8 @@ export async function deskRoute(request: Request): Promise<Response | null> {
   const symbol = url.searchParams.get('symbol') || '';
   const kind = url.pathname.slice('/api/desk/'.length);
   try {
+    if(kind==='sector-map'){const type=url.searchParams.get('type')==='industry'?'industry':'concept';return respond(await memo('heat:'+type,90,()=>sectorMap(type)));}
+    if(kind==='sector-detail'||kind==='sector-news'){const code=url.searchParams.get('code')||'';if(!/^SN:(?:gn_[A-Za-z0-9_]{1,40}|new_[a-z0-9]{2,20})$/.test(code))return respond({error:'无效板块代码'},400);return respond(await memo<unknown>(kind+code,60,()=>kind==='sector-detail'?sectorDetail(code):sectorNews(code)));}
     if(kind==='screen-batch'){const symbols=[...new Set((url.searchParams.get('symbols')||'').split(','))];if(!symbols.length||symbols.length>4||symbols.some(s=>!/^\d{6}\.(SH|SZ|BJ)$/.test(s)))return respond({error:'请提供1至4个证券代码'},400);return respond(await patternBatch(symbols,url.searchParams));}
     if (kind === 'quotes') {
       const symbols = [...new Set((url.searchParams.get('symbols') || '').split(',').filter(Boolean))].sort();

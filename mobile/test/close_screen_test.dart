@@ -94,13 +94,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+
       expect(find.text('测试候选'), findsOneWidget);
       expect(find.text('成交不足样本'), findsNothing);
-      expect(find.text('优先复核'), findsOneWidget);
+      expect(find.text('量价承接'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('评分依据与风险'));
-      await tester.tap(find.text('评分依据与风险'));
-      await tester.pumpAndSettle();
       expect(find.text('来源证据'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

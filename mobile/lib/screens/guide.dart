@@ -64,7 +64,7 @@ class GuideEvidencePanel extends StatelessWidget {
                   ),
                 ),
               ),
-              ExpansionTile(
+              OpenSection(
                 tilePadding: EdgeInsets.zero,
                 title: Text(s.t('评分口径'), style: const TextStyle(fontSize: 14)),
                 children: [
@@ -162,7 +162,7 @@ class GuideEvidencePanel extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               ...rows(guide['rules']).map(
-                (r) => ExpansionTile(
+                (r) => OpenSection(
                   leading: Icon(
                     r['state'] == 'pass'
                         ? Icons.check_circle_outline
