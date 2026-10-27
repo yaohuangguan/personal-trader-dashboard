@@ -53,3 +53,9 @@ test('STAR daily volumes in shares and ordinary daily volumes in lots produce th
  const ordinary=evaluateScreen({bars,raw:bars,quote:q,provider:'Tencent',options,now});const shares=bars.map(c=>({...c,volume:c.volume*100}));
  const star=evaluateScreen({bars:shares,raw:shares,quote:{...q,symbol:'688123.SH'},provider:'Tencent',options,now});assert.equal(star.candidate?.chip.concentration90,ordinary.candidate?.chip.concentration90);assert.ok(star.candidate);
 });
+
+test('short but valid daily histories are sample exclusions, not source failures',()=>{
+ const bars=flat(30),quote=snapshot(bars),at=new Date(quote.asOf);const result=evaluateScreen({bars,raw:bars,quote,provider:'fixture',options:{...DEFAULT_SCREEN,activity:false},now:at});
+ assert.equal(result.candidate,null);assert.match(result.reason||'',/样本不足65根/);
+ const invalid=bars.map((c,i)=>i===1?{...c,high:c.low-1}:c);assert.match(evaluateScreen({bars:invalid,raw:invalid,quote,provider:'fixture',options:DEFAULT_SCREEN,now:at}).reason||'',/无效/);
+});

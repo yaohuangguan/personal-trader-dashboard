@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:market_atlas/core/api.dart';
 import 'package:market_atlas/core/push_service.dart';
 import 'package:market_atlas/core/store.dart';
+import 'package:market_atlas/core/snapshot.dart';
 import 'package:market_atlas/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -110,7 +111,7 @@ void main() {
       await push.dispose();
     },
   );
-  testWidgets('iOS native chart gestures, landscape and MA editing', (
+  testWidgets('iOS native chart gestures, full-screen panes and MA editing', (
     tester,
   ) async {
     final s = await chartStore(), prices = ValueNotifier(chartFixture());
@@ -132,19 +133,31 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 300));
     await Future<void>.delayed(const Duration(seconds: 2));
     await tester.pumpAndSettle();
+    final viewport = MediaQuery.sizeOf(
+      tester.element(find.byKey(const ValueKey('candlestick-canvas')).last),
+    );
+    final orientation = viewport.width > viewport.height
+        ? 'landscape'
+        : 'portrait';
+    binding.reportData = {
+      ...?binding.reportData,
+      'fullscreenOrientation': orientation,
+      'viewportWidth': viewport.width,
+      'viewportHeight': viewport.height,
+    };
     expect(find.byTooltip('副图布局'), findsOneWidget);
-    await binding.takeScreenshot('ios-chart-landscape-default');
+    await binding.takeScreenshot('ios-chart-fullscreen-$orientation-default');
     await tester.tap(find.byTooltip('副图布局'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('全部副图 · 可纵向滚动'));
+    await tester.tap(find.textContaining('全部副图').last);
     await tester.pumpAndSettle();
-    await binding.takeScreenshot('ios-chart-landscape-all-upper');
+    await binding.takeScreenshot('ios-chart-fullscreen-$orientation-all-upper');
     await tester.drag(
       find.byKey(const ValueKey('candlestick-canvas')).last,
       const Offset(0, -180),
     );
     await tester.pumpAndSettle();
-    await binding.takeScreenshot('ios-chart-landscape-all-lower');
+    await binding.takeScreenshot('ios-chart-fullscreen-$orientation-all-lower');
     await tester.ensureVisible(find.byTooltip('副图布局'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('副图布局'));
@@ -153,7 +166,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(painter(tester).volume, isTrue);
     expect(painter(tester).kdj, isFalse);
-    await binding.takeScreenshot('ios-chart-landscape-macd');
+    await binding.takeScreenshot('ios-chart-fullscreen-$orientation-macd');
     await tester.tap(find.byTooltip('均线参数'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(1), '10');
@@ -176,4 +189,32 @@ void main() {
     s.dispose();
     prices.dispose();
   }, timeout: const Timeout(Duration(minutes: 5)));
+  testWidgets(
+    'native screenshot PNG copies to image clipboard without Photos',
+    (tester) async {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: RepaintBoundary(
+                key: key,
+                child: const SizedBox(
+                  width: 120,
+                  height: 80,
+                  child: ColoredBox(color: Colors.red),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final png = await StockSnapshot.capture(key, pixelRatio: 2);
+      expect(png.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
+      await StockSnapshot.copy(png);
+      expect(tester.takeException(), isNull);
+      binding.reportData = {...?binding.reportData, 'nativePngClipboard': true};
+    },
+  );
 }

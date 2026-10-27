@@ -61,7 +61,8 @@ export function recentLimitUps(bars:Candle[],symbol:string,name:string){
 export function evaluateScreen(input:{bars:Candle[];raw:Candle[];quote:Snapshot;chipBars?:ChipBar[];provider:string;options:ScreenOptions;volumeUnit?:'股'|'手';now?:Date}){
  const {bars,raw,quote:q,options:o}=input,clock=input.now||new Date(),last=bars.at(-1),date=last?.time,rejected=(reason:string)=>({candidate:null,reason,asOf:date});
  if(date&&(clock.getTime()-Date.parse(date+'T00:00:00Z')>7*86400000||Date.parse(date+'T00:00:00Z')>clock.getTime()+86400000))return rejected('日线过期或日期无效');
- if(!last||bars.length<65||q.stale||q.asOf.slice(0,10)!==date||bars.some((c,i)=>![c.open,c.close,c.high,c.low,c.volume].every(Number.isFinite)||c.low<=0||c.high<Math.max(c.close,c.open)||c.low>Math.min(c.open,c.close)||c.volume<0||i>0&&c.time<=bars[i-1].time))return rejected('日线与快照缺失、无效或日期不一致');
+ if(!last||q.stale||q.asOf.slice(0,10)!==date||bars.some((c,i)=>![c.open,c.close,c.high,c.low,c.volume].every(Number.isFinite)||c.low<=0||c.high<Math.max(c.close,c.open)||c.low>Math.min(c.open,c.close)||c.volume<0||i>0&&c.time<=bars[i-1].time))return rejected('日线与快照缺失、无效或日期不一致');
+ if(bars.length<65)return rejected('历史样本不足65根，暂不参加形态筛选');
  if(Math.abs(last.close/q.price-1)>.005)return rejected('日线与快照价格未对齐');
  if(q.amount===null||q.amount<2e8)return rejected('成交额不足2亿元');
  if(o.maxMarketCap!==null&&(q.marketCap===null||q.marketCap>o.maxMarketCap))return rejected('超过市值上限或市值待核验');

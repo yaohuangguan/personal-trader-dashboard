@@ -112,20 +112,20 @@ export class ResearchScreen {
        out=evaluateScreen({bars:adjusted.candles,raw:raw.candles,quote,provider:adjusted.provider+' / 腾讯快照更新当日OHLCV',volumeUnit:unit,options:OPTIONS,now:new Date(quote.asOf)});
        if(/缺失|无效|不一致|未对齐|过期/.test(out.reason||''))throw new Error(out.reason!);
        await this.storage.put(cacheKey,{at:Date.now(),adjusted,raw,quote,result:out,unit} satisfies Cached);
-      }else if(!q&&cached&&Date.now()-cached.at<300000&&!/缺失|无效|不一致|未对齐|过期/.test(cached.result.reason||'')){out=cached.result;job.cached++;}
+      }else if(!q&&cached&&Date.now()-cached.at<300000&&!/缺失|无效|不一致|未对齐|过期/.test(cached.result.reason||'')){out=cached.result;quote=cached.quote;job.cached++;}
       else {
        if(job.phase==='cache'){deferred.push(stock);return;}
        const signal=AbortSignal.timeout(6000);
        if(stock.symbol.endsWith('.BJ')){const [daily,feed]=await Promise.all([sinaBeijingDaily(stock.symbol,500,signal),q?Promise.resolve({items:[q]}):quotes([stock.symbol])]);adjusted={candles:daily.candles,provider:'新浪北交所未复权日线'};raw=adjusted;const live=feed.items.find(q=>q.symbol===stock.symbol);if(!live)throw new Error('北交所快照缺失');quote=live;}
        else {
-        try{const [daily,unadjusted]=await Promise.all([fetchScreenDaily(stock.symbol,true,500,signal),fetchScreenDaily(stock.symbol,false,20,signal)]);adjusted=daily;raw=unadjusted;if(!q&&!daily.quote)throw new Error('缺少可核验快照');quote=q||daily.quote!;}
+        try{const [daily,unadjusted]=await Promise.all([fetchScreenDaily(stock.symbol,true,500,signal),fetchScreenDaily(stock.symbol,false,20,signal)]);adjusted=daily;raw=unadjusted;if(!q&&!daily.quote)throw new Error('缺少可核验快照');quote=daily.quote&&(!q||daily.quote.asOf>q.asOf)?daily.quote:q!;}
         catch(e){signal.throwIfAborted();if(!q)throw e;const [daily,unadjusted]=await Promise.all([sinaAdjustedDaily(stock.symbol,500,signal),sinaRawDaily(stock.symbol,20,signal)]);adjusted={candles:daily.candles,provider:'新浪复权日线（独立备用源）'};raw={candles:unadjusted.candles,provider:'新浪未复权日线'};quote=q;unit='股';}
        }
        out=evaluateScreen({bars:adjusted.candles,raw:raw.candles,quote,provider:adjusted.provider,volumeUnit:unit,options:OPTIONS,now:new Date(quote.asOf)});
        if(/缺失|无效|不一致|未对齐|过期/.test(out.reason||''))throw new Error(out.reason!);
        await this.storage.put(cacheKey,{at:Date.now(),adjusted,raw,quote,result:out,unit} satisfies Cached);
       }
-      job.checked++;if(out.candidate){result.candidates.push({...out.candidate,snapshotAt:stock.snapshot?.asOf} as ScreenCandidate);job.candidateCount++;}else{const reason=out.reason||'未命中';job.rejected[reason]=(job.rejected[reason]||0)+1;}
+      job.checked++;if(out.candidate){result.candidates.push({...out.candidate,snapshotAt:quote.asOf} as ScreenCandidate);job.candidateCount++;}else{const reason=out.reason||'未命中';job.rejected[reason]=(job.rejected[reason]||0)+1;}
      }catch(e){job.failed++;result.failed.push(stock);if(job.failureSample.length<40)job.failureSample.push({symbol:stock.symbol,reason:failure(e)});}
     }));
     const resultIndex=job.resultCount??Math.ceil(job.cursor/8);
