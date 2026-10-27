@@ -25,7 +25,7 @@ import type { MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared
 
 type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved'|'screener'|'signals';
 const NAV:[View,string,typeof Globe2][]=[
- ['research','个股工作台',Target],['screener','五线选股器',SlidersHorizontal],['signals','盘中信号',Bell],['markets','市场全景',LineChart],['news','7×24 快讯',Globe2],
+ ['research','个股工作台',Target],['screener','选股雷达',SlidersHorizontal],['signals','收盘信号',Bell],['markets','市场全景',LineChart],['news','7×24 快讯',Globe2],
  ['overview','情报总览',LayoutDashboard],['radar','产业联动',Radar],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
 ];
 function readStored<T>(key:string,fallback:T):T{
