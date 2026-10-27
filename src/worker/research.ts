@@ -167,11 +167,11 @@ export async function announcementDetail(artCode:string):Promise<{
 
 
 /** Public BJ daily history: raw prices, explicitly not forward adjusted. */
-async function sinaRawDaily(symbol:string,count=500):Promise<{candles:Candle[];url:string}> {
+export async function sinaRawDaily(symbol:string,count=500,signal?:AbortSignal):Promise<{candles:Candle[];url:string}> {
  if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))throw new Error('Invalid Chinese symbol');
  const wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6),name='_'+wire+'_240_'+count;
  const url='https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20'+name+'=/CN_MarketData.getKLineData?symbol='+wire+'&scale=240&ma=no&datalen='+count;
- const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://finance.sina.com.cn/'},signal:AbortSignal.timeout(9000)});
+ const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://finance.sina.com.cn/'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(9000)]):AbortSignal.timeout(9000)});
  if(!response.ok)throw new Error('Sina daily HTTP '+response.status);
  const text=await response.text(),match=new RegExp('var '+name+'=\\((\\[[\\s\\S]*?\\])\\);?\\s*$').exec(text);
  if(!match)throw new Error('Sina daily response format changed');
@@ -183,9 +183,9 @@ async function sinaRawDaily(symbol:string,count=500):Promise<{candles:Candle[];u
 }
 
 
-export async function sinaBeijingDaily(symbol:string,count=500):Promise<{candles:Candle[];url:string}> {
+export async function sinaBeijingDaily(symbol:string,count=500,signal?:AbortSignal):Promise<{candles:Candle[];url:string}> {
  if(!/^\d{6}\.BJ$/.test(symbol))throw new Error('Invalid Beijing symbol');
- return sinaRawDaily(symbol,count);
+ return sinaRawDaily(symbol,count,signal);
 }
 export function parseSinaFactors(text:string,wire:string):{date:string;factor:number}[] {
  if(!/^(sh|sz)\d{6}$/.test(wire))throw new Error('Invalid factor symbol');
@@ -201,11 +201,11 @@ export function applySinaFactors(candles:Candle[],factors:{date:string;factor:nu
  const rows=candles.map(c=>{const factor=[...factors].reverse().find(f=>f.date<=c.time)?.factor;if(!factor)throw new Error('Missing historical adjustment factor');return {...c,open:c.open/factor,high:c.high/factor,low:c.low/factor,close:c.close/factor};});
  return validateDailyBars(rows,candles.length);
 }
-export async function sinaAdjustedDaily(symbol:string,count=500):Promise<{candles:Candle[];url:string}> {
+export async function sinaAdjustedDaily(symbol:string,count=500,signal?:AbortSignal):Promise<{candles:Candle[];url:string}> {
  if(!/^\d{6}\.(SH|SZ)$/.test(symbol)||symbol.startsWith('000')&&symbol.endsWith('.SH')||symbol.startsWith('399')&&symbol.endsWith('.SZ'))throw new Error('Sina adjusted adapter supports Chinese equities');
- const raw=await sinaRawDaily(symbol,count),wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6);
+ const raw=await sinaRawDaily(symbol,count,signal),wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6);
  const url='https://finance.sina.com.cn/realstock/company/'+wire+'/qfq.js';
- const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://finance.sina.com.cn/'},signal:AbortSignal.timeout(6000)});
+ const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://finance.sina.com.cn/'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(6000)]):AbortSignal.timeout(6000)});
  if(!response.ok)throw new Error('Sina factors HTTP '+response.status);
  const factors=parseSinaFactors(await response.text(),wire),candles=applySinaFactors(raw.candles,factors);
  if(candles.length!==raw.candles.length)throw new Error('Adjustment produced invalid historical rows');

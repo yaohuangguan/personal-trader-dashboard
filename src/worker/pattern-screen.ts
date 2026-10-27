@@ -4,10 +4,10 @@ import {validateDailyBars,sinaBeijingDaily} from './research';
 import type {Candle} from '../shared/types';
 export type DayData={candles:Candle[];quote?:import('../shared/desk-types').Snapshot;provider:string};
 type Node={day?:unknown[][];qfqday?:unknown[][];qt?:Record<string,string[]>};
-export async function fetchScreenDaily(symbol:string,adjusted:boolean,count=adjusted?500:20){
+export async function fetchScreenDaily(symbol:string,adjusted:boolean,count=adjusted?500:20,signal?:AbortSignal){
  const wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6),base='https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=';
  const url=(size:number)=>base+wire+',day,,,'+size+','+(adjusted?'qfq':'');
- const request=(size:number)=>fetch(url(size),{headers:{Referer:'https://gu.qq.com/','User-Agent':'Mozilla/5.0'},signal:AbortSignal.timeout(7000)});
+ const request=(size:number)=>fetch(url(size),{headers:{Referer:'https://gu.qq.com/','User-Agent':'Mozilla/5.0'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(7000)]):AbortSignal.timeout(7000)});
  let r=await request(count);
  // The upstream CDN sometimes returns HTTP 501 for short adjusted windows from Workers.
  // Use the canonical full-history URL, then slice locally; never turn that into an empty result.
