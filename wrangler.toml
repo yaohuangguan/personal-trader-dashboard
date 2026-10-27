@@ -5,6 +5,10 @@ compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+[[kv_namespaces]]
+binding = "SHARES"
+id = "f1156c885e0c4bf9baeb5f36d4ce0a78"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"
