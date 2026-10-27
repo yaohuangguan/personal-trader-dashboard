@@ -210,7 +210,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final png = await StockSnapshot.capture(key, pixelRatio: 2);
+      // Live tests still require an explicit pump for endOfFrame callbacks.
+      final capture = StockSnapshot.capture(key, pixelRatio: 2);
+      await tester.pump();
+      final png = await capture.timeout(const Duration(seconds: 20));
       expect(png.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
       await StockSnapshot.copy(png);
       expect(tester.takeException(), isNull);
