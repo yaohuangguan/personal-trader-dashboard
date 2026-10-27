@@ -233,9 +233,10 @@ class _MarketChartState extends State<MarketChart> {
               20,
               18,
               20,
-              MediaQuery.viewInsetsOf(ctx).bottom + 22,
+              math.max(0, MediaQuery.viewInsetsOf(ctx).bottom) + 22,
             ),
             child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
