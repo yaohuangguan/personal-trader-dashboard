@@ -11,10 +11,38 @@ import 'package:market_atlas/core/store.dart';
 import 'package:market_atlas/core/indicators.dart';
 import 'package:market_atlas/screens/news.dart';
 import 'package:market_atlas/screens/stock.dart';
+import 'package:market_atlas/main.dart';
+import 'package:market_atlas/core/push_service.dart';
+import 'package:market_atlas/core/palette.dart';
 
 import 'support/chart_harness.dart';
 
 void main() {
+  testWidgets(
+    'white mode persists and updates native surface and chart colors',
+    (tester) async {
+      final s = await chartStore(),
+          push = NativePushService(s.api, s.deviceToken);
+      await s.setTheme('light');
+      await tester.pumpWidget(AtlasApp(store: s, push: push));
+      await tester.pumpAndSettle();
+      expect(AtlasPalette.light, true);
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold).first)).brightness,
+        Brightness.light,
+      );
+      expect(ink.computeLuminance(), lessThan(.15));
+      expect(surface.computeLuminance(), greaterThan(.9));
+      expect(chartColor(Colors.white).computeLuminance(), lessThan(.2));
+      expect(s.prefs.getString('themeMode'), 'light');
+      await s.setTheme('dark');
+      await tester.pumpAndSettle();
+      expect(AtlasPalette.light, false);
+      await tester.pumpWidget(const SizedBox.shrink());
+      s.dispose();
+      await push.dispose();
+    },
+  );
   test(
     'groups persist, support multiple membership and keep stocks when deleted',
     () async {

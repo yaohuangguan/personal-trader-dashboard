@@ -76,7 +76,7 @@ class _LiveChartFeedState extends State<LiveChartFeed> {
                   children: [
                     Text(
                       '$error',
-                      style: const TextStyle(fontSize: 13, color: muted),
+                      style: TextStyle(fontSize: 13, color: muted),
                     ),
                     TextButton(
                       onPressed: refresh,
@@ -112,7 +112,7 @@ class _LiveChartFeedState extends State<LiveChartFeed> {
                     '${tr(context, '刷新失败，保留上一快照')} · ${str(data!['asOf'])}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: muted),
+                    style: TextStyle(fontSize: 10, color: muted),
                   ),
                 ),
               ),

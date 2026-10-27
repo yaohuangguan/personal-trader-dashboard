@@ -1,3 +1,4 @@
+import {SharedArticle,SharedAnnouncement} from './SharedArticle';
 import {newsLink,readNewsLink} from '../../shared/news-link';
 import {t as uiText} from '../preferences';
 import {createContext,useCallback,useContext,useEffect,useMemo,useState,type ReactNode} from 'react';
@@ -6,6 +7,7 @@ import type {FundamentalsPayload,MarketPayload,NewsItem} from '../../shared/type
 
 type ReadingItem =
  | {kind:'news'; item:NewsItem}
+ | {kind:'shared';id:string}
  | {kind:'filing';symbol:string;form:string;date:string;title?:string}
  | {kind:'finance';data:FundamentalsPayload}
  | {kind:'market';data:MarketPayload};
@@ -34,6 +36,7 @@ function OfficialDocument({symbol,form,date}:{symbol:string;form:string;date:str
  </section>;
 }
 function ReaderContents({selection}:{selection:ReadingItem}){
+ if(selection.kind==='shared')return <SharedArticle id={selection.id} render={article=>article.kind==='announcement'&&article.code?<SharedAnnouncement code={article.code}/>:<ReaderContents selection={{kind:'news',item:article.item}}/>}/>;
  if(selection.kind==='news'){
   const n=selection.item;
   let host='新闻来源';try{host=new URL(n.url).hostname.replace(/^www\./,'');}catch{}
@@ -79,8 +82,10 @@ function ReaderContents({selection}:{selection:ReadingItem}){
 }
 export function InAppReaderProvider({children}:{children:ReactNode}){
  const [selected,setSelected]=useState<ReadingItem|null>(null);
- const close=useCallback(()=>{setSelected(null);const u=new URL(location.href);u.searchParams.delete('article');history.replaceState(null,'',u);},[]);
- useEffect(()=>{const raw=new URLSearchParams(location.search).get('article');if(raw){const item=readNewsLink(raw);if(item)setSelected({kind:'news',item});}},[]);
+ const [sharing,setSharing]=useState(false),[shareMessage,setShareMessage]=useState('');
+ const copyShare=async()=>{if(selected?.kind!=='news')return;setSharing(true);setShareMessage('');try{const r=await fetch('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:selected.item})}),j=await r.json();if(!r.ok)throw new Error(j.error||'分享失败');await navigator.clipboard.writeText(j.url);setShareMessage('站内短链接已复制');}catch(e){setShareMessage(e instanceof Error?e.message:'分享失败');}finally{setSharing(false);}};
+ const close=useCallback(()=>{setSelected(null);const u=new URL(location.href);u.searchParams.delete('article');if(/^\/n\//.test(u.pathname))u.pathname='/';history.replaceState(null,'',u);},[]);
+ useEffect(()=>{const short=/^\/n\/([A-Za-z0-9_-]{16})$/.exec(location.pathname);if(short){setSelected({kind:'shared',id:short[1]});return;}const raw=new URLSearchParams(location.search).get('article');if(raw){const item=readNewsLink(raw);if(item)setSelected({kind:'news',item});}},[]);
  useEffect(()=>{
   if(!selected)return;
   const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.stopPropagation();close();}};
@@ -100,7 +105,7 @@ export function InAppReaderProvider({children}:{children:ReactNode}){
    <div className="reader-modal" role="dialog" aria-modal="true" aria-label={uiText("站内资料阅读器")}>
     <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><button onClick={close} aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></header>
     <div className="reader-scroll"><ReaderContents selection={selected}/></div>
-    <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button>{selected.kind==='news'&&<button onClick={async()=>{await navigator.clipboard.writeText(newsLink(selected.item,location.origin));}}><Copy size={15}/>{uiText("复制站内链接")}</button>}<span>{uiText("站内阅读 · 来源可追溯")}</span></footer>
+    <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button>{selected.kind==='news'&&<button disabled={sharing} onClick={copyShare}><Copy size={15}/>{uiText("复制站内链接")}</button>}<span role="status">{uiText(shareMessage||'站内阅读 · 来源可追溯')}</span></footer>
    </div>
   </div>)}
  </ReaderContext.Provider>;

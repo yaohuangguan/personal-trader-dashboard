@@ -19,11 +19,21 @@ class ScreenerPage extends StatefulWidget {
 }
 
 class _ScreenerPageState extends State<ScreenerPage> {
-  String scope = 'quick',
+  String scope = 'all',
       tab = 'scan',
       stage = 'all',
       character = 'potential',
       query = '';
+  final Set<String> modes = {'bloom'};
+  String concentration = '20', maxCap = '1000';
+  bool recentLimitUp = false, activity = true;
+  Json get options => {
+    'modes': modes.join(','),
+    'concentration': concentration,
+    'maxCap': maxCap,
+    'recentLimitUp': recentLimitUp ? '1' : '0',
+    'activity': activity ? '1' : '0',
+  };
   bool excludeSt = true, minAmount = true, riskOnly = false;
   @override
   Widget build(BuildContext context) {
@@ -69,6 +79,116 @@ class _ScreenerPageState extends State<ScreenerPage> {
         if (tab == 'sector')
           const SectorOutlook()
         else ...[
+          Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  s.t('形态模式'),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Text(s.t('各形态独立筛选；可单选，多选时命中任意一种即可。')),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final e in const {
+                      'bloom': '五线开花',
+                      'bullish': '多头排列',
+                      'multi': '一阳多线',
+                      'beauty': '美人肩',
+                      'spider': '金蜘蛛',
+                      'cannon': '多方炮',
+                      'limitup': '近10日涨停',
+                    }.entries)
+                      FilterChip(
+                        label: Text(
+                          s.t(e.value),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        selected: modes.contains(e.key),
+                        onSelected: scan.running
+                            ? null
+                            : (v) => setState(() {
+                                if (v) {
+                                  modes.add(e.key);
+                                } else if (modes.length > 1) {
+                                  modes.remove(e.key);
+                                }
+                              }),
+                      ),
+                  ],
+                ),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(
+                    s.t('成交额与筹码条件'),
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: concentration,
+                      decoration: InputDecoration(labelText: s.t('90%筹码集中度上限')),
+                      items: [
+                        for (final n in ['10', '15', '20'])
+                          DropdownMenuItem(value: n, child: Text('$n%')),
+                      ],
+                      onChanged: scan.running
+                          ? null
+                          : (v) => setState(() => concentration = v!),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: maxCap,
+                      decoration: InputDecoration(labelText: s.t('市值上限（亿）')),
+                      items: [
+                        for (final n in ['200', '500', '1000', '3000', ''])
+                          DropdownMenuItem(
+                            value: n,
+                            child: Text(n.isEmpty ? s.t('不限') : n),
+                          ),
+                      ],
+                      onChanged: scan.running
+                          ? null
+                          : (v) => setState(() => maxCap = v!),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        s.t('所有形态加筛近10日涨停'),
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      value: recentLimitUp,
+                      onChanged: scan.running
+                          ? null
+                          : (v) => setState(() => recentLimitUp = v),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        s.t('排除低弹性与弱延续'),
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      value: activity,
+                      onChanged: scan.running
+                          ? null
+                          : (v) => setState(() {
+                              activity = v;
+                              character = v ? 'potential' : 'all';
+                            }),
+                    ),
+                  ],
+                ),
+                Notice(
+                  s.t(
+                    '一阳多线需实体上穿至少三线且含MA60、90%集中度<15%；其余模式集中度<20%。筹码按量价与换手模型估算；涨停按近10根已收盘未复权日线规则估算，不含未收盘当天。',
+                  ),
+                ),
+              ],
+            ),
+          ),
           Row(
             children: [
               Expanded(
@@ -80,13 +200,13 @@ class _ScreenerPageState extends State<ScreenerPage> {
                         ? '我的自选'
                         : '快速抽样 · 最多200只',
                   ),
-                  style: const TextStyle(fontSize: 13, color: muted),
+                  style: TextStyle(fontSize: 13, color: muted),
                 ),
               ),
               FilledButton.icon(
                 onPressed: () => scan.running
                     ? scan.pause()
-                    : scan.start(scope, excludeSt, minAmount),
+                    : scan.start(scope, excludeSt, true, options: options),
                 icon: Icon(
                   scan.running ? Icons.pause : Icons.play_arrow,
                   size: 16,
@@ -132,14 +252,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                           : (v) => setState(() => excludeSt = v!),
                       title: Text(s.t('排除ST与退市名称')),
                     ),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: minAmount,
-                      onChanged: scan.running || scope != 'quick'
-                          ? null
-                          : (v) => setState(() => minAmount = v!),
-                      title: Text(s.t('快速预筛成交额≥2亿')),
-                    ),
+                    Notice(s.t('全部模式：成交额≥2亿、筹码集中')),
                     Wrap(
                       spacing: 12,
                       runSpacing: 10,
@@ -147,7 +260,12 @@ class _ScreenerPageState extends State<ScreenerPage> {
                         FilledButton.icon(
                           onPressed: () => scan.running
                               ? scan.pause()
-                              : scan.start(scope, excludeSt, minAmount),
+                              : scan.start(
+                                  scope,
+                                  excludeSt,
+                                  true,
+                                  options: options,
+                                ),
                           icon: Icon(
                             scan.running ? Icons.pause : Icons.play_arrow,
                           ),
@@ -163,11 +281,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                     const SizedBox(height: 16),
                     Text(
                       s.t('扫描在本页打开时运行，站内查看个股时继续扫描；隐藏浏览器窗口或离线会暂停。'),
-                      style: const TextStyle(
-                        color: muted,
-                        fontSize: 13,
-                        height: 1.7,
-                      ),
+                      style: TextStyle(color: muted, fontSize: 13, height: 1.7),
                     ),
                   ],
                 ),
@@ -208,7 +322,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                 ),
                 Text(
                   '${s.t('来源失败')} ${rows(state['failed']).length} · ${s.t('历史不足')} ${state['insufficient']}',
-                  style: const TextStyle(color: muted, fontSize: 13),
+                  style: TextStyle(color: muted, fontSize: 13),
                 ),
                 if (state['message'] != null) Notice(str(state['message'])),
                 if (state['universeComplete'] == true &&
@@ -224,6 +338,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
               '启动待确认': '启动待确认',
               '开花确认': '开花确认',
               '回踩观察': '回踩观察',
+              '形态候选': '形态候选',
             },
             selected: stage,
             onSelected: (v) => setState(() => stage = v),
@@ -315,6 +430,21 @@ class _ScreenerPageState extends State<ScreenerPage> {
               ),
             ),
           ...candidates.map((c) => _candidate(context, c)),
+          if (obj(state['rejected']).isNotEmpty)
+            ExpansionTile(
+              title: Text(s.t('过滤原因统计')),
+              children: obj(state['rejected']).entries
+                  .map(
+                    (r) => ListTile(
+                      title: Text(
+                        s.t(r.key),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      trailing: Text(fixed(r.value, 0)),
+                    ),
+                  )
+                  .toList(),
+            ),
           if (rows(state['failed']).isNotEmpty)
             ExpansionTile(
               title: Text('${s.t('未完成标的')} ${rows(state['failed']).length}'),
@@ -355,6 +485,32 @@ class _ScreenerPageState extends State<ScreenerPage> {
             ),
             onTap: () => openStock(context, str(c['symbol'])),
           ),
+          Wrap(
+            spacing: 8,
+            children: rows(c['patterns'])
+                .map(
+                  (p) => Chip(
+                    label: Text(
+                      s.t(str(p['label'])),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          Text(
+            '${s.t('成交额')} ${amount(c['amount'])} · ${s.t('90%集中度')} ${fixed(obj(c['chip'])['concentration90'])}% · ${s.t('市值')} ${amount(c['marketCap'])}',
+            style: const TextStyle(fontSize: 14),
+          ),
+          Text(
+            s.t(str(obj(c['chip'])['notice'])),
+            style: TextStyle(color: muted, fontSize: 12, height: 1.7),
+          ),
+          if ((c['limitUpDates'] as List?)?.isNotEmpty == true)
+            Text(
+              '${s.t('近10日收盘涨停估算')}：${(c['limitUpDates'] as List).join('、')}',
+              style: const TextStyle(fontSize: 13),
+            ),
           Text(
             s.t(str(c['bucket'])),
             style: Theme.of(context).textTheme.titleMedium,
@@ -373,7 +529,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
           Text(s.t(str(character['label'], '股性待计算'))),
           Text(
             '${s.t('60日波动')} ${fixed(character['volatility'])}% · ATR20 ${fixed(character['atr'])}%\n${s.t('历史突破次数')} ${str(character['breakouts'])} · ${s.t('相对量能')} ${fixed(character['volumeExpansion'])}×',
-            style: const TextStyle(color: muted, fontSize: 14, height: 1.9),
+            style: TextStyle(color: muted, fontSize: 14, height: 1.9),
           ),
           ...((c['reasons'] as List?) ?? [])
               .take(3)
@@ -391,7 +547,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 s.t('$r'),
-                style: const TextStyle(fontSize: 14, color: up, height: 1.7),
+                style: TextStyle(fontSize: 14, color: up, height: 1.7),
               ),
             ),
           ),
@@ -413,13 +569,31 @@ class _ScreenerPageState extends State<ScreenerPage> {
     }
 
     final content = [
-      ['名称', '代码', '阶段', '行情日期', '粘合系数%', 'BIAS60%', '股性', '风险', '来源'],
+      [
+        '名称',
+        '代码',
+        '阶段',
+        '行情日期',
+        '命中形态',
+        '成交额(元)',
+        '90%筹码集中度%',
+        '近10日涨停日期',
+        '粘合系数%',
+        'BIAS60%',
+        '股性',
+        '风险',
+        '来源',
+      ],
       ...data.map(
         (c) => [
           c['name'],
           c['symbol'],
           c['bucket'],
           c['asOf'],
+          rows(c['patterns']).map((p) => str(p['label'])).join(';'),
+          c['amount'],
+          obj(c['chip'])['concentration90'],
+          ((c['limitUpDates'] as List?) ?? []).join(';'),
           c['adhesion'],
           c['bias60'],
           obj(c['character'])['label'],

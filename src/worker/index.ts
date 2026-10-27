@@ -1,3 +1,5 @@
+import {level2,type Level2Env} from './level2';
+import {shareRoute,type ShareStore} from './shares';
 import {guideAction,guideTradeMarkers} from '../shared/guide-action';
 import {guideScore} from '../shared/guide-score';
 import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
@@ -14,7 +16,7 @@ import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from 
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env { SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env { SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
@@ -364,6 +366,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   try{return json(await scanOnce(env));}catch(e){return json({error:'Ingestion failed',details:String(e)},502);}
  }
  if(req.method!=='GET')return json({error:'Method not allowed'},405);
+ if(p==='/api/level2'){const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid symbol'},400);return json(await level2(symbol,env));}
  if(p==='/api/analysis'){
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
   const key='mobile-analysis:'+symbol,cached=memory.get(key);let data:MarketPayload;
@@ -484,6 +487,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
 export default {
  async fetch(request:Request,env:Env):Promise<Response>{
   try {
+   const share=await shareRoute(request,env.SHARES);if(share)return share;
    const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
    const desk=await deskRoute(request);if(desk)return desk;
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);

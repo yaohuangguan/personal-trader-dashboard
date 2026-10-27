@@ -1,3 +1,4 @@
+import {patternScreen} from './pattern-screen';
 import {f10} from './f10';
 import {dailyTrend} from '../shared/daily-trend';
 import {gainers,marketPools,dragon,chips} from './market-overview';
@@ -29,6 +30,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       return respond(await memo('peers:' + code, 45, () => peers(code)));
     }
     if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) return respond({ available: false, reason: '此公开接口暂只覆盖沪深北市场，其他市场使用原有授权行情源。' }, 400);
+    if(kind==='screen')return respond(await patternScreen(symbol,url.searchParams));
     if (kind === 'history') {
       const period = url.searchParams.get('period') || '';
       if (!['day','week','month','m5','m15','m30','m60','m120'].includes(period)) return respond({ error: '周期须为日、周、月或5/15/30/60/120分钟' }, 400);

@@ -6,10 +6,9 @@ import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/store.dart';
 
-const up = Color(0xffee5b67),
-    down = Color(0xff38b59c),
-    surface = Color(0xff141417),
-    muted = Color(0xffa4a4b2);
+export '../core/palette.dart';
+import '../core/palette.dart';
+
 Color tone(dynamic value) => numOf(value) == null
     ? muted
     : numOf(value)! >= 0
@@ -32,7 +31,7 @@ class Panel extends StatelessWidget {
       color: surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xff34343c)),
+        side: BorderSide(color: atlasColor(0xff34343c)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(padding: padding, child: child),
@@ -148,7 +147,7 @@ class AsyncPanelState extends State<AsyncPanel> {
             if (loading)
               const CircularProgressIndicator(strokeWidth: 2)
             else
-              const Icon(Icons.cloud_off, color: muted),
+              Icon(Icons.cloud_off, color: muted),
             const SizedBox(height: 14),
             Text(
               loading ? tr(context, '正在连接数据源…') : tr(context, error.toString()),
@@ -188,13 +187,13 @@ class Notice extends StatelessWidget {
     padding: const EdgeInsets.all(12),
     margin: const EdgeInsets.only(bottom: 12),
     decoration: BoxDecoration(
-      color: const Color(0xff23232b),
-      border: Border.all(color: const Color(0xff4b4b59)),
+      color: atlasColor(0xff23232b),
+      border: Border.all(color: atlasColor(0xff4b4b59)),
       borderRadius: BorderRadius.circular(7),
     ),
     child: Text(
       text,
-      style: const TextStyle(color: muted, fontSize: 14, height: 1.6),
+      style: TextStyle(color: muted, fontSize: 14, height: 1.6),
     ),
   );
 }
@@ -212,7 +211,7 @@ class SourceLine extends StatelessWidget {
         str(data['date'] ?? data['asOf'] ?? data['fetchedAt'], ''),
         ?extra,
       ].where((s) => s.isNotEmpty).join(' · '),
-      style: const TextStyle(color: muted, fontSize: 13, height: 1.6),
+      style: TextStyle(color: muted, fontSize: 13, height: 1.6),
     ),
   );
 }
@@ -243,9 +242,7 @@ class Chips extends StatelessWidget {
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: selected == e.key
-                            ? Colors.white
-                            : Colors.transparent,
+                        color: selected == e.key ? ink : Colors.transparent,
                         width: 1.5,
                       ),
                     ),
@@ -255,7 +252,7 @@ class Chips extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       height: 1,
-                      color: selected == e.key ? Colors.white : muted,
+                      color: selected == e.key ? ink : muted,
                       fontWeight: selected == e.key
                           ? FontWeight.w600
                           : FontWeight.normal,
@@ -319,7 +316,7 @@ class PageTitle extends StatelessWidget {
                 ),
               ),
             ),
-            icon: const Icon(Icons.info_outline, size: 17, color: muted),
+            icon: Icon(Icons.info_outline, size: 17, color: muted),
           ),
         ?trailing,
       ],
@@ -363,7 +360,7 @@ class PeriodSelector extends StatelessWidget {
                   tr(context, pair.$2),
                   style: TextStyle(
                     fontSize: 14,
-                    color: value == pair.$1 ? Colors.white : muted,
+                    color: value == pair.$1 ? ink : muted,
                   ),
                 ),
               ),

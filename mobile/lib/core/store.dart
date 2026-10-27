@@ -14,6 +14,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
         prefs.getStringList('watchlist') ??
         ['300545.SZ', '300308.SZ', '300502.SZ'];
     groups = rows(_decode(prefs.getString('watchGroups')));
+    themeMode = prefs.getString('themeMode') ?? 'dark';
     locale = prefs.getString('locale') ?? 'zh-CN';
     fontSize = prefs.getDouble('fontSize') ?? 18;
     bookmarks = rows(_decode(prefs.getString('bookmarks')));
@@ -31,7 +32,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   final SharedPreferences prefs;
   final Map<String, dynamic> english;
   late List<String> watchlist;
-  late String locale;
+  late String locale, themeMode;
   late double fontSize;
   late List<Json> bookmarks, alerts, groups;
   late String deviceToken;
@@ -193,6 +194,12 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     final s = watchlist.removeAt(oldIndex);
     watchlist.insert(newIndex, s);
     await prefs.setStringList('watchlist', watchlist);
+    notifyListeners();
+  }
+
+  Future<void> setTheme(String value) async {
+    themeMode = value == 'light' ? 'light' : 'dark';
+    await prefs.setString('themeMode', themeMode);
     notifyListeners();
   }
 

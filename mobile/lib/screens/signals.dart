@@ -131,7 +131,7 @@ class _SignalsPageState extends State<SignalsPage> {
                   s.t(scope == 'all' ? '全市场 · 沪深北全部证券' : '自定义名单最多60只'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, color: muted),
+                  style: TextStyle(fontSize: 13, color: muted),
                 ),
               ),
               FilledButton.icon(
@@ -160,14 +160,14 @@ class _SignalsPageState extends State<SignalsPage> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(
               '${s.t(str(status?['status'], '尚未开启'))} · ${s.t('底稿')} ${market?['ready'] ?? '—'}/${market?['total'] ?? '—'}',
-              style: const TextStyle(fontSize: 13, color: muted),
+              style: TextStyle(fontSize: 13, color: muted),
             ),
           ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               s.t('盘中每5分钟扫描，休市等待开盘。'),
-              style: const TextStyle(fontSize: 12, color: muted),
+              style: TextStyle(fontSize: 12, color: muted),
             ),
           ),
           ExpansionTile(
@@ -180,7 +180,7 @@ class _SignalsPageState extends State<SignalsPage> {
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: scope,
-                      style: const TextStyle(fontSize: 16, color: Colors.white),
+                      style: TextStyle(fontSize: 16, color: ink),
                       decoration: InputDecoration(labelText: s.t('监控范围')),
                       isExpanded: true,
                       items:
@@ -210,7 +210,7 @@ class _SignalsPageState extends State<SignalsPage> {
                             ? '自动读取完整证券名单，分片持续核验；无需先加入自选。'
                             : '自定义名单最多60只',
                       ),
-                      style: const TextStyle(color: muted, height: 1.7),
+                      style: TextStyle(color: muted, height: 1.7),
                     ),
                     if (scope != 'all')
                       Wrap(
@@ -434,16 +434,12 @@ class _SignalsPageState extends State<SignalsPage> {
                           ? '未收盘候选，后续可能撤回；不是开花确认。'
                           : '已观察后续日线并满足指南确认条件。',
                     ),
-                    style: const TextStyle(
-                      color: muted,
-                      fontSize: 13,
-                      height: 1.8,
-                    ),
+                    style: TextStyle(color: muted, fontSize: 13, height: 1.8),
                   ),
                   if (e['deliveryError'] != null)
                     Text(
                       str(e['deliveryError']),
-                      style: const TextStyle(color: up, fontSize: 13),
+                      style: TextStyle(color: up, fontSize: 13),
                     ),
                 ],
               ),

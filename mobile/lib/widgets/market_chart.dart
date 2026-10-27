@@ -293,8 +293,7 @@ class _MarketChartState extends State<MarketChart> {
                       ],
                     ),
                   ),
-                  if (error != null)
-                    Text(error!, style: const TextStyle(color: up)),
+                  if (error != null) Text(error!, style: TextStyle(color: up)),
                   const SizedBox(height: 20),
                   Row(
                     children: [
@@ -469,7 +468,7 @@ class _MarketChartState extends State<MarketChart> {
                 ),
               Text(
                 tr(ctx, '指标按当前周期计算，历史不足时留空。'),
-                style: const TextStyle(color: muted, fontSize: 13),
+                style: TextStyle(color: muted, fontSize: 13),
               ),
             ],
           ),
@@ -599,7 +598,7 @@ class _MarketChartState extends State<MarketChart> {
                         style: TextStyle(
                           fontSize: 11,
                           height: 1,
-                          color: count == _months(n) ? Colors.white : muted,
+                          color: count == _months(n) ? ink : muted,
                         ),
                       ),
                     ),
@@ -662,7 +661,7 @@ class _MarketChartState extends State<MarketChart> {
                           child: Text(
                             tr(context, item.$1),
                             style: TextStyle(
-                              color: count == item.$2 ? Colors.white : muted,
+                              color: count == item.$2 ? ink : muted,
                               fontSize: 13,
                             ),
                           ),
@@ -738,17 +737,11 @@ class _MarketChartState extends State<MarketChart> {
                     ? [
                         Text(
                           'BOLL (20,2)',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: ink, fontSize: 12),
                         ),
                         Text(
                           'MID ${fixed(indicators.bollMid[idx])}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: ink, fontSize: 12),
                         ),
                         Text(
                           'UP ${fixed(indicators.bollUpper[idx])}',
@@ -759,8 +752,8 @@ class _MarketChartState extends State<MarketChart> {
                         ),
                         Text(
                           'LOW ${fixed(indicators.bollLower[idx])}',
-                          style: const TextStyle(
-                            color: Color(0xffed89bf),
+                          style: TextStyle(
+                            color: atlasColor(0xffed89bf),
                             fontSize: 12,
                           ),
                         ),
@@ -803,7 +796,7 @@ class _MarketChartState extends State<MarketChart> {
                         child: Text(
                           'MA${ma.period} ${ma.enabled ? fixed(indicators.averages[ma.period]?[idx]) : '—'}',
                           style: TextStyle(
-                            color: ma.enabled ? ma.color : muted,
+                            color: ma.enabled ? chartColor(ma.color) : muted,
                             fontSize: widget.terminal ? 12 : 13,
                             height: 1.1,
                           ),
@@ -828,11 +821,7 @@ class _MarketChartState extends State<MarketChart> {
                 children: [
                   Text(
                     c.time,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      height: 1,
-                      color: muted,
-                    ),
+                    style: TextStyle(fontSize: 11, height: 1, color: muted),
                   ),
                   const SizedBox(width: 8),
                   for (final p in [
@@ -852,7 +841,7 @@ class _MarketChartState extends State<MarketChart> {
                               ? up
                               : p.$1 == '低'
                               ? down
-                              : Colors.white,
+                              : ink,
                         ),
                       ),
                     ),
@@ -867,7 +856,7 @@ class _MarketChartState extends State<MarketChart> {
             children: [
               Text(
                 '${widget.expanded ? '${widget.name.isEmpty ? '' : '${widget.name} · '}${widget.symbol} · ' : ''}${c.time}',
-                style: const TextStyle(fontSize: 13, color: muted),
+                style: TextStyle(fontSize: 13, color: muted),
               ),
               for (final pair in [
                 ('开', c.open),
@@ -882,7 +871,7 @@ class _MarketChartState extends State<MarketChart> {
                         ? down
                         : pair.$1 == '高'
                         ? up
-                        : Colors.white,
+                        : ink,
                     fontSize: 13,
                   ),
                 ),
@@ -1026,7 +1015,7 @@ class _MarketChartState extends State<MarketChart> {
         if (!compact && !widget.terminal)
           Text(
             tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
-            style: const TextStyle(fontSize: 12, color: muted),
+            style: TextStyle(fontSize: 12, color: muted),
           ),
       ],
     );
@@ -1235,19 +1224,20 @@ class ChartPainter extends CustomPainter {
   final String unit;
   final double font;
   final bool showSignals, rsi;
+  final bool light = AtlasPalette.light;
   final String overlay;
   void label(
     Canvas c,
     String text,
     Offset p, {
-    Color color = muted,
+    Color? color,
     double? size,
     bool background = false,
   }) {
     final t = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(fontSize: size ?? font, color: color),
+        style: TextStyle(fontSize: size ?? font, color: color ?? muted),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
@@ -1258,7 +1248,7 @@ class ChartPainter extends CustomPainter {
           (p & t.size).inflate(2),
           const Radius.circular(2),
         ),
-        Paint()..color = const Color(0xe609090b),
+        Paint()..color = atlasColor(0xe609090b),
       );
     }
     t.paint(c, p);
@@ -1330,7 +1320,7 @@ class ChartPainter extends CustomPainter {
     if (hi - lo < .0001) hi = lo + 1;
     double y(double v) => 20 + (hi - v) / (hi - lo) * (priceHeight - 30);
     final grid = Paint()
-      ..color = const Color(0xff29292f)
+      ..color = atlasColor(0xff29292f)
       ..strokeWidth = .6;
     final gridCount = priceHeight < 180 ? 3 : 5;
     for (var i = 0; i < gridCount; i++) {
@@ -1374,7 +1364,7 @@ class ChartPainter extends CustomPainter {
       c.drawPath(
         path,
         Paint()
-          ..color = ma.color
+          ..color = chartColor(ma.color)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.1,
       );
@@ -1407,7 +1397,7 @@ class ChartPainter extends CustomPainter {
         c.drawPath(
           path,
           Paint()
-            ..color = [Colors.white, Colors.amber, const Color(0xffed89bf)][k]
+            ..color = [ink, Colors.amber, atlasColor(0xffed89bf)][k]
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.1,
         );
@@ -1441,7 +1431,7 @@ class ChartPainter extends CustomPainter {
         c.drawCircle(
           Offset(px, py),
           3,
-          Paint()..color = const Color(0xffd9c89f),
+          Paint()..color = atlasColor(0xffd9c89f),
         );
       }
     }
@@ -1486,7 +1476,7 @@ class ChartPainter extends CustomPainter {
       bool volumeBars = false,
     }) {
       final h = small - 4;
-      label(c, title, Offset(left, top), color: Colors.white);
+      label(c, title, Offset(left, top), color: ink);
       final all = values
           .expand((r) => r.sublist(start, end).whereType<double>())
           .toList();
@@ -1588,7 +1578,7 @@ class ChartPainter extends CustomPainter {
           data.vol5,
           data.vol20,
         ],
-        [Colors.white, const Color(0xfff7cf65), const Color(0xffed89bf)],
+        [ink, atlasColor(0xfff7cf65), atlasColor(0xffed89bf)],
         volumeBars: true,
       );
     }
@@ -1596,7 +1586,7 @@ class ChartPainter extends CustomPainter {
       pane(
         'MACD',
         [data.hist, data.dif, data.dea],
-        [up, Colors.white, const Color(0xfff7cf65)],
+        [up, ink, atlasColor(0xfff7cf65)],
         histogram: true,
       );
     }
@@ -1604,7 +1594,7 @@ class ChartPainter extends CustomPainter {
       pane(
         'KDJ',
         [data.kdjK, data.kdjD, data.kdjJ],
-        [Colors.white, const Color(0xfff7cf65), const Color(0xffd968e8)],
+        [ink, atlasColor(0xfff7cf65), atlasColor(0xffd968e8)],
       );
     }
     if (rsi) pane('RSI (14)', [data.rsi14], [Colors.amber]);
@@ -1641,7 +1631,7 @@ class ChartPainter extends CustomPainter {
     }
     if (hover != null && hover! >= start && hover! < end) {
       final cross = Paint()
-        ..color = Colors.white54
+        ..color = ink.withValues(alpha: .54)
         ..strokeWidth = .8;
       c.drawLine(
         Offset(x(hover!), 15),
@@ -1658,6 +1648,7 @@ class ChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ChartPainter old) =>
+      light != old.light ||
       data != old.data ||
       start != old.start ||
       end != old.end ||
@@ -1691,7 +1682,7 @@ class IntradayChart extends StatelessWidget {
       children: [
         Text(
           '${data['date']} · ${tr(context, '北京时间')}',
-          style: const TextStyle(color: muted, fontSize: 13),
+          style: TextStyle(color: muted, fontSize: 13),
         ),
         SizedBox(
           height: height,
@@ -1737,7 +1728,7 @@ class _IntradayPainter extends CustomPainter {
       final text = TextPainter(
         text: TextSpan(
           text: v.toStringAsFixed(2),
-          style: const TextStyle(color: muted, fontSize: 12),
+          style: TextStyle(color: muted, fontSize: 12),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -1745,13 +1736,13 @@ class _IntradayPainter extends CustomPainter {
       c.drawLine(
         Offset(8, y(v)),
         Offset(width + 8, y(v)),
-        Paint()..color = const Color(0xff303038),
+        Paint()..color = atlasColor(0xff303038),
       );
     }
     c.drawPath(
       path,
       Paint()
-        ..color = const Color(0xffdddded)
+        ..color = atlasColor(0xffdddded)
         ..strokeWidth = 1.8
         ..style = PaintingStyle.stroke,
     );
@@ -1770,7 +1761,7 @@ class _IntradayPainter extends CustomPainter {
       final t = TextPainter(
         text: TextSpan(
           text: pair.$2,
-          style: const TextStyle(color: muted, fontSize: 12),
+          style: TextStyle(color: muted, fontSize: 12),
         ),
         textDirection: TextDirection.ltr,
       )..layout();

@@ -35,7 +35,7 @@ class _F10PageState extends State<F10Page> {
               flex: 5,
               child: Text(
                 tr(c, name),
-                style: const TextStyle(fontSize: 14, color: muted),
+                style: TextStyle(fontSize: 14, color: muted),
               ),
             ),
             const SizedBox(width: 12),
@@ -50,36 +50,35 @@ class _F10PageState extends State<F10Page> {
           ],
         ),
       );
-  Widget kpi(
-    BuildContext c,
-    String name,
-    String value, {
-    dynamic growth,
-  }) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xff1b1b20),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(tr(c, name), style: const TextStyle(fontSize: 13, color: muted)),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+  Widget kpi(BuildContext c, String name, String value, {dynamic growth}) =>
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: atlasColor(0xff1b1b20),
+            borderRadius: BorderRadius.circular(10),
           ),
-          if (growth != null)
-            Text(
-              '${tr(c, '同比')} ${percent(growth)}',
-              style: TextStyle(fontSize: 13, color: tone(growth)),
-            ),
-        ],
-      ),
-    ),
-  );
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(tr(c, name), style: TextStyle(fontSize: 13, color: muted)),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (growth != null)
+                Text(
+                  '${tr(c, '同比')} ${percent(growth)}',
+                  style: TextStyle(fontSize: 13, color: tone(growth)),
+                ),
+            ],
+          ),
+        ),
+      );
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AtlasStore>();
@@ -123,7 +122,7 @@ class _F10PageState extends State<F10Page> {
                     heading(context, str(profile['name'], '公司概况')),
                     Text(
                       str(profile['industry']),
-                      style: const TextStyle(color: muted, fontSize: 15),
+                      style: TextStyle(color: muted, fontSize: 15),
                     ),
                     const SizedBox(height: 14),
                     Wrap(
@@ -166,7 +165,7 @@ class _F10PageState extends State<F10Page> {
                     heading(context, '最新财务摘要'),
                     Text(
                       '${str(latest['date'])} · ${s.t('报告期累计值')}',
-                      style: const TextStyle(color: muted, fontSize: 13),
+                      style: TextStyle(color: muted, fontSize: 13),
                     ),
                     const SizedBox(height: 14),
                     Row(
@@ -222,7 +221,7 @@ class _F10PageState extends State<F10Page> {
                       ),
                       Text(
                         '${s.t('报告期')} ${str(rows(data['holders']).first['date'])}',
-                        style: const TextStyle(color: muted, fontSize: 12),
+                        style: TextStyle(color: muted, fontSize: 12),
                       ),
                     ],
                     TextButton(
@@ -249,7 +248,7 @@ class _F10PageState extends State<F10Page> {
                                 Expanded(
                                   child: Text(
                                     str(r['date']),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: muted,
                                       fontSize: 13,
                                     ),
@@ -315,11 +314,7 @@ class _F10PageState extends State<F10Page> {
                       ),
                     Text(
                       '${str(selected['published'])} ${s.t('披露')} · ${str(selected['currency'])} · ${str(selected['scope'])} · ${str(selected['audited'])}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: muted,
-                        height: 1.8,
-                      ),
+                      style: TextStyle(fontSize: 12, color: muted, height: 1.8),
                     ),
                     const SizedBox(height: 12),
                     if (reportItems.isEmpty) Notice(s.t('该报表来源暂无已披露记录')),
@@ -352,7 +347,7 @@ class _F10PageState extends State<F10Page> {
                     ),
                     Text(
                       '${s.t('报告期')} ${str(holderRows.firstOrNull?['date'])}',
-                      style: const TextStyle(fontSize: 13, color: muted),
+                      style: TextStyle(fontSize: 13, color: muted),
                     ),
                     if (holderRows.isEmpty) Notice(s.t('来源未提供股东明细')),
                     for (final r in holderRows)
@@ -366,10 +361,7 @@ class _F10PageState extends State<F10Page> {
                               children: [
                                 Text(
                                   '${str(r['rank'])}  ',
-                                  style: const TextStyle(
-                                    color: muted,
-                                    fontSize: 14,
-                                  ),
+                                  style: TextStyle(color: muted, fontSize: 14),
                                 ),
                                 Expanded(
                                   child: Text(
@@ -397,16 +389,13 @@ class _F10PageState extends State<F10Page> {
                                 1,
                               ),
                               minHeight: 3,
-                              color: const Color(0xff8a9aa8),
-                              backgroundColor: const Color(0xff292930),
+                              color: atlasColor(0xff8a9aa8),
+                              backgroundColor: atlasColor(0xff292930),
                             ),
                             const SizedBox(height: 7),
                             Text(
                               '${amount(r['shares'])} ${s.t('股')} · ${str(r['change'])}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: muted,
-                              ),
+                              style: TextStyle(fontSize: 13, color: muted),
                             ),
                           ],
                         ),
@@ -453,7 +442,7 @@ class _F10PageState extends State<F10Page> {
                       fact(context, str(r['name']), amount(r['revenue'])),
                       Text(
                         '${str(r['date'])} · ${s.t('营收占比')} ${fixed(numOf(r['ratio']) == null ? null : numOf(r['ratio'])! * 100)}% · ${s.t('毛利率')} ${fixed(numOf(r['margin']) == null ? null : numOf(r['margin'])! * 100)}%',
-                        style: const TextStyle(fontSize: 13, color: muted),
+                        style: TextStyle(fontSize: 13, color: muted),
                       ),
                       const Divider(height: 22),
                     ],

@@ -1,7 +1,7 @@
 import type {TradeMarker} from '../../shared/guide-action';
 import {t as uiText} from '../preferences';
 import ChipProfile from './ChipProfile';
-import {usePreferences} from '../preferences';
+import {chartColor,usePreferences} from '../preferences';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minimize2, RotateCcw, Settings2 } from 'lucide-react';
 import { createChart, ColorType, CrosshairMode, LineStyle, type IChartApi, type ISeriesApi, type LogicalRange, type Time, type LineData, type WhitespaceData, type SeriesMarker, type AutoscaleInfo } from 'lightweight-charts';
@@ -32,7 +32,7 @@ function timeKey(time: Time): string {
 const rangeSize = (range: Range, length: number, unit: string) => range === 'ALL' ? length : (unit==='week'?[4,13,26,52]:unit==='month'?[1,3,6,12]:[22,66,132,264])[['1M','3M','6M','1Y'].indexOf(range)];
 
 export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, tradeMarkers=[], chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: string;tradeMarkers?:TradeMarker[]; chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
-  const display=usePreferences();
+  const display=usePreferences(),light=display.theme==='light';
   const chipEligible=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&!(/^(?:000\d{3}\.SH|399\d{3}\.SZ)$/.test(symbol));
   const [chipsOpen,setChipsOpen]=useState(false);
   const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null),rsiRef=useRef<HTMLDivElement>(null);
@@ -82,8 +82,8 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     const makeChart = (el: HTMLDivElement, height: number, bottomAxis: boolean) => {
       const chart = createChart(el, {
         width: el.clientWidth, height: paneHeight(el.clientWidth, height),
-        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: '#0c0c0d' }, textColor: '#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: Math.round(display.fontSize*.82) },
-        grid: { vertLines: { visible: false }, horzLines: { color: '#222225' } },
+        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: light?'#ffffff':'#0c0c0d' }, textColor:light?'#555e6c':'#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: Math.round(display.fontSize*.82) },
+        grid: { vertLines: { visible: false }, horzLines: { color:light?'#e8ebef':'#222225' } },
         leftPriceScale: { visible: true, borderVisible: false, entireTextOnly: true, minimumWidth: compact ? 55 : 68, scaleMargins: { top: 0.12, bottom: 0.08 } },
         rightPriceScale: { visible: false },
         timeScale: { visible: bottomAxis, borderVisible: false, tickMarkFormatter:(time:Time)=>typeof time==='number'?timeKey(time).slice(11):null, timeVisible: unit.startsWith('m')&&unit!=='month', lockVisibleTimeRangeOnResize: true, rightOffset: 4, barSpacing: 9, minBarSpacing: 2, fixLeftEdge: false },
@@ -101,7 +101,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       return candles.map(c => map.has(c.time) ? { time: chartTime(c.time), value: map.get(c.time)! } : { time: chartTime(c.time) });
     };
     const addLine = (chart: IChartApi, points: Point[], color: string, width: 1 | 2 = 1) => {
-      const line = chart.addLineSeries({ priceScaleId: 'left', color, lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      const line = chart.addLineSeries({ priceScaleId: 'left', color:chartColor(color,light), lineWidth: width, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
       line.setData(padded(points));
       return line;
     };
@@ -252,7 +252,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         </div>))}</div>
         <div className="terminal-settings-actions"><span role="alert">{uiText(settingsError)}</span><button type="button" onClick={() => setDraft(defaultMAs().map(p => ({ ...p, period: String(p.period) })))}>{uiText("恢复默认")}</button><button className="terminal-apply" type="submit">{uiText("应用参数")}</button></div>
       </form>)}
-      {overlay!=='MA'&&<div className="terminal-ma-legend"><b>{overlay==='BOLL'?'BOLL (20,2)':'SAR (0.02,0.2)'}</b></div>}<div style={{display:overlay==='MA'?undefined:'none'}} className="terminal-ma-legend" aria-label={uiText("均线数值")}>{uiText(preferences.map((line, i) => <button type="button" key={i} aria-label={uiText((line.enabled ? '隐藏' : '显示') + ' MA' + line.period)} aria-pressed={line.enabled} style={{ color: line.color }} className={line.enabled ? '' : 'is-hidden'} onClick={() => setPreferences(old => {
+      {overlay!=='MA'&&<div className="terminal-ma-legend"><b>{overlay==='BOLL'?'BOLL (20,2)':'SAR (0.02,0.2)'}</b></div>}<div style={{display:overlay==='MA'?undefined:'none'}} className="terminal-ma-legend" aria-label={uiText("均线数值")}>{uiText(preferences.map((line, i) => <button type="button" key={i} aria-label={uiText((line.enabled ? '隐藏' : '显示') + ' MA' + line.period)} aria-pressed={line.enabled} style={{ color: chartColor(line.color,light) }} className={line.enabled ? '' : 'is-hidden'} onClick={() => setPreferences(old => {
         const next = old.map((p, n) => n === i ? { ...p, enabled: !p.enabled } : p);
         return validMAPreferences(next) ? next : old;
       })}><i style={{ background: line.color }} /><span>MA{uiText(line.period)}</span><b>{uiText(line.enabled && current ? number(maMaps[line.period]?.get(current.time)) : '—')}</b></button>))}</div>
@@ -264,13 +264,13 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     {uiText(!compact && <>
       <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ','RSI'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("交叉 / 展开标记")}</label></div>
       {uiText(panels.VOL && <section className="terminal-indicator" aria-label={uiText("VOL 成交量副图")}>
-        <div className="terminal-indicator-heading"><b>VOL <small>{uiText(volumeUnit ? '(' + volumeUnit + ')' : '')}</small></b><span>VOLUME <em>{uiText(volumeNumber(current?.volume))}</em></span><span style={{ color: '#f1d55c' }}>MA5 <em>{uiText(volumeNumber(current && volume5.get(current.time)))}</em></span><span style={{ color: '#d968e8' }}>MA20 <em>{uiText(volumeNumber(current && volume20.get(current.time)))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
+        <div className="terminal-indicator-heading"><b>VOL <small>{uiText(volumeUnit ? '(' + volumeUnit + ')' : '')}</small></b><span>VOLUME <em>{uiText(volumeNumber(current?.volume))}</em></span><span style={{color:chartColor('#f1d55c',light)}}>MA5 <em>{uiText(volumeNumber(current && volume5.get(current.time)))}</em></span><span style={{color:chartColor('#d968e8',light)}}>MA20 <em>{uiText(volumeNumber(current && volume20.get(current.time)))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
       </section>)}
       {uiText(panels.MACD && <section className="terminal-indicator" aria-label={uiText("MACD 指标副图")}>
-        <div className="terminal-indicator-heading"><b>MACD <small>(12,26,9)</small></b><span style={{ color: '#ebedf1' }}>DIF <em>{uiText(number(currentMACD?.dif))}</em></span><span style={{ color: '#f1d55c' }}>DEA <em>{uiText(number(currentMACD?.dea))}</em></span><span className={(currentMACD?.histogram ?? 0) >= 0 ? 'terminal-up' : 'terminal-down'}>MACD <em>{uiText(number(currentMACD?.histogram))}</em></span></div><div ref={macdRef} data-testid="macd-pane" />
+        <div className="terminal-indicator-heading"><b>MACD <small>(12,26,9)</small></b><span style={{color:chartColor('#ebedf1',light)}}>DIF <em>{uiText(number(currentMACD?.dif))}</em></span><span style={{color:chartColor('#f1d55c',light)}}>DEA <em>{uiText(number(currentMACD?.dea))}</em></span><span className={(currentMACD?.histogram ?? 0) >= 0 ? 'terminal-up' : 'terminal-down'}>MACD <em>{uiText(number(currentMACD?.histogram))}</em></span></div><div ref={macdRef} data-testid="macd-pane" />
       </section>)}
       {uiText(panels.KDJ && <section className="terminal-indicator" aria-label={uiText("KDJ 指标副图")}>
-        <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{ color: '#ebedf1' }}>K <em>{uiText(number(currentKDJ?.k))}</em></span><span style={{ color: '#f1d55c' }}>D <em>{uiText(number(currentKDJ?.d))}</em></span><span style={{ color: '#d968e8' }}>J <em>{uiText(number(currentKDJ?.j))}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
+        <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{color:chartColor('#ebedf1',light)}}>K <em>{uiText(number(currentKDJ?.k))}</em></span><span style={{color:chartColor('#f1d55c',light)}}>D <em>{uiText(number(currentKDJ?.d))}</em></span><span style={{color:chartColor('#d968e8',light)}}>J <em>{uiText(number(currentKDJ?.j))}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
       </section>)}
       {panels.RSI&&<section className="terminal-indicator" aria-label="RSI"><div className="terminal-indicator-heading"><b>RSI (14)</b><span>{number(extra.rsi.find(p=>p.time===current?.time)?.value)}</span></div><div ref={rsiRef} data-testid="rsi-pane"/></section>}
       <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{uiText(activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中')}</span><span>{uiText(candles.length)} {uiText("根K线 · 拖动平移 / 滚轮缩放")}</span></div>

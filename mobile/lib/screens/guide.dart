@@ -40,7 +40,7 @@ class GuidePanel extends StatelessWidget {
                   ),
                   Text(
                     ' / 100 · ${s.t('五线总分')}',
-                    style: const TextStyle(color: muted, fontSize: 14),
+                    style: TextStyle(color: muted, fontSize: 14),
                   ),
                 ],
               ),
@@ -69,11 +69,7 @@ class GuidePanel extends StatelessWidget {
                 children: [
                   Text(
                     s.t(str(strength['notice'])),
-                    style: const TextStyle(
-                      color: muted,
-                      fontSize: 13,
-                      height: 1.6,
-                    ),
+                    style: TextStyle(color: muted, fontSize: 13, height: 1.6),
                   ),
                 ],
               ),
@@ -124,11 +120,11 @@ class GuidePanel extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   '${s.t('5日延续次数')}: ${numOf(character['continuation']) == null ? '—' : (numOf(character['continuation'])! * numOf(character['breakouts'])!).round()}',
-                  style: const TextStyle(color: muted),
+                  style: TextStyle(color: muted),
                 ),
                 Text(
                   s.t('历史波动不保证未来行情，板块与催化仍需另行核验。'),
-                  style: const TextStyle(fontSize: 13, color: muted),
+                  style: TextStyle(fontSize: 13, color: muted),
                 ),
               ],
             ),
@@ -140,7 +136,7 @@ class GuidePanel extends StatelessWidget {
               children: [
                 Text(
                   s.t(str(r['title'])),
-                  style: const TextStyle(color: muted, fontSize: 14),
+                  style: TextStyle(color: muted, fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -150,7 +146,7 @@ class GuidePanel extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   s.t(str(r['detail'])),
-                  style: const TextStyle(height: 1.8, color: muted),
+                  style: TextStyle(height: 1.8, color: muted),
                 ),
               ],
             ),
@@ -177,14 +173,14 @@ class GuidePanel extends StatelessWidget {
                   title: Text(s.t(str(r['title']))),
                   subtitle: Text(
                     s.t(str(r['value'])),
-                    style: const TextStyle(color: muted, fontSize: 14),
+                    style: TextStyle(color: muted, fontSize: 14),
                   ),
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: Text(
                         '${s.t(str(r['rule']))}\n${s.t('指南 §')}${r['chapter']}',
-                        style: const TextStyle(height: 1.8, color: muted),
+                        style: TextStyle(height: 1.8, color: muted),
                       ),
                     ),
                   ],
@@ -291,7 +287,7 @@ class GuidePanel extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Text(
                     s.t('$r'),
-                    style: const TextStyle(color: up, height: 1.7),
+                    style: TextStyle(color: up, height: 1.7),
                   ),
                 ),
               ),
@@ -302,7 +298,7 @@ class GuidePanel extends StatelessWidget {
                 s.t(
                   '核心五线固定为 MA5/10/20/30/60。长期120/250用于背景观察，图表的八条可调均线独立保留。粘合系数严格采用指南计算器：(最高均线−最低均线)/最低均线；小于2%/5%/10%分别对应极致/紧密/松散粘合。',
                 ),
-                style: const TextStyle(fontSize: 13, height: 1.8, color: muted),
+                style: TextStyle(fontSize: 13, height: 1.8, color: muted),
               ),
             ],
           ),
@@ -351,7 +347,7 @@ class GuideActionPanel extends StatelessWidget {
           ),
           Text(
             '${str(a['asOf'])} · ${s.t(a['provisional'] == true ? '盘中待确认' : '收盘规则')}',
-            style: const TextStyle(color: muted, fontSize: 12),
+            style: TextStyle(color: muted, fontSize: 12),
           ),
           const SizedBox(height: 12),
           ...((a['reasons'] as List?) ?? []).map(
@@ -366,7 +362,7 @@ class GuideActionPanel extends StatelessWidget {
           if (a['invalidation'] != null)
             Text(
               '${s.t('失效观察')} · ${s.t('阳线半位')} ${fixed(obj(a['invalidation'])['midpoint'])} / MA20 ${fixed(obj(a['invalidation'])['ma20'])}',
-              style: const TextStyle(fontSize: 14, color: muted),
+              style: TextStyle(fontSize: 14, color: muted),
             ),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
@@ -389,7 +385,7 @@ class GuideActionPanel extends StatelessWidget {
                   ),
               Text(
                 s.t(str(a['notice'])),
-                style: const TextStyle(color: muted, fontSize: 13, height: 1.7),
+                style: TextStyle(color: muted, fontSize: 13, height: 1.7),
               ),
             ],
           ),

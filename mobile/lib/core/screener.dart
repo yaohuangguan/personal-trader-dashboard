@@ -9,7 +9,7 @@ import 'store.dart';
 class ScreenerController extends ChangeNotifier {
   ScreenerController(this.store) {
     try {
-      final raw = store.prefs.getString('scan');
+      final raw = store.prefs.getString('scan-v2');
       if (raw != null) {
         state = obj(jsonDecode(raw));
         if (['universe', 'scanning'].contains(state['phase'])) {
@@ -37,7 +37,7 @@ class ScreenerController extends ChangeNotifier {
   int generation = 0;
   List<Json> get candidates => rows(state['candidates']);
   Future<void> save() async {
-    await store.prefs.setString('scan', jsonEncode(state));
+    await store.prefs.setString('scan-v2', jsonEncode(state));
   }
 
   Future<void> pause() async {
@@ -50,7 +50,12 @@ class ScreenerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start(String scope, bool excludeSt, bool minAmount) async {
+  Future<void> start(
+    String scope,
+    bool excludeSt,
+    bool minAmount, {
+    Json? options,
+  }) async {
     await pause();
     await _inFlight;
     if (_disposed) return;
@@ -66,7 +71,9 @@ class ScreenerController extends ChangeNotifier {
       'universeComplete': scope == 'watchlist',
       'scope': scope,
       'excludeST': excludeSt,
-      'minAmount': minAmount,
+      'minAmount': true,
+      'options': options ?? {},
+      'rejected': <String, dynamic>{},
       'insufficient': 0,
       'startedAt': DateTime.now().toIso8601String(),
     };
@@ -145,32 +152,19 @@ class ScreenerController extends ChangeNotifier {
                   ).hasMatch(str(s['name'])),
             )
             .toList();
+        target = target.where((s) => (numOf(s['amount']) ?? 0) >= 2e8).toList();
         if (state['scope'] == 'quick') {
-          target = target
-              .where(
-                (s) =>
-                    state['minAmount'] != true ||
-                    (numOf(s['amount']) ?? 0) >= 2e8,
-              )
-              .toList();
-          final calm =
-              target
-                  .where((s) => (numOf(s['changePercent']) ?? 999).abs() <= 2)
-                  .toList()
-                ..sort(
-                  (a, b) => (numOf(b['amount']) ?? 0).compareTo(
-                    numOf(a['amount']) ?? 0,
-                  ),
-                );
-          final first = calm.take(100).toList(),
-              seen = first.map((r) => r['symbol']).toSet(),
-              rest = target.where((r) => !seen.contains(r['symbol'])).toList()
-                ..sort(
-                  (a, b) => (numOf(b['changePercent']) ?? -999).compareTo(
-                    numOf(a['changePercent']) ?? -999,
-                  ),
-                );
-          target = [...first, ...rest.take(200 - first.length)];
+          target.sort((a, b) {
+            final turn = (numOf(b['turnover']) ?? 0).compareTo(
+              numOf(a['turnover']) ?? 0,
+            );
+            return turn != 0
+                ? turn
+                : (numOf(b['changePercent']) ?? 0).abs().compareTo(
+                    (numOf(a['changePercent']) ?? 0).abs(),
+                  );
+          });
+          target = target.take(200).toList();
         }
         state['targets'] = target;
       }
@@ -184,29 +178,34 @@ class ScreenerController extends ChangeNotifier {
       ) {
         final stock = targets[i];
         try {
+          final options = obj(state['options']);
           final result = await store.api.get(
-            '/api/analysis',
-            parameters: {'symbol': str(stock['symbol']), 'compact': '1'},
+            '/api/desk/screen',
+            parameters: {
+              'symbol': str(stock['symbol']),
+              ...options.map((k, v) => MapEntry(k, '$v')),
+            },
           );
-          if (!active()) break;
-          final market = obj(result['market']),
-              date = DateTime.tryParse(str(market['asOf']));
-          if (date == null ||
-              DateTime.now().difference(date).inDays > 7 ||
-              market['stale'] == true) {
-            throw StateError('日线过期');
+          if (result['unverified'] == true) {
+            throw StateError(str(result['reason']));
+          }
+          if (result['candidate'] == null) {
+            final reason = str(result['reason']),
+                counts = obj(state['rejected']);
+            counts[reason] = (numOf(counts[reason]) ?? 0) + 1;
+            state['rejected'] = counts;
           }
           final candidate = obj(result['candidate']);
           if (candidate.isNotEmpty) {
-            candidate['name'] = stock['name'];
+            if (str(candidate['name'], '').isEmpty) {
+              candidate['name'] = stock['name'];
+            }
             state['candidates'] = [
               ...candidates.where((c) => c['symbol'] != candidate['symbol']),
               candidate,
             ];
           }
-          if (obj(result['guide'])['ready'] != true) {
-            state['insufficient'] = (numOf(state['insufficient']) ?? 0) + 1;
-          }
+
           consecutive = 0;
         } catch (e) {
           if (!active()) break;

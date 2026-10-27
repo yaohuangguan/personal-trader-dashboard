@@ -35,7 +35,7 @@ class NewsTile extends StatelessWidget {
         padding: const EdgeInsets.only(top: 10),
         child: Text(
           '${str(item['source'])} · ${str(item['publishedAt'])}',
-          style: const TextStyle(fontSize: 12, color: muted),
+          style: TextStyle(fontSize: 12, color: muted),
         ),
       ),
       trailing: IconButton(
@@ -159,9 +159,29 @@ class ReaderPage extends StatelessWidget {
             icon: Icon(s.saved(item) ? Icons.bookmark : Icons.bookmark_border),
           ),
           IconButton(
-            onPressed: () => SharePlus.instance.share(
-              ShareParams(text: '${str(item['title'])}\n${articleLink(item)}'),
-            ),
+            onPressed: () async {
+              try {
+                final result = await s.api.post('/api/shares', {
+                  'item': item,
+                }, token: s.deviceToken);
+                if (!context.mounted) return;
+                final box = context.findRenderObject() as RenderBox?;
+                await SharePlus.instance.share(
+                  ShareParams(
+                    text: '${str(item['title'])}\n${str(result['url'])}',
+                    sharePositionOrigin: box == null
+                        ? null
+                        : box.localToGlobal(Offset.zero) & box.size,
+                  ),
+                );
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('${s.t('分享失败')}：$e')));
+                }
+              }
+            },
             tooltip: s.t('分享'),
             icon: const Icon(Icons.ios_share),
           ),
@@ -188,7 +208,7 @@ class ReaderPage extends StatelessWidget {
         children: [
           Text(
             str(data['source'], 'MARKET ATLAS'),
-            style: const TextStyle(color: muted, fontSize: 13),
+            style: TextStyle(color: muted, fontSize: 13),
           ),
           const SizedBox(height: 14),
           Text(
@@ -199,7 +219,7 @@ class ReaderPage extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             str(data['publishedAt'] ?? data['date']),
-            style: const TextStyle(color: muted, fontSize: 13),
+            style: TextStyle(color: muted, fontSize: 13),
           ),
           const Divider(height: 40),
           if (content.isNotEmpty)
@@ -207,7 +227,7 @@ class ReaderPage extends StatelessWidget {
               data: content.replaceAll('\n', '<br>'),
               style: {
                 'body': Style(
-                  color: const Color(0xffdddde7),
+                  color: atlasColor(0xffdddde7),
                   fontSize: FontSize(s.fontSize),
                   lineHeight: const LineHeight(1.9),
                   margin: Margins.zero,
@@ -273,5 +293,42 @@ Json? parseArticleLink(String url) {
     return r;
   } catch (_) {
     return null;
+  }
+}
+
+class SharedReaderPage extends StatelessWidget {
+  const SharedReaderPage(this.id, {super.key});
+  final String id;
+  @override
+  Widget build(BuildContext context) {
+    final s = context.read<AtlasStore>();
+    return FutureBuilder<Json>(
+      future: s.api.get('/api/shares/$id'),
+      builder: (ctx, snapshot) {
+        if (snapshot.hasData) {
+          final data = snapshot.data!,
+              item = obj(data['item']),
+              code = str(data['code'], '');
+          return ReaderPage(
+            item: item,
+            document: data['kind'] == 'announcement' && code.isNotEmpty
+                ? () =>
+                      s.api.get('/api/announcement', parameters: {'code': code})
+                : null,
+          );
+        }
+        return Scaffold(
+          appBar: AppBar(title: Text(s.t('站内分享'))),
+          body: Center(
+            child: snapshot.hasError
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text('${snapshot.error}'),
+                  )
+                : const CircularProgressIndicator(),
+          ),
+        );
+      },
+    );
   }
 }

@@ -108,3 +108,11 @@ test('an unavailable intraday flow falls back to attributed daily values without
  globalThis.fetch=async input=>String(input).includes('push2delay')?Response.json({data:{code:'300545',klines:['2026-10-23,-3970612,7373320,-3402708,-4638945,668333']}}):new Response('',{status:502});
  try{const result=await fundFlow('300545.SZ');assert.equal(result.period,'daily');assert.equal(result.points[0].time,'2026-10-23');assert.equal(result.points[0].main,result.points[0].large!+result.points[0].superLarge!);assert.match(result.notice||'',/非盘中实时/);assert.match(result.sourceUrl,/push2delay/);}finally{globalThis.fetch=original;}
 });
+
+test('Sina independent fallback keeps its net-flow label and never invents size buckets',async()=>{
+ const original=globalThis.fetch;globalThis.fetch=async input=>String(input).includes('sina.com.cn')?Response.json([{opendate:'2026-10-26',netamount:'-155293011.66',r0_net:'-106788556.84'}]):new Response('',{status:502});
+ try{const r=await fundFlow('300031.SZ');assert.match(r.source,/新浪/);assert.match(r.mainLabel||'',/新浪口径/);assert.equal(r.period,'daily');assert.equal(r.points[0].main,-155293011.66);assert.equal(r.points[0].superLarge,null);assert.equal(r.points[0].large,null);assert.match(r.notice||'',/不是盘中实时/);}finally{globalThis.fetch=original;}
+});
+test('all unavailable flow sources return a recoverable empty state instead of a 502 crash',async()=>{
+ const original=globalThis.fetch;globalThis.fetch=async()=>new Response('',{status:502});try{const r=await fundFlow('300032.SZ');assert.equal(r.available,true);assert.deepEqual(r.points,[]);assert.match(r.notice||'',/暂时均不可用/);}finally{globalThis.fetch=original;}
+});

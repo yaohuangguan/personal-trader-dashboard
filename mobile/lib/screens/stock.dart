@@ -437,16 +437,12 @@ class _StockPageState extends State<StockPage> {
                                 mini(
                                   '个股资讯',
                                   () => setState(() => newsTab = 'news'),
-                                  color: newsTab == 'news'
-                                      ? Colors.white
-                                      : null,
+                                  color: newsTab == 'news' ? ink : null,
                                 ),
                                 mini(
                                   '公告财报',
                                   () => setState(() => newsTab = 'evidence'),
-                                  color: newsTab == 'evidence'
-                                      ? Colors.white
-                                      : null,
+                                  color: newsTab == 'evidence' ? ink : null,
                                 ),
                               ],
                             ),
@@ -465,10 +461,10 @@ class _StockPageState extends State<StockPage> {
         top: false,
         child: Container(
           height: 50,
-          decoration: const BoxDecoration(
-            color: Color(0xff131316),
+          decoration: BoxDecoration(
+            color: atlasColor(0xff131316),
             border: Border(
-              top: BorderSide(color: Color(0xff303038), width: .5),
+              top: BorderSide(color: atlasColor(0xff303038), width: .5),
             ),
           ),
           child: Row(
@@ -489,7 +485,7 @@ class _StockPageState extends State<StockPage> {
                         Icon(
                           item.$3,
                           size: 18,
-                          color: tab == item.$1 ? Colors.white : muted,
+                          color: tab == item.$1 ? ink : muted,
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -497,7 +493,7 @@ class _StockPageState extends State<StockPage> {
                           style: TextStyle(
                             fontSize: 11,
                             height: 1,
-                            color: tab == item.$1 ? Colors.white : muted,
+                            color: tab == item.$1 ? ink : muted,
                           ),
                         ),
                       ],
@@ -562,8 +558,10 @@ class _StockPageState extends State<StockPage> {
     child: Container(
       height: 78,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xff24242a), width: .5)),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: atlasColor(0xff24242a), width: .5),
+        ),
       ),
       child: Row(
         children: [
@@ -635,7 +633,7 @@ class _StockPageState extends State<StockPage> {
             children: [
               Text(
                 tr(context, pair.$1),
-                style: const TextStyle(fontSize: 11, height: 1, color: muted),
+                style: TextStyle(fontSize: 11, height: 1, color: muted),
               ),
               const SizedBox(width: 5),
               Expanded(
@@ -667,7 +665,7 @@ class _StockPageState extends State<StockPage> {
               children: [
                 Text(
                   analysisError!,
-                  style: const TextStyle(fontSize: 13, color: muted),
+                  style: TextStyle(fontSize: 13, color: muted),
                 ),
                 TextButton(
                   onPressed: refreshAnalysis,
@@ -725,8 +723,8 @@ class _StockPageState extends State<StockPage> {
 
   Widget _sourceBar() => Container(
     height: 32,
-    decoration: const BoxDecoration(
-      border: Border(top: BorderSide(color: Color(0xff25252b), width: .5)),
+    decoration: BoxDecoration(
+      border: Border(top: BorderSide(color: atlasColor(0xff25252b), width: .5)),
     ),
     child: Row(
       children: [
@@ -740,14 +738,14 @@ class _StockPageState extends State<StockPage> {
                 : '已收盘')}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10, height: 1, color: muted),
+            style: TextStyle(fontSize: 10, height: 1, color: muted),
           ),
         ),
         if (cnStock(widget.symbol))
           mini(
             '${tr(context, '走势')} ${fixed(trend?['score'], 0)}',
             openTrend,
-            color: Colors.white,
+            color: ink,
           ),
         mini('盘口', () => sheet('五档盘口', BookPanel(widget.symbol, q))),
         mini(
@@ -785,11 +783,92 @@ class _BookPanelState extends State<BookPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Chips(
-            values: const {'book': '五档盘口', 'ticks': '成交分笔', 'flow': '资金流'},
+            values: const {
+              'book': '五档盘口',
+              'ticks': '成交分笔',
+              'flow': '资金流',
+              'level2': 'Level-2',
+            },
             selected: tab,
             onSelected: (v) => setState(() => tab = v),
           ),
-          if (tab == 'book') ...[
+          if (tab == 'level2')
+            AsyncPanel(
+              load: () => s.api.get(
+                '/api/level2',
+                parameters: {'symbol': widget.symbol},
+              ),
+              builder: (r) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Level-2',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Notice(s.t(str(r['notice']))),
+                  if (r['connected'] == true) ...[
+                    SourceLine(r),
+                    DataTableView(
+                      columns: const ['档位', '价格', '数量'],
+                      data: [
+                        for (final entry in rows(r['asks']).asMap().entries)
+                          [
+                            '${s.t('卖')}${entry.key + 1}',
+                            fixed(entry.value['price']),
+                            amount(entry.value['volume']),
+                          ],
+                        for (final entry in rows(r['bids']).asMap().entries)
+                          [
+                            '${s.t('买')}${entry.key + 1}',
+                            fixed(entry.value['price']),
+                            amount(entry.value['volume']),
+                          ],
+                      ],
+                    ),
+                    ExpansionTile(
+                      title: Text(s.t('逐笔成交')),
+                      children: [
+                        DataTableView(
+                          columns: const ['时间', '价格', '数量', '方向'],
+                          data: rows(r['trades'])
+                              .map(
+                                (p) => [
+                                  str(p['time']),
+                                  fixed(p['price']),
+                                  amount(p['volume']),
+                                  str(p['side']),
+                                ],
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                    ExpansionTile(
+                      title: Text(s.t('逐笔委托')),
+                      children: [
+                        DataTableView(
+                          columns: const ['时间', '价格', '数量', '方向'],
+                          data: rows(r['orders'])
+                              .map(
+                                (p) => [
+                                  str(p['time']),
+                                  fixed(p['price']),
+                                  amount(p['volume']),
+                                  str(p['side']),
+                                ],
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            )
+          else if (tab == 'book') ...[
             for (final r in rows(
               widget.quote['asks'],
             ).indexed.toList().reversed)
@@ -844,7 +923,13 @@ class _BookPanelState extends State<BookPanel> {
                       'small': '小单',
                     }.entries)
                       ListTile(
-                        title: Text(s.t(e.value)),
+                        title: Text(
+                          s.t(
+                            e.key == 'main'
+                                ? str(r['mainLabel'], e.value)
+                                : e.value,
+                          ),
+                        ),
                         trailing: Text(
                           amount(last[e.key]),
                           style: TextStyle(color: tone(last[e.key])),
@@ -867,7 +952,7 @@ class _BookPanelState extends State<BookPanel> {
       children: [
         SizedBox(
           width: 64,
-          child: Text(name, style: const TextStyle(color: muted)),
+          child: Text(name, style: TextStyle(color: muted)),
         ),
         Expanded(
           child: Text(
@@ -1009,7 +1094,7 @@ class _ChipProfileState extends State<ChipProfile> {
             ),
             Text(
               '${model['start']} ~ ${model['date']}',
-              style: const TextStyle(fontSize: 13, color: muted),
+              style: TextStyle(fontSize: 13, color: muted),
             ),
           ],
         );
@@ -1046,7 +1131,7 @@ class _ChipHistogramPainter extends CustomPainter {
       final text = TextPainter(
         text: TextSpan(
           text: fixed(histogram[index]['price']),
-          style: const TextStyle(fontSize: 13, color: muted),
+          style: TextStyle(fontSize: 13, color: muted),
         ),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: left - 6);
@@ -1259,7 +1344,7 @@ class StockFlowSummary extends StatelessWidget {
                         Expanded(
                           child: Text(
                             tr(context, e.value),
-                            style: const TextStyle(color: muted, fontSize: 15),
+                            style: TextStyle(color: muted, fontSize: 15),
                           ),
                         ),
                         Text(
@@ -1339,7 +1424,7 @@ class StockEmotion extends StatelessWidget {
                     ),
                     Text(
                       '$date · ${tr(context, '来源股票池口径')}',
-                      style: const TextStyle(color: muted, fontSize: 12),
+                      style: TextStyle(color: muted, fontSize: 12),
                     ),
                     const SizedBox(height: 12),
                     Wrap(

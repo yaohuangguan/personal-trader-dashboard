@@ -25,7 +25,7 @@ class DailyTrendPanel extends StatelessWidget {
               fixed(r['score'], 0),
               style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w600),
             ),
-            const Text(' / 100', style: TextStyle(fontSize: 14, color: muted)),
+            Text(' / 100', style: TextStyle(fontSize: 14, color: muted)),
             const Spacer(),
             Text(
               tr(context, str(r['label'])),
@@ -40,7 +40,7 @@ class DailyTrendPanel extends StatelessWidget {
                     ? '盘中暂评'
                     : '收盘复盘'
               : '历史快照')} · ${tr(context, '依据覆盖')} ${r['coveredWeight'] ?? 0}/100',
-          style: const TextStyle(fontSize: 13, color: muted),
+          style: TextStyle(fontSize: 13, color: muted),
         ),
         const SizedBox(height: 16),
         if (error != null) Notice(error!),
@@ -62,7 +62,7 @@ class DailyTrendPanel extends StatelessWidget {
           ),
           Text(
             '${str(obj(r['operation'])['asOf'])} · ${tr(context, '当日强弱分结合形态与股性核验')}',
-            style: const TextStyle(fontSize: 12, color: muted),
+            style: TextStyle(fontSize: 12, color: muted),
           ),
           ...((obj(r['operation'])['reasons'] as List?) ?? []).map(
             (v) => Padding(
@@ -90,7 +90,7 @@ class DailyTrendPanel extends StatelessWidget {
                   d['score'] == null
                       ? tr(context, '未计分')
                       : '${fixed(d['value'])}${d['unit']} · ${fixed(d['score'], 0)}',
-                  style: const TextStyle(fontSize: 13, color: muted),
+                  style: TextStyle(fontSize: 13, color: muted),
                 ),
               ],
             ),

@@ -5,7 +5,7 @@ import { createChart, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, ty
 import type { IntradayPayload } from '../../shared/desk-types';
 
 export default function IntradayChart({ data }: { data: IntradayPayload }) {
-  const display=usePreferences();
+  const display=usePreferences(),light=display.theme==='light';
   const element = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(data.points.at(-1));
   useEffect(() => {
@@ -16,14 +16,14 @@ export default function IntradayChart({ data }: { data: IntradayPayload }) {
     const beijingClock=(time:Time)=>typeof time==='number'?clockFormatter.format(new Date(time*1000)):String(time);
     const chart = createChart(root, {
       width: root.clientWidth, height: root.clientWidth < 600 ? 310 : 425,
-      layout: { background: { type: ColorType.Solid, color: '#0c0c0d' }, textColor: '#85858c', fontSize: Math.round(display.fontSize*.82) },
-      grid: { vertLines: { visible: false }, horzLines: { color: '#202023' } },
+      layout: { background: { type: ColorType.Solid, color:light?'#fff':'#0c0c0d' }, textColor:light?'#59616d':'#85858c', fontSize: Math.round(display.fontSize*.82) },
+      grid: { vertLines: { visible: false }, horzLines: { color:light?'#e9ecf0':'#202023' } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.24 } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, lockVisibleTimeRangeOnResize: true, tickMarkFormatter:beijingClock },
       crosshair: { mode: CrosshairMode.Normal },
       localization: { locale:display.locale,timeFormatter:beijingClock },
     });
-    const price = chart.addAreaSeries({ lineColor: '#dedee3', topColor: '#d0d0d019', bottomColor: '#d0d0d000', lineWidth: 2, priceLineVisible: false });
+    const price = chart.addAreaSeries({ lineColor:light?'#364f70':'#dedee3', topColor: '#d0d0d019', bottomColor: '#d0d0d000', lineWidth: 2, priceLineVisible: false });
     price.setData(data.points.map(p => ({ time: p.time as UTCTimestamp, value: p.price })));
     if (data.previous && data.previous > 0) price.createPriceLine({ price: data.previous, lineStyle: LineStyle.Dashed, lineWidth: 1, color: '#73737c', axisLabelVisible: true, title: uiText('昨收') });
     const volume = chart.addHistogramSeries({ priceScaleId: 'volume', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });

@@ -40,24 +40,32 @@ class AtlasApp extends StatelessWidget {
     ],
     child: Consumer<AtlasStore>(
       builder: (context, s, _) {
+        AtlasPalette.light = s.themeMode == 'light';
+        final brightness = AtlasPalette.light
+            ? Brightness.light
+            : Brightness.dark;
         final base = ThemeData(
-          brightness: Brightness.dark,
+          brightness: brightness,
           useMaterial3: true,
-          colorScheme: const ColorScheme.dark(
-            primary: Color(0xffeeeef4),
-            onPrimary: Color(0xff17171b),
-            secondary: Color(0xffb9b9c6),
-            surface: surface,
-          ),
-          scaffoldBackgroundColor: const Color(0xff0b0b0e),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Color(0xff111114),
+          colorScheme:
+              ColorScheme.fromSeed(
+                seedColor: atlasColor(0xff888899),
+                brightness: brightness,
+              ).copyWith(
+                primary: atlasColor(0xffeeeef4),
+                onPrimary: atlasColor(0xff17171b),
+                secondary: atlasColor(0xffb9b9c6),
+                surface: surface,
+              ),
+          scaffoldBackgroundColor: atlasColor(0xff0b0b0e),
+          appBarTheme: AppBarTheme(
+            backgroundColor: atlasColor(0xff111114),
             surfaceTintColor: Colors.transparent,
           ),
-          dividerColor: const Color(0xff34343c),
+          dividerColor: atlasColor(0xff34343c),
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
-            fillColor: const Color(0xff1e1e24),
+            fillColor: atlasColor(0xff1e1e24),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
           filledButtonTheme: FilledButtonThemeData(
@@ -74,9 +82,9 @@ class AtlasApp extends StatelessWidget {
               textStyle: const TextStyle(fontSize: 14),
             ),
           ),
-          navigationBarTheme: const NavigationBarThemeData(
-            backgroundColor: Color(0xff151519),
-            indicatorColor: Color(0xff383840),
+          navigationBarTheme: NavigationBarThemeData(
+            backgroundColor: atlasColor(0xff151519),
+            indicatorColor: atlasColor(0xff383840),
           ),
         );
         return MaterialApp(
@@ -107,8 +115,8 @@ class AtlasApp extends StatelessWidget {
                   labelMedium: TextStyle(fontSize: 14),
                   labelSmall: TextStyle(fontSize: 13),
                 ).apply(
-                  bodyColor: const Color(0xffeeeef4),
-                  displayColor: const Color(0xffeeeef4),
+                  bodyColor: atlasColor(0xffeeeef4),
+                  displayColor: atlasColor(0xffeeeef4),
                 ),
           ),
           builder: (context, child) => MediaQuery(
@@ -161,7 +169,8 @@ class _AtlasShellState extends State<AtlasShell> {
       final url = push.initialUrl ?? Uri.base.toString();
       if (url.contains('symbol=') ||
           url.contains('view=signals') ||
-          url.contains('article=')) {
+          url.contains('article=') ||
+          url.contains('/n/')) {
         _open(url);
       }
     });
@@ -169,6 +178,15 @@ class _AtlasShellState extends State<AtlasShell> {
 
   void _open(String url) {
     if (!mounted) return;
+    final short = RegExp(r'^/n/([A-Za-z0-9_-]{16})$')
+        .firstMatch(Uri.tryParse(url)?.path ?? '');
+    if (short != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SharedReaderPage(short.group(1)!)),
+      );
+      return;
+    }
     final article = parseArticleLink(url);
     if (article != null) {
       openNews(context, article);
@@ -316,8 +334,8 @@ class _AtlasShellState extends State<AtlasShell> {
           ? null
           : CupertinoTabBar(
               height: 48,
-              backgroundColor: const Color(0xff111114),
-              activeColor: Colors.white,
+              backgroundColor: atlasColor(0xff111114),
+              activeColor: ink,
               inactiveColor: muted,
               currentIndex: index,
               onTap: (i) => setState(() => index = i),

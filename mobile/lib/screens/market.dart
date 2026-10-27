@@ -108,13 +108,13 @@ class _MarketPageState extends State<MarketPage> {
                     ),
                     decoration: BoxDecoration(
                       border: Border(
-                        right: const BorderSide(
-                          color: Color(0xff292930),
+                        right: BorderSide(
+                          color: atlasColor(0xff292930),
                           width: .5,
                         ),
                         bottom: BorderSide(
                           color: index == indexSymbols[i]
-                              ? Colors.white54
+                              ? ink.withValues(alpha: .54)
                               : Colors.transparent,
                           width: 1,
                         ),
@@ -125,7 +125,7 @@ class _MarketPageState extends State<MarketPage> {
                       children: [
                         Text(
                           store.t(indexNames[i]),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             height: 1,
                             color: muted,
@@ -208,7 +208,7 @@ class _MarketPageState extends State<MarketPage> {
                 Expanded(
                   child: Text(
                     '${sourceDate ?? '—'} · ${store.t('公开行情快照')}',
-                    style: const TextStyle(fontSize: 10, color: muted),
+                    style: TextStyle(fontSize: 10, color: muted),
                   ),
                 ),
                 IconButton(
@@ -244,10 +244,7 @@ class _MarketPageState extends State<MarketPage> {
                             ),
                             subtitle: Text(
                               '${store.t('领涨')} ${str(b['leader'])}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: muted,
-                              ),
+                              style: TextStyle(fontSize: 12, color: muted),
                             ),
                             trailing: Text(
                               percent(b['changePercent']),
@@ -279,7 +276,7 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 if (view == 'stocks') ...[
                   Chips(
-                    values: const {
+                    values: {
                       'gainers': '涨幅榜',
                       'dragon': '近期龙虎榜',
                       'yesterday': '昨日涨停',
@@ -326,10 +323,7 @@ class _MarketPageState extends State<MarketPage> {
                                 ),
                                 subtitle: Text(
                                   '${q['symbol']}${q['date'] != null ? ' · ${q['date']}' : ''}',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: muted,
-                                  ),
+                                  style: TextStyle(fontSize: 11, color: muted),
                                 ),
                                 trailing: Text(
                                   '${fixed(q['price'])}  ${percent(q['changePercent'])}',
@@ -375,7 +369,7 @@ class _MarketPageState extends State<MarketPage> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(bottom: 10, left: 10),
                 child: Text('/ 100', style: TextStyle(color: muted)),
               ),
@@ -397,8 +391,8 @@ class _MarketPageState extends State<MarketPage> {
           const SizedBox(height: 18),
           LinearProgressIndicator(
             value: (score ?? 0) / 100,
-            color: const Color(0xffd4d4df),
-            backgroundColor: const Color(0xff34343e),
+            color: atlasColor(0xffd4d4df),
+            backgroundColor: atlasColor(0xff34343e),
           ),
           const SizedBox(height: 20),
           Wrap(
@@ -418,7 +412,7 @@ class _MarketPageState extends State<MarketPage> {
                 s.t(
                   '40% × 涨停占涨跌停之比 + 30% × 封板率 + 30% × 昨涨停溢价强度。溢价强度 = clamp(50 + 平均涨幅 × 5, 0, 100)。低于35偏冷、55以上偏积极、75以上偏热；均为自定义观察阈值。',
                 ),
-                style: const TextStyle(color: muted, height: 1.8),
+                style: TextStyle(color: muted, height: 1.8),
               ),
             ],
           ),

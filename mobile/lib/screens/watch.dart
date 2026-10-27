@@ -114,8 +114,7 @@ class _WatchPageState extends State<WatchPage> {
                 maxLength: 24,
                 decoration: InputDecoration(labelText: s.t('分组名称')),
               ),
-              if (error != null)
-                Text(s.t(error!), style: const TextStyle(color: up)),
+              if (error != null) Text(s.t(error!), style: TextStyle(color: up)),
             ],
           ),
           actions: [
@@ -290,7 +289,7 @@ class _WatchPageState extends State<WatchPage> {
             Expanded(
               child: Text(
                 '${list.length} ${s.t('只自选')}',
-                style: const TextStyle(fontSize: 12, color: muted),
+                style: TextStyle(fontSize: 12, color: muted),
               ),
             ),
             SizedBox(
@@ -299,7 +298,7 @@ class _WatchPageState extends State<WatchPage> {
                 fit: BoxFit.scaleDown,
                 child: Text(
                   s.t('当日分时'),
-                  style: const TextStyle(fontSize: 12, color: muted),
+                  style: TextStyle(fontSize: 12, color: muted),
                 ),
               ),
             ),
@@ -310,7 +309,7 @@ class _WatchPageState extends State<WatchPage> {
                 fit: BoxFit.scaleDown,
                 child: Text(
                   s.t('价格 / 涨幅'),
-                  style: const TextStyle(fontSize: 12, color: muted),
+                  style: TextStyle(fontSize: 12, color: muted),
                 ),
               ),
             ),
@@ -350,9 +349,12 @@ class _WatchPageState extends State<WatchPage> {
               onLongPress: () => stockActions(s, symbol),
               child: Container(
                 height: 76,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: Color(0xff26262c), width: .5),
+                    bottom: BorderSide(
+                      color: atlasColor(0xff26262c),
+                      width: .5,
+                    ),
                   ),
                 ),
                 child: Row(
@@ -375,7 +377,7 @@ class _WatchPageState extends State<WatchPage> {
                           const SizedBox(height: 5),
                           Text(
                             symbol,
-                            style: const TextStyle(fontSize: 12, color: muted),
+                            style: TextStyle(fontSize: 12, color: muted),
                           ),
                         ],
                       ),
@@ -386,7 +388,7 @@ class _WatchPageState extends State<WatchPage> {
                         height: 42,
                         child: cnStock(symbol)
                             ? MiniIntraday(symbol)
-                            : const Center(
+                            : Center(
                                 child: Text(
                                   '—',
                                   style: TextStyle(color: muted),
@@ -479,7 +481,7 @@ class _MiniIntradayState extends State<MiniIntraday> {
     return Tooltip(
       message: '${str(data?['date'], '—')} · ${tr(context, '当日分时')}',
       child: points.length < 2
-          ? const Center(
+          ? Center(
               child: Text('—', style: TextStyle(color: muted)),
             )
           : CustomPaint(painter: SparkPainter(points, previous)),
@@ -552,6 +554,13 @@ class SettingsPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(s.t('外观'), style: Theme.of(context).textTheme.titleLarge),
+                Chips(
+                  values: const {'dark': '中性黑', 'light': '明亮白'},
+                  selected: s.themeMode,
+                  onSelected: s.setTheme,
+                ),
+                const SizedBox(height: 20),
                 Text(s.t('语言'), style: Theme.of(context).textTheme.titleLarge),
                 Chips(
                   values: const {'zh-CN': '中文', 'en': 'English'},
@@ -646,16 +655,12 @@ class SettingsPage extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   '${s.t('生产数据服务')}\n${s.api.base}',
-                  style: const TextStyle(
-                    color: muted,
-                    fontSize: 14,
-                    height: 1.8,
-                  ),
+                  style: TextStyle(color: muted, fontSize: 14, height: 1.8),
                 ),
                 const SizedBox(height: 14),
                 Text(
                   s.t('公开快照与聚合分笔，非授权 Level-2。筹码为模型推演；盘中候选需等待收盘确认。'),
-                  style: const TextStyle(color: muted, height: 1.8),
+                  style: TextStyle(color: muted, height: 1.8),
                 ),
               ],
             ),
@@ -693,8 +698,7 @@ class SettingsPage extends StatelessWidget {
                   hintText: '["300545.SZ", "NVDA"]',
                 ),
               ),
-              if (error != null)
-                Text(error!, style: const TextStyle(color: up)),
+              if (error != null) Text(error!, style: TextStyle(color: up)),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () async {

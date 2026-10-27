@@ -225,9 +225,17 @@ export async function fundFlow(raw: string) {
     const payload=await(await eastmoney(url,4000)).json() as {data?:{code?:string;klines?:string[]}};
     return {...stamp('东方财富盘中资金流估算',url),symbol,period:'intraday' as const,points:parse(payload,false)};
   }catch{
+   try{
     const fallback='https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get?'+new URLSearchParams({secid,klt:'101',lmt:'5',fields1:'f1,f2,f3,f7',fields2:'f51,f52,f53,f54,f55,f56'});
     const payload=await(await eastmoney(fallback,6000)).json() as {data?:{code?:string;klines?:string[]}};
     return {...stamp('东方财富日资金流估算（备用源）',fallback),symbol,period:'daily' as const,notice:'盘中资金源暂不可用，当前展示来源提供的最近交易日日度估算，非盘中实时。',points:parse(payload,true)};
+   }catch{
+    const fallback='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?'+new URLSearchParams({page:'1',num:'20',sort:'opendate',asc:'0',daima:symbol.slice(-2).toLowerCase()+symbol.slice(0,6)});
+    try{const response=await request(fallback,6000),rows=JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as Row[];
+     const points=(Array.isArray(rows)?rows:[]).filter(r=>/^\d{4}-\d{2}-\d{2}$/.test(String(r.opendate))&&num(r.netamount)!==null).map(r=>({time:String(r.opendate),main:num(r.netamount),superLarge:null,small:null,medium:null,large:null})).sort((a,b)=>a.time.localeCompare(b.time));
+     if(!points.length)throw new Error('日资金源暂无记录');return {...stamp('新浪日资金流估算（独立备用源）',fallback),symbol,period:'daily' as const,classification:'sina-net-flow',mainLabel:'资金净额（新浪口径）',points,notice:'东财资金源暂不可用，已切换新浪日度净额；各源分类口径不同，缺失的大中小单不补值，当前不是盘中实时。'};
+    }catch{return {source:'东方财富 / 新浪资金流',sourceUrl:fallback,available:true,dataAvailable:false,symbol,period:'daily' as const,points:[],fetchedAt:new Date().toISOString(),notice:'资金源暂时均不可用，请稍后刷新。未用旧日期或零值代替当前资金。'};}
+   }
   }
 }
 export async function reports(raw: string) {

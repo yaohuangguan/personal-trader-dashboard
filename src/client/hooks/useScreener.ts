@@ -1,12 +1,13 @@
+import {DEFAULT_SCREEN,type ScreenOptions} from '../../shared/pattern-screen';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuotesPayload } from '../../shared/desk-types';
 import type { MarketPayload } from '../../shared/types';
 import type { UniverseItem, UniversePage, ScreenCandidate } from '../../shared/screening';
 
 export type ScanScope = 'quick' | 'all' | 'watchlist';
-export type ScanState = { schema: 1; scope: ScanScope; phase: 'idle' | 'universe' | 'scanning' | 'paused' | 'complete'; universe: UniverseItem[]; total: number; nextPage: number; universeComplete: boolean; targets: UniverseItem[]; cursor: number; candidates: ScreenCandidate[]; failed: string[]; failedReasons: Record<string,string>; historyElapsedMs: number; insufficient: number; excludeST: boolean; minAmount: number; startedAt: number; updatedAt: number; elapsedMs: number; message: string };
-const blank = (): ScanState => ({ schema: 1, scope: 'quick', phase: 'idle', universe: [], total: 0, nextPage: 1, universeComplete: false, targets: [], cursor: 0, candidates: [], failed: [], failedReasons: {}, historyElapsedMs: 0, insufficient: 0, excludeST: true, minAmount: 2e8, startedAt: 0, updatedAt: 0, elapsedMs: 0, message: '' });
-const KEY = 'guide-v10.4-session';
+export type ScanState = { schema: 2; options:ScreenOptions;rejected:Record<string,number>; scope: ScanScope; phase: 'idle' | 'universe' | 'scanning' | 'paused' | 'complete'; universe: UniverseItem[]; total: number; nextPage: number; universeComplete: boolean; targets: UniverseItem[]; cursor: number; candidates: ScreenCandidate[]; failed: string[]; failedReasons: Record<string,string>; historyElapsedMs: number; insufficient: number; excludeST: boolean; minAmount: number; startedAt: number; updatedAt: number; elapsedMs: number; message: string };
+const blank = (): ScanState => ({ schema: 2,options:DEFAULT_SCREEN,rejected:{}, scope: 'quick', phase: 'idle', universe: [], total: 0, nextPage: 1, universeComplete: false, targets: [], cursor: 0, candidates: [], failed: [], failedReasons: {}, historyElapsedMs: 0, insufficient: 0, excludeST: true, minAmount: 2e8, startedAt: 0, updatedAt: 0, elapsedMs: 0, message: '' });
+const KEY = 'pattern-screen-v2';
 async function storage(action: 'read' | 'write', value?: ScanState): Promise<ScanState | undefined> {
   return new Promise((resolve, reject) => {
     const open = indexedDB.open('atlas-screener', 1);
@@ -32,9 +33,7 @@ function rest(ms: number, signal: AbortSignal) {
 }
 function quickTargets(items: UniverseItem[], excludeST: boolean, minAmount: number) {
   const eligible = items.filter(s => s.price !== null && s.price > 0 && (!excludeST || !/ST|退/i.test(s.name)) && s.amount !== null && s.amount >= minAmount);
-  const calm = eligible.filter(s => s.changePercent !== null && Math.abs(s.changePercent) <= 2).sort((a, b) => (b.amount || 0) - (a.amount || 0)).slice(0, 100);
-  const momentum = eligible.filter(s => !calm.some(c => c.symbol === s.symbol)).sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0)).slice(0, 200 - calm.length);
-  return [...calm, ...momentum];
+  return [...eligible].sort((a,b)=>(b.turnover??0)-(a.turnover??0)||Math.abs(b.changePercent??0)-Math.abs(a.changePercent??0)).slice(0,200);
 }
 export function useScreener() {
   const [state, setState] = useState<ScanState>(blank), [hydrated, setHydrated] = useState(false), [storageError, setStorageError] = useState('');
@@ -46,7 +45,7 @@ export function useScreener() {
     mounted.current = true;
     void storage('read').then(saved => {
       if (!mounted.current) return;
-      if (saved?.schema === 1 && Array.isArray(saved.universe) && saved.universe.length <= 8000 && Array.isArray(saved.targets) && saved.targets.length <= 8000 && Array.isArray(saved.candidates) && saved.cursor >= 0 && saved.cursor <= saved.targets.length) publish({ ...blank(), ...saved, phase: ['universe', 'scanning'].includes(saved.phase) ? 'paused' : saved.phase });
+      if (saved?.schema === 2 && Array.isArray(saved.universe) && saved.universe.length <= 8000 && Array.isArray(saved.targets) && saved.targets.length <= 8000 && Array.isArray(saved.candidates) && saved.cursor >= 0 && saved.cursor <= saved.targets.length) publish({ ...blank(), ...saved, phase: ['universe', 'scanning'].includes(saved.phase) ? 'paused' : saved.phase });
     }).catch(() => { if (mounted.current) setStorageError('此浏览器暂不能保存扫描进度，建议完成后导出候选。'); }).finally(() => { if (mounted.current) setHydrated(true); });
     const hidden = () => { if (document.hidden) pause(); };
     const offline = () => pause();
@@ -80,27 +79,18 @@ export function useScreener() {
         const book=new Map(batch.items.map(q=>[q.symbol,q]));
         update({universe:active.universe.map(s=>{const q=book.get(s.symbol);return {...s,name:q?.name||s.name,price:q?.price??null,changePercent:q?.changePercent??null,amount:q?.amount??null,turnover:q?.turnover??null};})});
       }
-      if (!active.targets.length && !active.cursor) update({ targets: active.scope === 'quick' ? quickTargets(active.universe, active.excludeST, active.minAmount) : active.universe.filter(s => (active.scope === 'watchlist' || s.price !== null && s.price > 0) && (!active.excludeST || !/ST|退/i.test(s.name)) && (active.scope === 'all' || active.minAmount === 0 || (s.amount || 0) >= active.minAmount)) });
+      if (!active.targets.length && !active.cursor) update({ targets: active.scope === 'quick' ? quickTargets(active.universe, active.excludeST, active.minAmount) : active.universe.filter(s => (active.scope === 'watchlist' || s.price !== null && s.price > 0) && (!active.excludeST || !/ST|退/i.test(s.name)) && (s.amount || 0) >= 2e8) });
       update({ phase: 'scanning', message: '使用原始日线逐只核验，已命中候选会持续显示。' });
-      if (!worker.current) worker.current = new Worker(new URL('../workers/screener-worker.ts', import.meta.url), { type: 'module' });
       for (let index = active.cursor; index < active.targets.length; index++) {
         ac.signal.throwIfAborted();
         const stock = active.targets[index];
         try {
-          const market = await fetchJson<MarketPayload>('/api/market?symbol=' + stock.symbol);
-          if (!Array.isArray(market.candles) || !market.candles.length) throw new Error('缺少原始日线');
-          if (market.stale || !market.asOf || Date.now() - Date.parse(market.asOf + 'T00:00:00Z') > 7 * 86400000) throw new Error('日线超过7天或来源标记过期');
-          const output = await new Promise<{ candidate: ScreenCandidate | null; insufficient: boolean; invalid: boolean }>((resolve, reject) => {
-            const id = crypto.randomUUID(), w = worker.current!;
-            const clean = () => { w.removeEventListener('message', receive); w.removeEventListener('error', failed); ac.signal.removeEventListener('abort', stopped); };
-            const receive = (event: MessageEvent) => { if (event.data.id !== id) return; clean(); if (event.data.error) reject(new Error(event.data.error)); else resolve(event.data); };
-            const failed = () => { clean(); reject(new Error('形态计算器加载失败')); };
-            const stopped = () => { clean(); reject(new DOMException('Paused', 'AbortError')); };
-            w.addEventListener('message', receive); w.addEventListener('error', failed); ac.signal.addEventListener('abort', stopped, { once: true }); w.postMessage({ id, stock, market });
-          });
-          if (output.invalid) throw new Error('日线格式无效');
+          const params=new URLSearchParams({symbol:stock.symbol,modes:active.options.modes.join(','),concentration:String(active.options.concentration),recentLimitUp:active.options.recentLimitUp?'1':'0',maxCap:active.options.maxMarketCap===null?'':String(active.options.maxMarketCap/1e8),activity:active.options.activity?'1':'0'});
+          const output=await fetchJson<{candidate:ScreenCandidate|null;reason?:string;unverified?:boolean}>('/api/desk/screen?'+params);
+          if(output.unverified)throw new Error(output.reason);
+          if(!output.candidate&&output.reason)update({rejected:{...active.rejected,[output.reason]:(active.rejected[output.reason]||0)+1}});
           consecutiveFailures = 0;
-          update({ cursor: index + 1, candidates: output.candidate ? [...active.candidates.filter(c => c.symbol !== stock.symbol), output.candidate] : active.candidates, insufficient: active.insufficient + Number(output.insufficient) });
+          update({ cursor: index + 1, candidates: output.candidate ? [...active.candidates.filter(c => c.symbol !== stock.symbol), output.candidate] : active.candidates, insufficient: active.insufficient });
         } catch (error) {
           if (ac.signal.aborted) throw error;
           consecutiveFailures++;
@@ -119,10 +109,10 @@ export function useScreener() {
       await save(active); control.current = null;
     }
   }, [publish, save]);
-  const start = useCallback((scope: ScanScope, watchlist: string[], excludeST: boolean, minAmount: number) => {
+  const start = useCallback((scope: ScanScope, watchlist: string[], excludeST: boolean, minAmount: number, options:ScreenOptions=DEFAULT_SCREEN) => {
     if (!hydrated || control.current) return;
-    const initial = { ...blank(), scope, excludeST, minAmount, startedAt: Date.now() };
-    if (scope === 'watchlist') { initial.universe = watchlist.filter(s => /^\d{6}\.(SH|SZ|BJ)$/.test(s)).map(symbol => ({ symbol, name: symbol, price: null, changePercent: null, amount: null, turnover: null })); initial.total = initial.universe.length; initial.universeComplete = true; initial.minAmount = 0; }
+    const initial = { ...blank(), scope, excludeST, minAmount:Math.max(2e8,minAmount),options, startedAt: Date.now() };
+    if (scope === 'watchlist') { initial.universe = watchlist.filter(s => /^\d{6}\.(SH|SZ|BJ)$/.test(s)).map(symbol => ({ symbol, name: symbol, price: null, changePercent: null, amount: null, turnover: null })); initial.total = initial.universe.length; initial.universeComplete = true; initial.minAmount = 2e8; }
     publish(initial); void run(initial);
   }, [hydrated, publish, run]);
   const resume = useCallback(() => { void run(current.current); }, [run]);

@@ -76,23 +76,35 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('300545.SZ').first);
       await tester.pumpAndSettle();
-      for (final size in [18.0, 22.0]) {
-        await s.setFont(size);
-        await tester.pumpAndSettle();
-        final canvas = tester.getRect(
-          find.byKey(const ValueKey('candlestick-canvas')),
-        );
-        final navigation = tester.getRect(find.text('看盘'));
-        expect(canvas.top, lessThan(330));
-        expect(canvas.bottom, lessThan(navigation.top));
-        expect(
-          painter(tester).volume && painter(tester).macd && painter(tester).kdj,
-          isTrue,
-        );
-        expect(find.byType(OutlinedButton), findsNothing);
-        expect(tester.takeException(), isNull);
-        await binding.takeScreenshot('ios-stock-first-screen-${size.toInt()}');
+      for (final mode in ['dark', 'light']) {
+        await s.setTheme(mode);
+        for (final size in [18.0, 22.0]) {
+          await s.setFont(size);
+          await tester.pumpAndSettle();
+          final canvas = tester.getRect(
+            find.byKey(const ValueKey('candlestick-canvas')),
+          );
+          final navigation = tester.getRect(find.text('看盘'));
+          expect(canvas.top, lessThan(330));
+          expect(canvas.bottom, lessThan(navigation.top));
+          expect(
+            painter(tester).volume &&
+                painter(tester).macd &&
+                painter(tester).kdj,
+            isTrue,
+          );
+          expect(find.byType(OutlinedButton), findsNothing);
+          expect(tester.takeException(), isNull);
+          expect(
+            Theme.of(tester.element(find.byType(Scaffold).last)).brightness,
+            mode == 'light' ? Brightness.light : Brightness.dark,
+          );
+          await binding.takeScreenshot(
+            'ios-stock-first-screen-$mode-${size.toInt()}',
+          );
+        }
       }
+      await s.setTheme('dark');
       await tester.pumpWidget(const SizedBox());
       s.dispose();
       await push.dispose();

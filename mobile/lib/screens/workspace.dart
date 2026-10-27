@@ -152,10 +152,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
                             const SizedBox(height: 6),
                             Text(
                               str(sector['en']),
-                              style: const TextStyle(
-                                color: muted,
-                                fontSize: 13,
-                              ),
+                              style: TextStyle(color: muted, fontSize: 13),
                             ),
                             const SizedBox(height: 16),
                             Wrap(
