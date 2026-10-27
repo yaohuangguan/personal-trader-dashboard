@@ -327,6 +327,9 @@ class ScreenerController extends ChangeNotifier {
       sharedJob = job;
       state['serverJob'] = job;
       final next = rows(response['candidates']);
+      if (response['previousReport'] != null) {
+        state['previousReport'] = response['previousReport'];
+      }
       if (response.containsKey('candidates')) {
         state['sharedCandidates'] = next;
         state['candidates'] = next;
@@ -354,7 +357,11 @@ class ScreenerController extends ChangeNotifier {
                           (p['mode'] == 'multi' ? 15 : 20),
                 ));
       }).toList();
-      state['phase'] = job['phase'] == 'screening' ? 'scanning' : job['phase'];
+      state['phase'] = job['phase'] == 'screening'
+          ? 'scanning'
+          : job['phase'] == 'quotes'
+          ? 'universe'
+          : job['phase'];
       state['cursor'] = job['cursor'] ?? 0;
       state['total'] = job['total'] ?? 0;
       state['message'] = job['message'];

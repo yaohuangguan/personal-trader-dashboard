@@ -25,9 +25,13 @@ List<Rect> heatRects(List<double> weights, Rect bounds) {
         middle = i + 1;
       }
     }
-    final minimum = math.min(.5, 48 / math.max(box.width, box.height));
+    var vertical = box.width > box.height;
+    if (box.width < 156) vertical = false;
+    if (box.height < 128) vertical = true;
+    final axis = vertical ? box.width : box.height;
+    final minimum = math.min(.5, (vertical ? 78 : 64) / axis);
     final ratio = (sum / total).clamp(minimum, 1 - minimum);
-    if (box.width > box.height) {
+    if (vertical) {
       final width = box.width * ratio;
       split(start, middle, Rect.fromLTWH(box.left, box.top, width, box.height));
       split(
@@ -138,12 +142,16 @@ class _Cell extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 5),
-                  Text(
-                    percent(change),
-                    style: TextStyle(
-                      fontSize: c.maxWidth > 120 ? 19 : 15,
-                      fontWeight: FontWeight.w600,
-                      color: color,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      percent(change),
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: c.maxWidth > 120 ? 19 : 15,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
                     ),
                   ),
                   if (c.maxHeight > 115 && c.maxWidth > 100) ...[

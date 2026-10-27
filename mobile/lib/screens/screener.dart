@@ -76,13 +76,10 @@ class _ScreenerPageState extends State<ScreenerPage> {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       children: [
-        PageTitle('五线开花选股器', '寻找值得看图的候选。按你的指南逐项核验，显示形成阶段、缺项和失效条件。'),
+        if (tab != 'auto')
+          PageTitle('五线开花选股器', '寻找值得看图的候选。按你的指南逐项核验，显示形成阶段、缺项和失效条件。'),
         Chips(
-          values: const {
-            'auto': '综合优选',
-            'scan': '独立形态',
-            'sector': '板块研判 · 天时地利人和',
-          },
+          values: const {'auto': '综合优选', 'scan': '独立形态', 'sector': '板块研判'},
           selected: tab,
           onSelected: (v) => setState(() => tab = v),
         ),

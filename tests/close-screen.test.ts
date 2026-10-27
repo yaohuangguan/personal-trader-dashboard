@@ -25,3 +25,8 @@ test('legacy enabled devices make no intraday market calls, preserve subscriptio
  globalThis.fetch=async input=>{assert.match(String(input),/^https:\/\/fcm.googleapis.com/);pushed++;return new Response('',{status:201});};
  try{const monitor=new SignalMonitor(s,{MARKET_SCANNER:ns});await monitor.alarm();assert.equal(calls.includes('/results'),false);assert.equal(pushed,0);assert.deepEqual(await s.storage.get('subscription'),sub);assert.equal(await s.storage.getAlarm(),Date.parse('2026-10-26T07:20:00Z'));ctx.mock.timers.tick(6*3600000);await monitor.alarm();await monitor.alarm();assert.equal(pushed,1);assert.equal(await s.storage.get('digestDay'),'2026-10-26');ctx.mock.timers.tick(86400000);await monitor.alarm();assert.equal(pushed,1);}finally{globalThis.fetch=original;ctx.mock.timers.reset();}
 });
+
+test('an incremental 501 retries the canonical 500-bar request and returns only the requested tail',async()=>{
+ const original=globalThis.fetch,calls:string[]=[];globalThis.fetch=async input=>{calls.push(String(input));if(calls.length===1)return new Response('',{status:501});return Response.json({data:{sz300031:{qfqday:bars(130).map(c=>[c.time,c.open,c.close,c.high,c.low,c.volume])}}});};
+ try{const r=await fetchScreenDaily('300031.SZ',true,5);assert.equal(r.candles.length,5);assert.ok(calls[0].includes(',,,5,qfq'));assert.ok(calls[1].includes(',,,500,qfq'));}finally{globalThis.fetch=original;}
+});

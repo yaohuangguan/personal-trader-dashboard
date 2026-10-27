@@ -27,7 +27,7 @@ export class CloseCoordinator{
   if(action==='configure'){await s.put('shard',{enabled:false});await s.deleteAlarm();return json({ok:true,retired:true});}
   return json({error:'Unknown action'},404);
  }
- async alarm(){const s=this.state.storage;const research=new ResearchScreen(s),started=Date.now();let pending=false;for(let i=0;i<12;i++){pending=await research.step();if(!pending||Date.now()-started>12000)break;}if(pending)return;if(await s.get('shard')){await s.put('shard',{enabled:false});await s.deleteAlarm();return;}const ids=await s.get<string[]>('close:outbox')||[],ns=this.env.SIGNAL_MONITOR;
+ async alarm(){const s=this.state.storage;const research=new ResearchScreen(s);if(await research.step())return;if(await s.get('shard')){await s.put('shard',{enabled:false});await s.deleteAlarm();return;}const ids=await s.get<string[]>('close:outbox')||[],ns=this.env.SIGNAL_MONITOR;
   if(!ids.length||!ns?.idFromString){await s.deleteAlarm();return;}
   for(const id of ids.slice(0,8)){try{await ns.get(ns.idFromString(id)).fetch(new Request('https://monitor/internal-close',{method:'POST',body:'{}'}));}catch{/* Per-device close fallback retries delivery without rescanning. */}}
   const remaining=ids.slice(8);await s.put('close:outbox',remaining);if(remaining.length)await s.setAlarm(Date.now()+1000);else await s.deleteAlarm();

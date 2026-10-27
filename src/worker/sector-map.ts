@@ -34,7 +34,7 @@ export async function sectorDetail(code:string){
  return {available:true,board,members:members.sort((a,b)=>(b.changePercent||0)-(a.changePercent||0)),breadth,related,source:maps.source,sourceUrl:countUrl,fetchedAt:new Date().toISOString(),tradingDate:null,
   state:positiveShare===null?'覆盖不足，待核验':positiveShare>=.65?'上涨扩散':positiveShare<=.35?'多数走弱':'板块分化',
   outlook:positiveShare===null?'未取得完整有效成分，不判断整体强弱。':positiveShare>=.65?'当前上涨家数占比≥65%，观察领涨股能否维持、强势是否向更多成分扩散；占比回落至50%以下时降低评价。':positiveShare<=.35?'当前上涨家数占比≤35%，先观察止跌和承接；少数龙头上涨不代表板块整体走强。':'当前涨跌分歧明显，优先对比龙头与中位成分，不把单股脉冲当作板块行情。',
-  notice:'65%/35%为观察阈值，不是预测。相关概念仅表示当前领涨股相同，不代表统计相关性或未来涨幅。来源未提供完整交易日期，需核验个股行情。资金净额缺失保持为空。'};
+  notice:(board.count!==count?'分类快照成分数'+board.count+'与成分接口'+count+'不一致；扩散统计采用已读取的成分接口全量。':'')+'65%/35%为观察阈值，不是预测。相关概念仅表示当前领涨股相同，不代表统计相关性或未来涨幅。来源未提供完整交易日期，需核验个股行情。资金净额缺失保持为空。'};
 }
 export async function sectorNews(code:string){
  const maps=await memo('heat:concept',90,()=>sectorMap('concept')),board=maps.items.find(s=>s.code===code);if(!board)return {available:true,items:[]};

@@ -281,10 +281,15 @@ export async function stockNews(raw: string) {
 
 const SINA_API = 'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.';
 async function sinaJson(method: string, params: Record<string, string>) {
-  const url = SINA_API + method + '?' + new URLSearchParams(params);
-  const response = await request(url, 8000);
-  return { data: JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as unknown, url };
+  const suffix=method+'?'+new URLSearchParams(params), primary=SINA_API+suffix;
+  let error:unknown;
+  for(const host of [SINA_API,'https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.']){
+    try { const url=host+suffix,response=await request(url,4000);return {data:JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as unknown,url}; }
+    catch(e){error=e;}
+  }
+  throw error||new Error('证券列表两路来源暂不可用');
 }
+
 function sinaMembers(data: unknown): SectorMember[] {
   if (!Array.isArray(data)) throw new Error('新浪证券列表格式异常');
   return (data as Row[]).filter(r => /^(sh|sz|bj)\d{6}$/.test(String(r.symbol))).map(r => {const wire = String(r.symbol);return {symbol:wire.slice(2)+'.'+wire.slice(0,2).toUpperCase(),name:clean(r.name),price:num(r.trade),changePercent:num(r.changepercent),amount:num(r.amount)};});

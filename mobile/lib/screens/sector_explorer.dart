@@ -41,6 +41,11 @@ class _SectorExplorerState extends State<SectorExplorer> {
                   .where(
                     (s) =>
                         (query.isEmpty || str(s['name']).contains(query)) &&
+                        (kind != 'concept' ||
+                            query.isNotEmpty ||
+                            !RegExp(
+                              '重仓|融资融券|含H股|业绩|超大盘|解禁|股权激励|参股|转债|昨日|次新|退市|ST板|央企50|黄河三角',
+                            ).hasMatch(str(s['name']))) &&
                         (theme == '全部' ||
                             RegExp(themes[theme]!).hasMatch(str(s['name']))),
                   )
@@ -241,7 +246,7 @@ class SectorHeatDetail extends StatelessWidget {
                 runSpacing: 14,
                 children: [
                   LabelValue('板块成交额', amount(board['amount'])),
-                  LabelValue('来源成分数', str(board['count'])),
+                  LabelValue('分类快照成分数', str(board['count'])),
                   LabelValue('资金净额', amount(board['mainNet'])),
                 ],
               ),

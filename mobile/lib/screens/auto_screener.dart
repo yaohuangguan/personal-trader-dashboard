@@ -58,7 +58,14 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
     final scan = context.watch<ScreenerController>();
     final job = obj(scan.state['serverJob']);
     final manual = live || job.isNotEmpty;
-    final source = manual
+    final previous = obj(scan.state['previousReport']);
+    final usePrevious =
+        manual &&
+        rows(scan.state['sharedCandidates']).isEmpty &&
+        rows(previous['candidates']).isNotEmpty;
+    final source = usePrevious
+        ? rows(previous['candidates'])
+        : manual
         ? rows(scan.state['sharedCandidates'] ?? scan.state['candidates'])
         : rows(report?['candidates']);
     final all =
@@ -103,7 +110,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 14, 4, 16),
+          padding: const EdgeInsets.fromLTRB(4, 10, 4, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -113,7 +120,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                     child: Text(
                       tr(context, '综合优选'),
                       style: const TextStyle(
-                        fontSize: 26,
+                        fontSize: 25,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -121,7 +128,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   Text(
                     '${all.length}',
                     style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 27,
                       color: accent,
                       fontWeight: FontWeight.w600,
                     ),
@@ -133,24 +140,19 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
-                tr(context, '独立识别形态 → 排除低弹性 → 按量价与筹码排序'),
-                style: TextStyle(color: muted, fontSize: 14, height: 1.6),
+                tr(context, '量价 · 独立形态 · 股性 · 筹码，综合排列'),
+                style: TextStyle(color: muted, fontSize: 13, height: 1.5),
               ),
-              const SizedBox(height: 10),
-              Text(
-                tr(
-                  context,
-                  manual ? '盘中扫描为候选预警，收盘前不确认。' : '按最近收盘数据排序；可手动扫描当前全市场。',
-                ),
-                style: TextStyle(fontSize: 13, color: muted, height: 1.5),
-              ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                      ),
                       onPressed: scan.running
                           ? scan.pause
                           : () {
@@ -180,9 +182,10 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
             ],
           ),
         ),
+        if (usePrevious) Notice(tr(context, '新任务尚无有效候选，下面保留上一轮快照，非当前实时结果。')),
         if (manual && job.isNotEmpty)
           Panel(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -192,7 +195,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                       job['phase'] == 'complete'
                           ? Icons.check_circle_outline
                           : Icons.cloud_sync_outlined,
-                      size: 18,
+                      size: 17,
                       color: accent,
                     ),
                     const SizedBox(width: 8),
@@ -200,15 +203,17 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                       child: Text(
                         tr(
                           context,
-                          job['phase'] == 'universe'
-                              ? '读取全市场证券池'
+                          job['retryOf'] != null
+                              ? '重试未完成标的'
+                              : job['phase'] == 'universe'
+                              ? '读取证券池'
                               : job['phase'] == 'complete'
                               ? '本轮结果'
-                              : '服务端正在核验',
+                              : '服务端核验中',
                         ),
                         style: const TextStyle(
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          fontSize: 15,
                         ),
                       ),
                     ),
@@ -216,12 +221,13 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                       job['phase'] == 'universe'
                           ? '${job['registered'] ?? 0}/${job['total'] ?? '—'}'
                           : '$processed/$count',
-                      style: TextStyle(color: muted, fontSize: 13),
+                      style: TextStyle(color: muted, fontSize: 12),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 9),
                 LinearProgressIndicator(
+                  minHeight: 3,
                   value: job['phase'] == 'universe'
                       ? null
                       : count > 0
@@ -230,25 +236,23 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   color: accent,
                   backgroundColor: accent.withValues(alpha: .1),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 9),
                 Text(
-                  tr(context, str(scan.state['message'])),
-                  style: TextStyle(fontSize: 13, color: muted, height: 1.6),
+                  '${tr(context, '全市场')} ${job['total'] ?? 0} → ${tr(context, '深度核验')} $count · ${tr(context, '未完成')} ${job['failed'] ?? 0} · ${tr(context, '缓存复用')} ${job['cached'] ?? 0}',
+                  style: TextStyle(color: muted, fontSize: 12, height: 1.5),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${tr(context, '全市场')} ${job['total'] ?? 0} · ${tr(context, '流动性预筛')} $count · ${tr(context, '缓存复用')} ${job['cached'] ?? 0} · ${tr(context, '未完成')} ${job['failed'] ?? 0}',
-                  style: TextStyle(fontSize: 12, color: muted, height: 1.6),
-                ),
-                Text(
-                  tr(context, '离开页面后服务端继续；重新进入可连接原任务。'),
-                  style: TextStyle(fontSize: 12, color: muted, height: 1.6),
-                ),
+                if (scan.state['phase'] == 'paused')
+                  Text(
+                    tr(context, str(scan.state['message'])),
+                    style: const TextStyle(fontSize: 13, height: 1.5),
+                  ),
                 if ((numOf(job['failed']) ?? 0) > 0 && !scan.running)
-                  TextButton.icon(
-                    onPressed: scan.retryShared,
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: Text(tr(context, '仅重试未完成标的')),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: scan.retryShared,
+                      child: Text(tr(context, '仅重试未完成标的')),
+                    ),
                   ),
                 if (scan.state['phase'] == 'paused' && !scan.running)
                   TextButton(
@@ -261,24 +265,17 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
         if (manual && job.isEmpty && scan.state['message'] != null)
           Notice(tr(context, str(scan.state['message']))),
         Panel(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                tr(context, '筛选条件'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: concentration,
                       decoration: InputDecoration(
+                        isDense: true,
                         labelText: tr(context, '90%集中度上限'),
                       ),
                       items: [
@@ -293,6 +290,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                     child: DropdownButtonFormField<String>(
                       initialValue: cap,
                       decoration: InputDecoration(
+                        isDense: true,
                         labelText: tr(context, '市值上限（亿）'),
                       ),
                       items: [
@@ -307,28 +305,32 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  tr(context, '排除低弹性与弱延续'),
-                  style: const TextStyle(fontSize: 14),
-                ),
-                value: activity,
-                onChanged: (v) => setState(() => activity = v),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  tr(context, '所有形态加筛近10日涨停'),
-                  style: const TextStyle(fontSize: 14),
-                ),
-                value: recent,
-                onChanged: (v) => setState(() => recent = v),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  FilterChip(
+                    label: Text(
+                      tr(context, '排除低弹性'),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    selected: activity,
+                    onSelected: (v) => setState(() => activity = v),
+                  ),
+                  FilterChip(
+                    label: Text(
+                      tr(context, '近10日涨停'),
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    selected: recent,
+                    onSelected: (v) => setState(() => recent = v),
+                  ),
+                ],
               ),
               Text(
-                tr(context, '成交额至少2亿元；一阳多线集中度<15%，其余形态<20%。'),
-                style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+                tr(context, '成交额≥2亿；一阳多线集中度<15%，其余<20%。'),
+                style: TextStyle(color: muted, fontSize: 11, height: 1.5),
               ),
             ],
           ),

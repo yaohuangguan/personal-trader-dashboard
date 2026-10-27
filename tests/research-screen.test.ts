@@ -12,6 +12,7 @@ test('one durable job coalesces callers, prefilters liquidity, retains failures 
  globalThis.fetch=async input=>{const url=new URL(String(input));
   if(url.pathname.includes('getHQNodeStockCount'))return Response.json('3');
   if(url.pathname.includes('getHQNodeData'))return Response.json([{symbol:'sz300031',name:'测试候选',trade:10,amount:3e8},{symbol:'sz300545',name:'失败样本',trade:10,amount:3e8},{symbol:'sz300001',name:'成交不足',trade:10,amount:1e8}]);
+  if(url.hostname.includes('qt.gtimg.cn')){return new Response(['300031','300545','300001'].map(code=>{const f=Array(89).fill('');Object.assign(f,{1:'测试',3:'10',4:'10',5:'10',6:'500000',30:'20261027150000',32:'0',33:'10.1',34:'9.9',37:code==='300001'?'10000':'30000',44:'10',45:'20'});return 'v_sz'+code+'="'+f.join('~')+'";';}).join(''));}
   historyCalls++;const wire=url.searchParams.get('param')!.split(',')[0];if(fail&&wire==='sz300545')throw new Error('timeout');
   const fields=Array(89).fill('');Object.assign(fields,{1:'测试',3:'10',4:'10',5:'10',6:'500000',30:'20261027150000',32:'0',33:'10.1',34:'9.9',37:'30000',44:'10',45:'20'});
   const bars=Array.from({length:150},(_,i)=>[new Date(Date.UTC(2026,5,i)).toISOString().slice(0,10),'10','10','10.1','9.9','500000']);
@@ -21,7 +22,7 @@ test('one durable job coalesces callers, prefilters liquidity, retains failures 
  try{
   const s=storage(),a=new ResearchScreen(s),b=new ResearchScreen(s);
   const first=await a.start(),same=await b.start();assert.equal(first.job?.id,same.job?.id);assert.equal(historyCalls,0,'start returns before upstream I/O');
-  await a.step();let result=await a.read();assert.equal(result.job?.targets,2);assert.equal(result.job?.rejected['成交额不足2亿元'],1);
+  await a.step();await a.step();let result=await a.read();assert.equal(result.job?.targets,2);assert.equal(result.job?.rejected['成交额不足2亿元'],1);
   await a.step();result=await a.read();assert.equal(result.job?.phase,'complete');assert.equal(result.job?.checked,1);assert.equal(result.job?.failed,1);assert.match(result.job!.failureSample[0].reason,/超时/);
   const calls=historyCalls;fail=false;ctx.mock.timers.tick(121000);await b.start();await b.step();await b.step();result=await b.read();assert.equal(result.job?.cached,1);assert.equal(historyCalls-calls,2,'only the previously failed stock downloads history again');
  }finally{globalThis.fetch=original;ctx.mock.timers.reset();}
