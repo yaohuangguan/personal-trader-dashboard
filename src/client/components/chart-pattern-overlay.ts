@@ -1,6 +1,7 @@
 import type {IChartApi,ISeriesApi,LogicalRange,Time} from 'lightweight-charts';
 import type {Candle} from '../../shared/types';
 import {primaryPatternMarks,type PatternMark} from '../../shared/pattern-marks';
+import {visiblePatternRanges} from '../../shared/consolidation';
 const NS='http://www.w3.org/2000/svg';
 /** Annotations never enter the series autoscaler or change the chart's DOM height. */
 export function chartPatternOverlay(element:HTMLDivElement,chart:IChartApi,series:ISeriesApi<'Candlestick'>,bars:Candle[],marks:PatternMark[],trades:Set<string>,light:boolean,translate:(s:string)=>string){
@@ -12,10 +13,11 @@ export function chartPatternOverlay(element:HTMLDivElement,chart:IChartApi,serie
   svg.replaceChildren();svg.setAttribute('width',String(width));svg.setAttribute('height',String(height));
   if(plotWidth<80)return;
   const x=(time:string)=>{const value=chart.timeScale().timeToCoordinate(time as Time);return value===null?null:value+axis;};
-  for(const mark of marks.filter(m=>m.range&&m.chartVisible!==false).slice(-3)){
+  for(const mark of visiblePatternRanges(marks,bars,range?.from??0,range?.to??bars.length-1)){
    const box=mark.range!,x1=x(box.from),x2=x(box.to),y1=series.priceToCoordinate(box.high),y2=series.priceToCoordinate(box.low);
    if(x1===null||x2===null||y1===null||y2===null||x2<axis||x1>width)continue;
-   svg.append(node('rect',{x:Math.max(axis,x1),y:Math.max(0,Math.min(y1,y2)),width:Math.max(0,Math.min(width,x2)-Math.max(axis,x1)),height:Math.min(height,Math.abs(y2-y1)),fill:'rgba(130,155,180,.025)',stroke:'#829bb4','stroke-width':.65,'stroke-dasharray':'4 4'}));
+   const top=Math.max(0,Math.min(y1,y2)),bottom=Math.min(height,Math.max(y1,y2));if(bottom<=top)continue;
+   svg.append(node('rect',{x:Math.max(axis,x1),y:top,width:Math.max(0,Math.min(width,x2)-Math.max(axis,x1)),height:bottom-top,fill:'rgba(130,155,180,.025)',stroke:'#829bb4','stroke-width':.65,'stroke-dasharray':'4 4','data-box-from':box.from,'data-box-to':box.to}));
   }
   const occupied:{x:number;y:number;w:number;h:number}[]=[],riskIndices:number[]=[],suppressed=new Set<string>();
   for(const time of trades){const index=indices.get(time);if(index===undefined)continue;const px=x(time),hi=series.priceToCoordinate(bars[index].high),lo=series.priceToCoordinate(bars[index].low);if(px===null||hi===null||lo===null)continue;occupied.push({x:px-18,y:hi-31,w:36,h:27},{x:px-18,y:lo+3,w:36,h:27});}

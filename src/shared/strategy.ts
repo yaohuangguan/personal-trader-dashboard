@@ -40,6 +40,8 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
  const riskShapes=new Set(['bear-engulf','dark-cloud','evening-star','three-crows','double-top','head-shoulders-top','island-top','death-bloom','high-volume-bear','ma20-loss','vp-stall','high-volume-rejection']);
  const hist=new Map(macd(rows).map(p=>[p.time,p.histogram]));
  let setup:StrategySetup|null=null,position:{reference:number;stop:number;peak:number;target:number;trimmed:boolean}|null=null;
+ const trendMarks:PatternMark[]=[];
+ let trend:{date:string;defense:number}|null=null;
  const attempts:number[]=[];let lastPhase='';const lastAlert=new Map<string,number>();
  for(let i=64;i<rows.length;i++){
   const c=rows[i],prev=rows[i-1],prior=rows.slice(i-20,i),atr=(ranges[i]-ranges[i-20])/20,base=(volumes[i]-volumes[i-20])/20,base5=(volumes[i]-volumes[i-5])/5;
@@ -157,7 +159,21 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
    }
    plan=current;
   }
+  // Trend lifecycle is separate from entry timing and simulated position stops.
+  // A normal pullback or an ATR profit-protection exit does not end a trend.
+  const loss=trend?c.close<trend.defense-.1*atr:false;
+  const trendTrigger=hasTrigger||!!activeSetup&&!broken&&age!==null&&age>=1&&age<=20&&impulse&&c.close>recentHigh+.08*atr;
+  const trendCharacter=!trend&&trendTrigger?(character||stockCharacter(rows.slice(0,i+1),c.time)):character;
+  const maLoss=c.close<m20-.35*atr&&prev.close<ma(20,i-1)-.2*atr&&m5<m13&&m13<ma(13,i-3)&&!momentumImproving;
+  const sellingFailure=ratio>=1.5&&gain<=-2&&location<=.35&&c.close<prev.low&&c.close<m20-.35*atr;
+  if(trend&&(loss||maLoss||sellingFailure)){
+   trendMarks.push({time:c.time,kind:'trend-end',label:'趋势结束',direction:'bearish',position:'above',priority:100,provisional:localProvisional,status:localProvisional?'candidate':'confirmed',anchorTime:trend.date,detail:`${trend.date}开启的本段趋势${localProvisional?'出现失效预警，须收盘确认':'达到失效条件'}：${loss?'收盘失守启动结构防线'+trend.defense.toFixed(2):sellingFailure?'放量下跌、收近低点，失守前低和中期均线':'连续两根失守中期均线，短线转为空头次序且动能未修复'}；相对量${ratio.toFixed(2)}倍。低量破位同样执行结构风控；后续重新转强可以另启一段，不表示未来永不再涨。`});
+   if(!localProvisional)trend=null;
+  }else if(!trend&&trendTrigger&&!broken&&!downFan&&current.structureScore>=75&&riskEvidence.length===0&&!trendCharacter?.quiet&&!trendCharacter?.weakFollow&&c.close>Math.max(m13,m20,m60)&&m5>m13&&m13>ma(13,i-2)&&m20>=ma(20,i-3)&&ratio>=1.3&&location>=.68&&momentumImproving){
+   trendMarks.push({time:c.time,kind:'trend-start',label:'趋势开启 · '+(multi?'一阳多线':rebound?'回踩转强':recovery?'放量收复':'放量突破'),direction:'bullish',position:'below',priority:99,provisional:localProvisional,status:localProvisional?'candidate':'confirmed',anchorTime:activeSetup?.date,detail:`${localProvisional?'盘中开启预警，尚待收盘确认；':''}${activeSetup?.date||c.time}量价结构后出现${rebound?'回踩放量转强':multi?'一阳多线':breakout?'箱体／局部高点突破':recovery?'破位后放量收复':'形态放量确认'}，价格站上短中期及MA${decisionPeriod}，短线向上、参与量${ratio.toFixed(2)}倍、动能改善；结构分${current.structureScore}，股性${trendCharacter?.label||'随触发核验'}。趋势质量与当前买点分开，偏离计划区仍不追高；当时未保存的板块资金情绪不回填。`});
+   if(!localProvisional)trend={date:c.time,defense:activeSetup?Math.max(activeSetup.low-.2*atr,Math.min(activeSetup.midpoint,m20)-.35*atr):m20-.5*atr};
+  }
   if(!localProvisional&&phase!==lastPhase){timeline.push({date:c.time,phase,label,reason:flat.reason});lastPhase=phase;}
  }
- return withStrategyEvidence({version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes:episodes.slice(-6),method},shapes,oscillatorMarks,{symbol:options.symbol,name:options.name,maPeriods:selected},now);
+ return withStrategyEvidence({version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes:episodes.slice(-6),method},shapes,oscillatorMarks,{symbol:options.symbol,name:options.name,maPeriods:selected},now,trendMarks);
 }

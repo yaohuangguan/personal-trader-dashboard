@@ -128,7 +128,7 @@ void main() {
       final api = AtlasApi(
         client: MockClient((r) async {
           final body = switch (r.url.path) {
-            '/api/analysis' => {
+            '/api/analysis' || '/api/chart-bundle' => {
               'market': {
                 'name': '宝通科技',
                 'candles': chartFixture()
@@ -174,6 +174,21 @@ void main() {
             },
             _ => <String, dynamic>{},
           };
+          if (r.url.path == '/api/chart-bundle') {
+            final candles = rows(obj(body['market'])['candles']);
+            body['study'] = {
+              'tradeMarkers': [],
+              'patternMarks': [],
+              'indicatorMarks': [],
+              'verification': {
+                'symbol': '300031.SZ',
+                'unit': 'day',
+                'maPeriods': [5, 13, 20, 30, 60, 120, 144, 250],
+                'candleCount': candles.length,
+                'last': candles.last,
+              },
+            };
+          }
           return http.Response(
             jsonEncode(body),
             200,

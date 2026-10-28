@@ -139,7 +139,7 @@ void main() {
                 },
               ],
             },
-            '/api/analysis' => {
+            '/api/analysis' || '/api/chart-bundle' => {
               'market': {
                 'candles': prices(270)
                     .map(
@@ -160,6 +160,21 @@ void main() {
             },
             _ => {'items': []},
           };
+          if (r.url.path == '/api/chart-bundle') {
+            final candles = rows(obj(data['market'])['candles']);
+            data['study'] = {
+              'tradeMarkers': [],
+              'patternMarks': [],
+              'indicatorMarks': [],
+              'verification': {
+                'symbol': '300545.SZ',
+                'unit': 'day',
+                'maPeriods': [5, 13, 20, 30, 60, 120, 144, 250],
+                'candleCount': candles.length,
+                'last': candles.last,
+              },
+            };
+          }
           return http.Response(
             jsonEncode(data),
             200,

@@ -35,7 +35,8 @@ class StockPage extends StatefulWidget {
 class _StockPageState extends State<StockPage> {
   final snapshotKey = GlobalKey();
   bool snapshotBusy = false;
-  Json? quote, analysis, trend, historyMarket;
+  Json? quote, analysis, trend, historyMarket, historyStudy;
+  String? historyVolumeUnit;
   String? trendError;
   bool trendLoading = false;
   String? quoteError, analysisError, historyError;
@@ -43,8 +44,9 @@ class _StockPageState extends State<StockPage> {
   bool auto = true, loading = false;
   Timer? timer;
   late ValueNotifier<int> chartMARevision;
-  int tick = 0, analysisGeneration = 0;
+  int tick = 0, analysisGeneration = 0, historyGeneration = 0;
   void maChanged() {
+    refreshHistory();
     refreshAnalysis(force: true);
   }
 
@@ -80,25 +82,38 @@ class _StockPageState extends State<StockPage> {
 
   Future<void> refreshHistory() async {
     if (!cnStock(widget.symbol)) return;
+    final generation = ++historyGeneration;
     try {
       final data = await context.read<AtlasStore>().api.get(
-        '/api/market',
-        parameters: {'symbol': widget.symbol},
+        '/api/chart-bundle',
+        parameters: {
+          'symbol': widget.symbol,
+          ...context.read<AtlasStore>().chartMAParameters,
+        },
       );
-      if (mounted) {
+      if (rows(obj(data['market'])['candles']).isEmpty ||
+          obj(obj(data['study'])['verification']).isEmpty) {
+        throw const FormatException('行情与标注快照不完整，请重试');
+      }
+      if (mounted && generation == historyGeneration) {
         setState(() {
-          historyMarket = data;
+          historyMarket = obj(data['market']);
+          historyStudy = obj(data['study']);
+          historyVolumeUnit = str(data['volumeUnit'], '手');
+          // The first candle and its annotations must refer to the same snapshot.
+          if (data['quote'] is Map) quote = obj(data['quote']);
           historyError = null;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => historyError = e.toString());
+      if (mounted && generation == historyGeneration) {
+        setState(() => historyError = e.toString());
+      }
     }
   }
 
-  Json get chartMarket => rows(obj(analysis?['market'])['candles']).isNotEmpty
-      ? obj(analysis?['market'])
-      : historyMarket ?? {};
+  Json get chartMarket =>
+      historyMarket ?? (cnStock(widget.symbol) ? {} : obj(analysis?['market']));
   Future<void> refreshQuote() async {
     if (!cnStock(widget.symbol)) return;
     try {
@@ -197,10 +212,11 @@ class _StockPageState extends State<StockPage> {
         'asOf': chartMarket['asOf'],
       };
   String get volumeUnit =>
-      str(chartMarket['provider'], '').startsWith('新浪') ||
-          RegExp(r'^68[89]').hasMatch(widget.symbol)
-      ? '股'
-      : '手';
+      historyVolumeUnit ??
+      (str(chartMarket['provider'], '').startsWith('新浪') ||
+              RegExp(r'^68[89]').hasMatch(widget.symbol)
+          ? '股'
+          : '手');
   List<Bar> get bars => patchDailyQuote(
     rows(chartMarket['candles']).map(Bar.fromJson).toList(),
     q,
@@ -790,17 +806,19 @@ class _StockPageState extends State<StockPage> {
   Widget _waiting() => Center(
     child: Padding(
       padding: const EdgeInsets.all(16),
-      child: analysisError == null
+      child: (cnStock(widget.symbol) ? historyError : analysisError) == null
           ? const CircularProgressIndicator(strokeWidth: 1.5)
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  analysisError!,
+                  (cnStock(widget.symbol) ? historyError : analysisError)!,
                   style: TextStyle(fontSize: 13, color: muted),
                 ),
                 TextButton(
-                  onPressed: refreshAnalysis,
+                  onPressed: cnStock(widget.symbol)
+                      ? refreshHistory
+                      : refreshAnalysis,
                   child: Text(tr(context, '重试数据源')),
                 ),
               ],
@@ -818,6 +836,7 @@ class _StockPageState extends State<StockPage> {
         name: name,
         symbol: widget.symbol,
         volumeUnit: volumeUnit,
+        initialStudy: historyStudy,
         events: rows(obj(analysis?['guide'])['events']),
         trades: rows(analysis?['tradeMarkers']),
         patterns: rows(analysis?['patternMarks']),

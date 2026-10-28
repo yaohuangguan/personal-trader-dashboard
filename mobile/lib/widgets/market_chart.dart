@@ -1,4 +1,5 @@
 import '../core/patch_daily_quote.dart';
+import '../core/pattern_ranges.dart';
 
 import 'dart:convert';
 import 'dart:async';
@@ -30,11 +31,13 @@ class MarketChart extends StatefulWidget {
     this.trades = const [],
     this.patterns = const [],
     this.expanded = false,
+    this.initialStudy,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
   final List<Json> events, trades, patterns;
+  final Json? initialStudy;
   final bool expanded;
   final bool terminal;
   final double? amount;
@@ -67,6 +70,7 @@ class _MarketChartState extends State<MarketChart> {
   Timer? studyRetry;
   int studyRetries = 0;
   bool studyBusy = false;
+  bool studyReady = false;
   final Map<int, Offset> pointers = {};
   double? pinchDistance;
 
@@ -97,6 +101,7 @@ class _MarketChartState extends State<MarketChart> {
     } catch (_) {}
     indicators = IndicatorData(widget.bars, mas);
     viewport.length = widget.bars.length;
+    acceptInitialStudy();
     WidgetsBinding.instance.addPostFrameCallback((_) => refreshStudy());
   }
 
@@ -155,6 +160,7 @@ class _MarketChartState extends State<MarketChart> {
       }
       offset = offset.clamp(0, math.max(0, widget.bars.length - 1));
     }
+    if (oldWidget.initialStudy != widget.initialStudy) acceptInitialStudy();
   }
 
   @override
@@ -437,6 +443,32 @@ class _MarketChartState extends State<MarketChart> {
           events: widget.events,
           trades: widget.trades,
           patterns: widget.patterns,
+          initialStudy: studyReady
+              ? {
+                  'tradeMarkers': studyTrades,
+                  'patternMarks': studyPatterns,
+                  'indicatorMarks': studyIndicators,
+                  'verification': {
+                    'symbol': widget.symbol,
+                    'unit': widget.unit,
+                    'maPeriods': mas
+                        .where((m) => m.enabled)
+                        .map((m) => m.period)
+                        .toList(),
+                    'candleCount': widget.bars.length,
+                    'last': {
+                      'time': widget.bars.last.time,
+                      'open': widget.bars.last.open,
+                      'high': widget.bars.last.high,
+                      'low': widget.bars.last.low,
+                      'close': widget.bars.last.close,
+                      'volume': widget.bars.last.volume,
+                    },
+                  },
+                }
+              : null,
+          amount: widget.amount,
+          amountDate: widget.amountDate,
         ),
       ),
     );
@@ -469,6 +501,39 @@ class _MarketChartState extends State<MarketChart> {
     return '${widget.symbol}:${widget.unit}:$periods:${widget.amount}:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
   }
 
+  void acceptInitialStudy() {
+    final seed = widget.initialStudy;
+    if (seed == null || widget.bars.isEmpty) return;
+    final verification = obj(seed['verification']),
+        last = obj(verification['last']),
+        bar = widget.bars.last;
+    final periods = mas.where((m) => m.enabled).map((m) => m.period).toList()
+      ..sort();
+    final verifiedPeriods =
+        (verification['maPeriods'] as List? ?? [])
+            .map((p) => numOf(p)?.toInt())
+            .toList()
+          ..sort((a, b) => (a ?? 0).compareTo(b ?? 0));
+    if (verification['symbol'] != widget.symbol ||
+        verification['unit'] != widget.unit ||
+        verification['candleCount'] != widget.bars.length ||
+        jsonEncode(periods) != jsonEncode(verifiedPeriods) ||
+        last['time'] != bar.time ||
+        numOf(last['open']) != bar.open ||
+        numOf(last['high']) != bar.high ||
+        numOf(last['low']) != bar.low ||
+        numOf(last['close']) != bar.close ||
+        numOf(last['volume']) != bar.volume) {
+      return;
+    }
+    studyTrades = rows(seed['tradeMarkers']);
+    studyPatterns = rows(seed['patternMarks']);
+    studyIndicators = rows(seed['indicatorMarks']);
+    studyKey = currentStudyKey;
+    studyReady = true;
+    studyStatus = 'K线与标注 · 同步快照';
+  }
+
   Future<void> refreshStudy({bool retry = false}) async {
     if (!mounted || widget.bars.isEmpty) return;
     final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
@@ -485,6 +550,7 @@ class _MarketChartState extends State<MarketChart> {
     studyKey = key;
     final request = ++studyRequest;
     setState(() {
+      if (!sameParameters) studyReady = false;
       studyTrades = sameParameters
           ? studyTrades
                 .where((m) => m['time'] != widget.bars.last.time)
@@ -529,6 +595,7 @@ class _MarketChartState extends State<MarketChart> {
       );
       if (!mounted || request != studyRequest || key != currentStudyKey) return;
       setState(() {
+        studyReady = true;
         studyTrades = rows(result['tradeMarkers']);
         studyPatterns = rows(result['patternMarks']);
         studyIndicators = rows(result['indicatorMarks']);
@@ -1307,28 +1374,73 @@ class _MarketChartState extends State<MarketChart> {
                   child: CustomPaint(
                     key: const ValueKey('candlestick-canvas'),
                     size: Size(constraints.maxWidth, height),
-                    painter: ChartPainter(
-                      indicators,
-                      start,
-                      end,
-                      hover,
-                      drawVolume,
-                      drawMacd,
-                      drawKdj,
-                      shapeMarkers ? widget.events : [],
-                      widget.volumeUnit,
-                      math.max(14, context.watch<AtlasStore>().fontSize * .72),
-                      markers,
-                      overlay: overlay,
-                      rsi: rsi,
-                      trades: studyTrades,
-                      patterns: studyPatterns,
-                      indicatorMarks: indicatorLabels
-                          ? studyIndicators
-                          : const [],
-                      showPatterns: shapeMarkers,
-                      showCrosses: crossMarkers,
-                    ),
+                    painter:
+                        studyReady ||
+                            !markers && !shapeMarkers && !indicatorLabels
+                        ? ChartPainter(
+                            indicators,
+                            start,
+                            end,
+                            hover,
+                            drawVolume,
+                            drawMacd,
+                            drawKdj,
+                            shapeMarkers ? widget.events : [],
+                            widget.volumeUnit,
+                            math.max(
+                              14,
+                              context.watch<AtlasStore>().fontSize * .72,
+                            ),
+                            markers,
+                            overlay: overlay,
+                            rsi: rsi,
+                            trades: studyTrades,
+                            patterns: studyPatterns,
+                            indicatorMarks: indicatorLabels
+                                ? studyIndicators
+                                : const [],
+                            showPatterns: shapeMarkers,
+                            showCrosses: crossMarkers,
+                          )
+                        : null,
+                    child:
+                        studyReady ||
+                            !markers && !shapeMarkers && !indicatorLabels
+                        ? null
+                        : SizedBox(
+                            width: constraints.maxWidth,
+                            height: height,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (studyBusy)
+                                    const CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                    ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    tr(
+                                      context,
+                                      studyStatus.contains('失败')
+                                          ? '标注核验失败，请重试'
+                                          : '正在同步 K线与标注',
+                                    ),
+                                    style: TextStyle(
+                                      color: muted,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  if (studyStatus.contains('失败'))
+                                    TextButton(
+                                      onPressed: () =>
+                                          refreshStudy(retry: true),
+                                      child: Text(tr(context, '重试')),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -1441,11 +1553,17 @@ class FullscreenChart extends StatefulWidget {
     required this.events,
     this.trades = const [],
     this.patterns = const [],
+    this.initialStudy,
+    this.amount,
+    this.amountDate,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
   final List<Json> events, trades, patterns;
+  final Json? initialStudy;
+  final double? amount;
+  final String? amountDate;
   @override
   State<FullscreenChart> createState() => _FullscreenChartState();
 }
@@ -1457,8 +1575,8 @@ class _FullscreenChartState extends State<FullscreenChart> {
   late List<Json> patterns = widget.patterns;
   Timer? timer;
   bool loading = false, quoteLoading = false;
-  double? quoteAmount;
-  String? quoteDate;
+  late double? quoteAmount = widget.amount;
+  late String? quoteDate = widget.amountDate;
   int refreshTick = 0;
   @override
   void initState() {
@@ -1586,6 +1704,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
             events: events,
             trades: trades,
             patterns: patterns,
+            initialStudy: widget.initialStudy,
             expanded: true,
             terminal: portrait,
             viewportHeight: c.maxHeight,
@@ -1866,12 +1985,12 @@ class ChartPainter extends CustomPainter {
             : y(data.bars[index].high) - 25;
         occupied.add(Rect.fromLTWH(x(index) - 10, top, 45, 20));
       }
-      for (final mark
-          in patterns
-              .where((m) => m['range'] is Map)
-              .toList()
-              .reversed
-              .take(3)) {
+      for (final mark in visiblePatternRanges(
+        patterns,
+        data.bars.map((b) => b.time).toList(),
+        start,
+        end,
+      )) {
         final range = obj(mark['range']),
             from = dates[str(range['from'])],
             to = dates[str(range['to'])],
@@ -1890,7 +2009,8 @@ class ChartPainter extends CustomPainter {
           y(high),
           x(math.min(end - 1, to)) + step * .5,
           y(low),
-        );
+        ).intersect(Rect.fromLTRB(left, 14, size.width - right, priceHeight));
+        if (box.isEmpty) continue;
         c.drawRect(
           box,
           Paint()..color = const Color(0xff829bb4).withValues(alpha: .04),

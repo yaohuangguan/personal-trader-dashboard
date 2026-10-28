@@ -1,10 +1,11 @@
 import type {Candle} from './types';
-import {reusablePatterns} from './strategy-evidence';
+import {reusablePatterns,strategyEvidence} from './strategy-evidence';
+import {consolidationMarks} from './consolidation';
 import type {StrategyAnalysis} from './strategy';
 import {maPeriods,maRole} from './ma-system';
 import {classicShapes} from './shape-rules';
 import {guidePatternMarks} from './guide-patterns';
-export type PatternMark={direction?:'bullish'|'bearish'|'neutral';time:string;kind:string;label:string;detail:string;position:'above'|'below';priority:number;provisional:boolean;chartVisible?:boolean;status?:'candidate'|'confirmed'|'observation';anchorTime?:string;range?:{from:string;to:string;low:number;high:number}};
+export type PatternMark={direction?:'bullish'|'bearish'|'neutral';time:string;kind:string;label:string;detail:string;position:'above'|'below';priority:number;provisional:boolean;chartVisible?:boolean;status?:'candidate'|'confirmed'|'observation';anchorTime?:string;knownAt?:string;range?:{from:string;to:string;low:number;high:number}};
 const avg=(a:number[])=>a.length?a.reduce((n,v)=>n+v,0)/a.length:0;
 /** Shape annotations are observations, not orders. Future candles cannot remove earlier observations. */
 export function patternMarks(input:Candle[],now=new Date(),options:{symbol?:string;name?:string;maPeriods?:number[]}={}):PatternMark[]{
@@ -59,7 +60,7 @@ export function primaryPatternMarks(marks:PatternMark[]):PatternMark[]{const sel
 
 /** Stage changes remain dated observations, including failures with no simulated holding. */
 export function reviewedPatternMarks(bars:Candle[],strategy:StrategyAnalysis,now=new Date(),options:{symbol?:string;name?:string;maPeriods?:number[]}={}):PatternMark[]{
- const marks=[...(reusablePatterns(strategy,options,now)||patternMarks(bars,now,options))],phases=new Set(['turning','broken','downward']);
+ const marks=[...(reusablePatterns(strategy,options,now)||patternMarks(bars,now,options)),...(strategyEvidence(strategy)?.trends||[]),...consolidationMarks(bars,now)],phases=new Set(['turning','broken','downward']);
  for(const step of strategy.timeline){if(phases.has(step.phase))marks.push({time:step.date,kind:'stage-'+step.phase,direction:step.phase==='turning'?'bullish':'bearish',label:step.phase==='turning'?'回踩放量转强':step.phase==='broken'?'结构支撑失守':'向下开花',detail:step.reason,position:step.phase==='turning'?'below':'above',priority:step.phase==='turning'?93:98,provisional:false});}
  const p=strategy.plan;
  if(p.provisional&&p.asOf&&phases.has(p.phase))marks.push({time:p.asOf,kind:'stage-'+p.phase,direction:p.phase==='turning'?'bullish':'bearish',label:p.phase==='turning'?'回踩转强预警':'结构风控预警',detail:p.flat.reason,position:p.phase==='turning'?'below':'above',priority:98,provisional:true});

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -15,7 +16,7 @@ import 'support/chart_harness.dart';
 
 void main() {
   testWidgets(
-    'raw chart survives strategy resource errors, failed annotations retry, and named switches persist',
+    'first paint pairs candles with annotations despite optional analysis errors; switches persist',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -26,46 +27,66 @@ void main() {
           bars = chartFixture(100),
           day = bars.last.time;
       var studyCalls = 0;
+      final ready = Completer<void>();
+      final history = bars
+          .map(
+            (b) => {
+              'time': b.time,
+              'open': b.open,
+              'high': b.high,
+              'low': b.low,
+              'close': b.close,
+              'volume': b.volume,
+            },
+          )
+          .toList();
+      final study = <String, dynamic>{
+        'patternMarks': [
+          {
+            'time': day,
+            'kind': 'trend-start',
+            'label': '趋势开启',
+            'direction': 'bullish',
+            'detail': 'dated test evidence',
+            'priority': 99,
+            'position': 'below',
+          },
+        ],
+        'tradeMarkers': [],
+        'indicatorMarks': [
+          {
+            'time': day,
+            'pane': 'macd',
+            'label': '金叉',
+            'kind': 'golden',
+            'position': 'below',
+          },
+        ],
+        'verification': {
+          'symbol': '300545.SZ',
+          'unit': 'day',
+          'maPeriods': [5, 13, 20, 30, 60, 120, 144, 250],
+          'candleCount': bars.length,
+          'last': history.last,
+        },
+      };
+      final bundle = {
+        'market': {'name': 'Stock', 'provider': '腾讯公开日线', 'candles': history},
+        'study': study,
+      };
       final api = AtlasApi(
         client: MockClient((r) async {
-          if (r.url.path == '/api/analysis' ||
-              r.url.path == '/api/chart-study' && ++studyCalls == 1) {
+          if (r.url.path == '/api/analysis') {
             return http.Response(
               '<title>Worker exceeded resource limits</title>',
               503,
             );
           }
+          if (r.url.path == '/api/chart-bundle') await ready.future;
+          if (r.url.path == '/api/chart-study') studyCalls++;
           final data = switch (r.url.path) {
-            '/api/market' => {
-              'name': 'Stock',
-              'provider': '腾讯公开日线',
-              'candles': bars
-                  .map(
-                    (b) => {
-                      'time': b.time,
-                      'open': b.open,
-                      'high': b.high,
-                      'low': b.low,
-                      'close': b.close,
-                      'volume': b.volume,
-                    },
-                  )
-                  .toList(),
-            },
-            '/api/chart-study' => {
-              'patternMarks': [
-                {
-                  'time': day,
-                  'kind': 'box',
-                  'label': '箱体放量换手',
-                  'detail': 'dated test evidence',
-                  'priority': 65,
-                  'position': 'above',
-                },
-              ],
-              'tradeMarkers': [],
-              'indicatorMarks': [],
-            },
+            '/api/chart-bundle' => bundle,
+            '/api/chart-study' => study,
             _ => <String, dynamic>{},
           };
           return http.Response(
@@ -81,17 +102,22 @@ void main() {
         child: const MaterialApp(home: StockPage('300545.SZ')),
       );
       await tester.pumpWidget(page());
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(MarketChart), findsNothing);
+      ready.complete();
       await tester.pumpAndSettle();
       expect(find.byType(MarketChart), findsOneWidget);
       expect(
         tester.widget<MarketChart>(find.byType(MarketChart)).bars.length,
         100,
       );
-      expect(studyCalls, 1);
-      await tester.pump(const Duration(seconds: 6));
-      await tester.pumpAndSettle();
-      expect(studyCalls, 2);
-      expect(painter(tester).patterns.single['label'], '箱体放量换手');
+      expect(
+        studyCalls,
+        0,
+        reason: 'the verified first snapshot does not start a second annotation request',
+      );
+      expect(painter(tester).patterns.single['label'], '趋势开启');
+      expect(painter(tester).indicatorMarks.single['label'], '金叉');
       await tester.tap(find.byTooltip('标注设置').first);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, '形态标注'));

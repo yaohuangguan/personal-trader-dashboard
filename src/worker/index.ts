@@ -1,6 +1,8 @@
 import {chartStudy} from '../shared/chart-study';
+import {loadChartBundle} from './chart-bundle';
+import {chartPayload} from './chart-payload';
 import {computeCache,studySession} from './compute-cache';
-import {parseMAPeriods} from '../shared/ma-system';
+import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
 import {indicatorMarks} from '../shared/indicator-marks';
 import {analyzeStrategy} from '../shared/strategy';
@@ -32,6 +34,7 @@ import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalend
 interface Env extends Level2Env { PUBLIC_ORIGIN?:string; LEGACY_STATE?:{fetch(request:Request):Promise<Response>}; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
+const pending=new Map<string,Promise<unknown>>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
 const validSymbol=(s:string)=>/^[A-Z0-9^.-]{1,18}$/.test(s);
 const num=(v:unknown)=>{const n=Number(v);return Number.isFinite(n)?n:0;};
@@ -40,8 +43,9 @@ function withTimeout(url:string, opts:RequestInit={},timeout=9000):Promise<Respo
 }
 async function cached<T>(key:string,ttl:number,fn:()=>Promise<T>):Promise<T>{
   const value=memory.get(key);if(value&&value.until>Date.now())return value.body as T;
-  const result=await fn();if(memory.size>250)memory.clear();
-  memory.set(key,{until:Date.now()+ttl*1000,body:result});return result;
+  const current=pending.get(key);if(current)return current as Promise<T>;
+  const task=(async()=>{const result=await fn();if(memory.size>250)memory.clear();memory.set(key,{until:Date.now()+ttl*1000,body:result});return result;})();pending.set(key,task);
+  try{return await task;}finally{pending.delete(key);}
 }
 function csv(text:string):Candle[]{
  const lines=text.trim().split(/\r?\n/),candles:Candle[]=[];
@@ -382,8 +386,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
  if(p==='/api/level2'){const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid symbol'},400);return json(await level2(symbol,env));}
  if(p==='/api/analysis'){
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
-  const key='mobile-analysis:'+symbol,cached=memory.get(key);let data:MarketPayload;
-  if(cached&&cached.until>Date.now())data=cached.body as MarketPayload;else{data=await market(symbol,env);memory.set(key,{until:Date.now()+60000,body:data});}
+  let data=await cached('mobile-analysis:'+symbol,60,()=>market(symbol,env));
   const selectedMA=parseMAPeriods(url.searchParams.get('ma'));
   const decision=url.searchParams.get('review')==='1'?await loadTradeReview(symbol,data,selectedMA):null;
   if(decision)data=decision.market;
@@ -513,7 +516,13 @@ export default {
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
     const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
     if(!Array.isArray(body.candles)||body.candles.length>1500||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
-    const ma=parseMAPeriods(body.ma.join(','));return computeCache(request,'chart-study-v2:'+studySession()+':'+raw,300,()=>json(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null})));
+    const ma=parseMAPeriods(body.ma.join(','));return computeCache(request,'chart-study-v3:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
+   }
+   if(incoming.pathname==='/api/chart-bundle'){
+    if(request.method!=='GET')return json({error:'Method not allowed'},405);
+    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    const periods=parseMAPeriods(incoming.searchParams.get('ma'))??CLASSIC_MA;
+    return computeCache(request,'chart-bundle-v1:'+studySession()+JSON.stringify([symbol,periods]),3,async()=>json(await loadChartBundle(symbol,periods,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
    }
 
    // Old installed PWAs must download their same-origin shell before the new
@@ -541,7 +550,7 @@ export default {
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
     const periods=parseMAPeriods(p.get('ma'));
-    return computeCache(request,'analysis-v2:'+studySession()+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,()=>handle(request,env));
+    return computeCache(request,'analysis-v3:'+studySession()+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,()=>handle(request,env));
    }
    if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v1:'+studySession()+':'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env));
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
