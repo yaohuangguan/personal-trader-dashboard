@@ -3,6 +3,7 @@ declare const __APP_BUILD__:string;
 export const APP_BUILD=__APP_BUILD__;
 let state:UpdateState={phase:'idle',build:APP_BUILD,completed:0,total:0,error:''},registration:ServiceWorkerRegistration|undefined,started=false,listening=false,applying=false,reloaded=false,lastCheck=0,applyTimer:ReturnType<typeof setTimeout>|undefined;
 const tracked=new WeakSet<ServiceWorkerRegistration>(),installingWorkers=new WeakSet<ServiceWorker>();
+let applyingTo:ServiceWorker|undefined;
 const listeners=new Set<()=>void>();
 const set=(value:Partial<UpdateState>)=>{state={...state,...value};for(const fn of listeners)fn();};
 export const subscribeUpdate=(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn);};};
@@ -10,7 +11,7 @@ export const updateSnapshot=()=>state;
 function status(worker:ServiceWorker){return new Promise<{build:string;phase:string;completed:number;total:number}>(resolve=>{const channel=new MessageChannel(),empty={build:'',phase:'',completed:0,total:0},timer=setTimeout(()=>{channel.port1.close();resolve(empty);},2000);channel.port1.onmessage=e=>{clearTimeout(timer);channel.port1.close();resolve(e.data);};try{worker.postMessage({type:'ATLAS_UPDATE_STATUS'},[channel.port2]);}catch{clearTimeout(timer);channel.port1.close();resolve(empty);}});}
 async function activated(){
  const controller=navigator.serviceWorker.controller;if(!controller)return;
- const info=await status(controller);if(info.build===APP_BUILD)return;
+ const info=await status(controller);if(info.build===APP_BUILD){if(!applying||controller===applyingTo){clearTimeout(applyTimer);applying=false;set({phase:'success',build:APP_BUILD,error:''});}return;}
  if(!info.build||reloaded)return;
  clearTimeout(applyTimer);reloaded=true;set({phase:'reloading',build:info.build,completed:state.total,error:''});
  try{sessionStorage.setItem('atlas.update.expected',info.build);}catch{}
@@ -28,7 +29,7 @@ export async function startUpdater(){
  if(!listening){listening=true;
  navigator.serviceWorker.addEventListener('controllerchange',()=>void activated());
  navigator.serviceWorker.addEventListener('message',event=>{const data=event.data;if(data?.type!=='ATLAS_UPDATE_STATUS'||typeof data.build!=='string')return;
-  if(data.phase==='active'){if(data.build!==APP_BUILD)void activated();return;}
+  if(data.phase==='active'){if(data.build!==APP_BUILD)void activated();else if(!applying||navigator.serviceWorker.controller===applyingTo){clearTimeout(applyTimer);applying=false;set({phase:'success',build:APP_BUILD,error:''});}return;}
   if(data.phase==='downloading'||data.phase==='ready'||data.phase==='error')set({phase:data.phase,build:data.build,completed:Number(data.completed)||0,total:Number(data.total)||0,error:data.error||''});
  });
  const resume=()=>{if(!document.hidden&&navigator.onLine&&Date.now()-lastCheck>60000)void checkUpdate();};window.addEventListener('online',resume);document.addEventListener('visibilitychange',resume);
@@ -50,7 +51,7 @@ export async function checkUpdate(){
 export async function applyUpdate(){
  if(applying)return;
  if(!registration?.waiting){await checkUpdate();if(!registration?.waiting){if(state.phase==='success')location.reload();return;}}
- applying=true;set({phase:'applying',error:''});
+ applying=true;applyingTo=registration.waiting;set({phase:'applying',error:''});
  applyTimer=setTimeout(()=>{applying=false;set({phase:'error',error:'新版本切换超时；请重试，或关闭其他观澜窗口后再更新。'});},15000);
  registration.waiting.postMessage({type:'SKIP_WAITING'});
  // Handles browsers where activation finished just before the listener was attached.
