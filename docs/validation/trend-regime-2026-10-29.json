@@ -6,6 +6,13 @@
     "phase": "before_holdout_evaluation",
     "holdoutStockCount": 24
   },
+  "finalRuleLock": {
+    "version": "directional-regime-v2.1",
+    "sha256": "d833603dde8fbfef52b6bb6e227179a836f0a3e03cbcd4aca087a8e2aa610312",
+    "phase": "before_fresh_holdout_fetch_or_evaluation",
+    "holdoutStockCount": 24
+  },
+  "rounds": "First development/holdout reports describe v2. The final-holdout report uses a fresh 24-stock batch and v2.1, frozen before fetching that batch. v2.1 adds confirmation-candle direction; first-round outcomes were not rebranded as final independent evidence.",
   "reports": [
     {
       "protocol": "trend-regime-v2-20261029",
@@ -158,12 +165,96 @@
       "retainedShapes": 12582,
       "confirmedSignalCasesUnchanged": 48,
       "comparedCases": 48
+    },
+    {
+      "protocol": "trend-regime-v2-20261029",
+      "split": "final-holdout",
+      "ruleSha256": "d833603dde8fbfef52b6bb6e227179a836f0a3e03cbcd4aca087a8e2aa610312",
+      "stockCount": 24,
+      "available": 24,
+      "unavailable": [],
+      "summaries": [
+        {
+          "type": "old",
+          "scale": "legacy-up",
+          "direction": "up",
+          "events": 92,
+          "complete": 85,
+          "directionalFollowThrough": 0.36470588235294116,
+          "meanDirectionalReturn": -0.9507635412884443,
+          "meanAdverseExcursion": -6.494541953950041,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 5
+        },
+        {
+          "type": "new",
+          "scale": "short",
+          "direction": "up",
+          "events": 134,
+          "complete": 132,
+          "directionalFollowThrough": 0.5,
+          "meanDirectionalReturn": 1.1084854753740394,
+          "meanAdverseExcursion": -5.944553641320718,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "short",
+          "direction": "down",
+          "events": 244,
+          "complete": 242,
+          "directionalFollowThrough": 0.48760330578512395,
+          "meanDirectionalReturn": 0.12028493207477012,
+          "meanAdverseExcursion": -5.107699318632795,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "swing",
+          "direction": "up",
+          "events": 25,
+          "complete": 25,
+          "directionalFollowThrough": 0.56,
+          "meanDirectionalReturn": 4.087751528912689,
+          "meanAdverseExcursion": -11.559567223351133,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "swing",
+          "direction": "down",
+          "events": 71,
+          "complete": 59,
+          "directionalFollowThrough": 0.3559322033898305,
+          "meanDirectionalReturn": -7.172419062041568,
+          "meanAdverseExcursion": -16.251354105223555,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        }
+      ],
+      "limitations": "Fixed sector-diverse convenience sample, not random full-market or future live testing. Forward statistics are descriptive, not labelled detection accuracy, winning probabilities or evidence of an executable strategy. Two MA systems on same stock are correlated; events overlap. Does not include trading costs, price-limit fills, delistings or independent fund/sector histories.",
+      "prefixChecks": 240,
+      "legacyShapes": 13169,
+      "retainedShapes": 13169,
+      "confirmedSignalCasesUnchanged": 48,
+      "comparedCases": 48
     }
   ],
   "snapshots": [
     {
+      "symbol": "000100.SZ",
+      "sha256": "5af14d7e492f9476b752cb9645c8aae01727e9289b1977d489df0171b6345ce3"
+    },
+    {
       "symbol": "000630.SZ",
       "sha256": "803ecc1a5a0662e9a5e5532662d48f5854c64573b41729f9d80258ee63b2ce62"
+    },
+    {
+      "symbol": "000725.SZ",
+      "sha256": "84fdbc1362e99892f814ee65052ab00e13f32a567eb7a79357c7e49e3a1e0994"
     },
     {
       "symbol": "000807.SZ",
@@ -182,6 +273,14 @@
       "sha256": "0674c90cfeba320a095aaef88a1aa17d774d1704e52bac378e0985c64060b5e4"
     },
     {
+      "symbol": "002085.SZ",
+      "sha256": "e6f9ce6570d753250f47e3e1e2a07d8b802dd4926467ee34a5a1490c273fdf44"
+    },
+    {
+      "symbol": "002130.SZ",
+      "sha256": "0948946fe61768d9ce014fa8d4f3f243d50504983093639ff7da01f9f3d36608"
+    },
+    {
       "symbol": "002179.SZ",
       "sha256": "07547ec5270d363126621649dd1c2dd948c80d92f5056a3923303c4dbb09a1ad"
     },
@@ -192,6 +291,14 @@
     {
       "symbol": "002241.SZ",
       "sha256": "a44137aee20426097d84439e1222737fa0d15750b174607b2720a3fc22de4385"
+    },
+    {
+      "symbol": "002261.SZ",
+      "sha256": "0b650488c72a5cb1372c745812c62040281e6728e7d7b62b98e03345bcdb5dc2"
+    },
+    {
+      "symbol": "002281.SZ",
+      "sha256": "79c37561c91adbaedc18cb73b413f5caa0dc1e178fc1b08975181053e2674151"
     },
     {
       "symbol": "002371.SZ",
@@ -210,6 +317,10 @@
       "sha256": "833b02143bcf1ed9f68e302b93d4aef550baab1332229918c35344a18e0e86cc"
     },
     {
+      "symbol": "002600.SZ",
+      "sha256": "64559c601ccd52461bacb3c508bf5e3dcc58f8fe0cfcf88a7362cc7ab38f812d"
+    },
+    {
       "symbol": "002709.SZ",
       "sha256": "833ae502e4e4969c3e38a422740ee3aea0b21520004a791866e00fec2a8330ac"
     },
@@ -218,8 +329,32 @@
       "sha256": "b26cd6efb64ffd0120f3646e0cfdd03551a0f1182812cf781d946c02b2d3c353"
     },
     {
+      "symbol": "002747.SZ",
+      "sha256": "33fcacffaa2d30d1d117432c1a256dcbbf65bc6528897336d326bacd7ace13aa"
+    },
+    {
       "symbol": "002812.SZ",
       "sha256": "495236225272192c838b516f86e9dfaeb14ad1e8bd9bc25e66c0652bf3c82fdb"
+    },
+    {
+      "symbol": "002851.SZ",
+      "sha256": "d476d99c24d5cb3d90cdfffe1b24b0f9cf4c4695c4244b484837713b9845675c"
+    },
+    {
+      "symbol": "003021.SZ",
+      "sha256": "f90ce692c40365b3f116c203584e729f7ab3b6894fc925c8164bf54190cff720"
+    },
+    {
+      "symbol": "300033.SZ",
+      "sha256": "cbb989c80987a1040a147b937de595ef927e84e1feb6047d00f72a1ca7309df7"
+    },
+    {
+      "symbol": "300058.SZ",
+      "sha256": "99ae3d185deec7c24576b37119df6b3973d0d171c44f6bcc9f6317427baa0453"
+    },
+    {
+      "symbol": "300059.SZ",
+      "sha256": "4c129350989af992badcf637ef7b90aa9456d17f1d99df1ff83a7374db98602e"
     },
     {
       "symbol": "300122.SZ",
@@ -228,6 +363,14 @@
     {
       "symbol": "300124.SZ",
       "sha256": "ee865caa3426b4880eed1c9f4ce9c26a77ac27aabc622cf248ca7fce0e27cb26"
+    },
+    {
+      "symbol": "300170.SZ",
+      "sha256": "1c7325e48c519c726da1564f4e9c4eaf7629c7d378559968ad3dd56669dc5256"
+    },
+    {
+      "symbol": "300229.SZ",
+      "sha256": "618adee3e62e93f123f300a98e38b7f6054e0da0118ff5e705a1afc7705d599e"
     },
     {
       "symbol": "300274.SZ",
@@ -240,6 +383,22 @@
     {
       "symbol": "300394.SZ",
       "sha256": "4bd2d8d3879061815bf3da57f775d314fe4d5a69d587e201103740b26a2cb2da"
+    },
+    {
+      "symbol": "300450.SZ",
+      "sha256": "8905db5827de73a7cb9448a2af3cc269d5399e8e39dc5915bf9389e77f60a89f"
+    },
+    {
+      "symbol": "300476.SZ",
+      "sha256": "3b7de146ea740cb0ccc20e33674edd74337dfe5ab2cd628a8d6a7ff37fe5b36a"
+    },
+    {
+      "symbol": "300567.SZ",
+      "sha256": "f97a16128a4d390d7bdb3309d15b8848046698a511c8a2b5ba448ba7095af51c"
+    },
+    {
+      "symbol": "300679.SZ",
+      "sha256": "6dea48f946fc00d2f3652dcaef10c483a78ce3879a25cda3d831002907d86eb9"
     },
     {
       "symbol": "300750.SZ",
@@ -258,12 +417,20 @@
       "sha256": "ece1c40f906faef734554369a312e7dc845103b283f21fde5a5b154cc5c8c582"
     },
     {
+      "symbol": "600157.SH",
+      "sha256": "e808f001b5ac27bcd5f9c7c9e0269097c08b598960d01002b24f7a3f63121c4a"
+    },
+    {
       "symbol": "600196.SH",
       "sha256": "d74777e2a87f3647e6ae6d0bcb7ee35f6d495c13aa87e4b568f12228df888db1"
     },
     {
       "symbol": "600309.SH",
       "sha256": "ac6c098e38625748e656ffc1e0847ab4c92959809c6ed062df2f44b43786b257"
+    },
+    {
+      "symbol": "600588.SH",
+      "sha256": "3756b4ca472bb72292b46bdfb364d482a7deee4b38555873cf0174a8d19fb4a2"
     },
     {
       "symbol": "600660.SH",
@@ -302,6 +469,10 @@
       "sha256": "50b7d7d7008a3efbc9a5137236e09c123be4ff5dfd74eac0c23058c5cabaa761"
     },
     {
+      "symbol": "601689.SH",
+      "sha256": "68c8e9906b9aac6c6bec289fa27b6c4beedfddcdf828ac41faf2bdce8de95845"
+    },
+    {
       "symbol": "601857.SH",
       "sha256": "9b732dc4cc4f32aca3f8fc4b205f65bb5aa7da2b90e64dac67318fc09ad90af5"
     },
@@ -314,8 +485,16 @@
       "sha256": "2138c9c6e331d45a76930d35a43fbe0abae00bd090c2f3e2be8a612c5c373c0a"
     },
     {
+      "symbol": "688099.SH",
+      "sha256": "c6d03670545763954c74285db07ad63638ab21590f52ef62949713dff22133fa"
+    },
+    {
       "symbol": "688256.SH",
       "sha256": "db5431f513573e05d56d6b9211d6b83cbb3d4567bd4d510d1f49f8c951519232"
+    },
+    {
+      "symbol": "688608.SH",
+      "sha256": "4e828daa7937d0be17f43124a3ba43f3df47c4d574b653776382b3797c617a6a"
     },
     {
       "symbol": "688981.SH",

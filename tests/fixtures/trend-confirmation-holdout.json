@@ -1,0 +1,6 @@
+{
+ "protocol":"trend-regime-v2.1-confirmation-20261029",
+ "selection":"Fresh fixed cross-sector list selected before v2.1 confirmation-bar changes and before reading these histories. All symbols excluded from the first 40 and user screenshots. Entire batch is final-holdout; no performance-based replacements.",
+ "asOf":"2026-10-28",
+ "symbols":["000100.SZ","000725.SZ","002085.SZ","002130.SZ","002261.SZ","002281.SZ","002600.SZ","002747.SZ","002851.SZ","003021.SZ","300033.SZ","300058.SZ","300059.SZ","300170.SZ","300229.SZ","300450.SZ","300476.SZ","300567.SZ","300679.SZ","600157.SH","600588.SH","601689.SH","688099.SH","688608.SH"]
+}

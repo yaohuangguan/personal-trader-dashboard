@@ -2,7 +2,7 @@ import type {Candle} from './types';
 import type {PatternMark} from './pattern-marks';
 import {maPeriods,maRole} from './ma-system';
 
-export const TREND_RULE_VERSION='directional-regime-v2';
+export const TREND_RULE_VERSION='directional-regime-v2.1';
 export type TrendDirection='up'|'down'|'range'|'unknown';
 export type TrendRegime={scale:'short'|'swing';label:string;direction:TrendDirection;since:string|null;fastPeriod:number;slowPeriod:number;provisional:boolean;detail:string};
 type Side=-1|0|1;
@@ -44,8 +44,8 @@ export function analyzeTrendRegimes(input:Candle[],options:{now?:Date;maPeriods?
    const aligned=side===1?b.close>slow-.25*atr&&fastSlope>=-.1:side===-1?b.close<slow+.25*atr&&fastSlope<=.1:true;
    staleCount=side&&!aligned?staleCount+1:0;
    let next:Side=side,reason='';
-   if(upCount>=cfg.confirm&&side!==1){next=1;reason=`连续${cfg.confirm}根价量支持，价格位于MA${fastPeriod}/${slowPeriod}上方、快慢线向上，区间净推进${displacement.toFixed(2)}ATR，路径效率${(efficiency*100).toFixed(0)}%，近5根上涨成交量占${(buyShare*100).toFixed(0)}%。`;}
-   else if(downCount>=cfg.confirm&&side!==-1){next=-1;reason=`连续${cfg.confirm}根下行证据，价格位于MA${fastPeriod}/${slowPeriod}下方、快慢线向下，区间净推进${displacement.toFixed(2)}ATR，路径效率${(efficiency*100).toFixed(0)}%，近5根下跌成交量占${(sellShare*100).toFixed(0)}%。`;}
+   if(upCount>=cfg.confirm&&side!==1&&b.close>b.open&&b.close>p.close&&location>=.55){next=1;reason=`连续${cfg.confirm}根价量支持，确认当根上涨阳线且收于振幅上半区，价格位于MA${fastPeriod}/${slowPeriod}上方、快慢线向上，区间净推进${displacement.toFixed(2)}ATR，路径效率${(efficiency*100).toFixed(0)}%，近5根上涨成交量占${(buyShare*100).toFixed(0)}%。`;}
+   else if(downCount>=cfg.confirm&&side!==-1&&b.close<b.open&&b.close<p.close&&location<=.45){next=-1;reason=`连续${cfg.confirm}根下行证据，确认当根下跌阴线且收于振幅下半区，价格位于MA${fastPeriod}/${slowPeriod}下方、快慢线向下，区间净推进${displacement.toFixed(2)}ATR，路径效率${(efficiency*100).toFixed(0)}%，近5根下跌成交量占${(sellShare*100).toFixed(0)}%。`;}
    else if(side&&(lossCount>=2||shock||flatCount>=3||staleCount>=(cfg.scale==='short'?5:8))){next=0;reason=shock?'放量反向长实体失守本级慢线，原单边结构失效；尚未确认反向趋势。':lossCount>=2?'连续两根失守已知摆点／慢线，原方向结构失效；尚未确认反向趋势。':flatCount>=3?'推进效率下降、快慢均线收拢，转入本级震荡。':'本级方向与价格位置持续背离，转为整理观察，尚未确认反向趋势。';}
    const priority=cfg.scale==='short'?94:96;
    if(next!==side){

@@ -15,6 +15,9 @@ test('an impulse is evidence, not immediate trend confirmation, and short bounce
  const b=series(90,i=>20-i*.08);for(let k=0;k<6;k++){const p=b.at(-1)!.close;b.push({time:time(b.length),open:p,high:p+.7,low:p-.05,close:p+.6,volume:18000});if(k===0)assert.ok(analyzeTrendRegimes(b,{now}).regimes.every(r=>r.direction!=='up'));}
  const r=analyzeTrendRegimes(b,{now});assert.equal(r.regimes.find(s=>s.scale==='short')!.direction,'up');assert.notEqual(r.regimes.find(s=>s.scale==='swing')!.direction,'up');
 });
+test('a confirmation candle itself must support its direction, not a high-open selloff or a low-open reversal',()=>{
+ for(const sign of [1,-1]){const b=series(110,i=>i<80?20+(i%2)*.1:20+sign*(i-80)*.16),r=analyzeTrendRegimes(b,{now}),first=r.marks.find(m=>m.kind==='trend-start'&&m.regime===(sign===1?'up':'down'))!;assert.ok(first);const index=b.findIndex(c=>c.time===first.time),changed=b.slice(0,index+1).map(c=>({...c})),bar=changed.at(-1)!;bar.open=bar.close+sign*.3;bar.high=Math.max(bar.open,bar.close)+.1;bar.low=Math.min(bar.open,bar.close)-.1;assert.ok(!analyzeTrendRegimes(changed,{now}).marks.some(m=>m.time===bar.time&&m.kind==='trend-start'&&m.regime===first.regime));}
+});
 test('supported pullback preserves the swing; sustained structure reversal can establish a down trend',()=>{
  const b=series(120,i=>20+i*.1),before=analyzeTrendRegimes(b,{now});assert.equal(before.regimes[1].direction,'up');
  const p=b.at(-1)!.close;b.push({time:time(b.length),open:p,high:p+.1,low:p-.35,close:p-.2,volume:5000});assert.equal(analyzeTrendRegimes(b,{now}).regimes[1].direction,'up');
