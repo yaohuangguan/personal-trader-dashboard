@@ -18,7 +18,7 @@ export function guideAction(g:GuideAnalysis,c:StockCharacter|null){
  const reasons=[reason,...g.rules.filter(r=>r.state==='pass').slice(0,3).map(r=>r.title+'：'+r.value),...(c?.warnings||[]),...g.risks];
  return {action,score,asOf:g.asOf,provisional:g.provisional,reasons,invalidation:g.event?{midpoint:g.event.midpoint,low:g.event.low,ma20:g.ma[20]}:null,notice:'基于公开日线的规则建议，不是保证收益或个性化仓位指令。买入只在收盘确认当日触发；卖出/减仓针对已有持仓，空仓视为回避。'};
 }
-export type TradeMarker={time:string;side:'buy'|'sell';price:number;label:string;reason:string};
+export type TradeMarker={provisional?:boolean;confirmed?:boolean;time:string;side:'buy'|'sell';price:number;label:string;reason:string};
 /** Confirmation-day entries and the first subsequent closed-bar support failure. */
 export function guideTradeMarkers(input:Candle[],guide:GuideAnalysis):TradeMarker[]{
  const closed=input.filter(c=>guide.asOf!==null&&c.time<=guide.asOf&&(!guide.provisional||c.time<guide.asOf)),ma20=new Map(sma(closed,20).map(p=>[p.time,p.value])),out:TradeMarker[]=[];

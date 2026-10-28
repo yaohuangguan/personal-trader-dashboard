@@ -2,12 +2,19 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {multiLineEvidence} from '../src/shared/shape-rules';
+import {patternMarks} from '../src/shared/pattern-marks';
 import {CLASSIC_MA,FIBONACCI_MA} from '../src/shared/ma-system';
 import {chartStudy} from '../src/shared/chart-study';
 import {passesMulti,DEFAULT_MULTI} from '../src/shared/pattern-screen';
 import type {Candle} from '../src/shared/types';
 const {candles:bars}=JSON.parse(readFileSync(new URL('./fixtures/002472-20261020.json',import.meta.url),'utf8')) as {candles:Candle[]};
 const now=new Date('2026-10-20T08:00:00Z');
+test('multi-line candle in an existing bullish trend remains a distinct valid continuation shape',()=>{
+ const b:Candle[]=Array.from({length:80},(_,i)=>{const close=10+i*.1;return {time:new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10),open:close-.05,close,high:close+.2,low:close-.2,volume:10000};});
+ b.push({time:'2026-03-22',open:16.3,close:19,high:19.1,low:16.2,volume:30000});
+ const evidence=multiLineEvidence(b,CLASSIC_MA)!;assert.equal(evidence.normal,true);assert.equal(evidence.bullishContinuation,true);assert.equal(evidence.strong,false);
+ const mark=patternMarks(b,now,{maPeriods:CLASSIC_MA}).find(m=>m.time==='2026-03-22'&&m.kind==='multi');assert.match(mark!.label,/多头一阳多线/);assert.equal(mark?.direction,'bullish');
+});
 test('002472 October 20 is a valid multi-line candle in each system without requiring centered strong criteria',()=>{
  const a=multiLineEvidence(bars,CLASSIC_MA)!,b=multiLineEvidence(bars,FIBONACCI_MA)!;
  assert.equal(a.normal,true);assert.equal(a.strong,false);assert.deepEqual(a.periods,[13,20,30,60,144]);

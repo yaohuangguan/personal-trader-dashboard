@@ -1,7 +1,7 @@
 import {CLASSIC_MA,FIBONACCI_MA,maPeriods,maRole,maSystem,maSystemName,type MASystem} from './ma-system';
 import type {Candle} from './types';
 export type ClassicShape={kind:'multi'|'spider'|'cannon'|'beauty'|'pointer';label:string;detail:string;priority:number;position:'above'|'below';anchorTime?:string};
-export type MultiLineEvidence={version:3;system:MASystem;configured:number[];date:string;lines:number;periods:number[];includes60:boolean;decisionPeriod:number;dispersion:number;middleOffset:number;volume20:number;volume5:number;recentVolume:number;gain:number;closeLocation:number;normal:boolean;strong:boolean;systems?:MultiLineEvidence[]};
+export type MultiLineEvidence={version:3;system:MASystem;configured:number[];date:string;lines:number;periods:number[];includes60:boolean;decisionPeriod:number;dispersion:number;middleOffset:number;volume20:number;volume5:number;recentVolume:number;gain:number;closeLocation:number;normal:boolean;strong:boolean;bullishContinuation:boolean;systems?:MultiLineEvidence[]};
 export function multiLineAt(bars:Candle[],i:number,ma:(p:number,i:number)=>number,atr:number,ratio:number,configured=CLASSIC_MA):MultiLineEvidence{
  const b=bars[i],p=bars[i-1],available=maPeriods(configured),periods=available.filter(n=>Number.isFinite(ma(n,i))&&b.open<=ma(n,i)&&b.close>ma(n,i)),prices=periods.map(n=>ma(n,i)),body=b.close-b.open;
  const previous5=bars.slice(i-5,i).reduce((s,c)=>s+c.volume,0)/5,recent=Math.max(...bars.slice(i-3,i).map(c=>c.volume));
@@ -9,8 +9,10 @@ export function multiLineAt(bars:Candle[],i:number,ma:(p:number,i:number)=>numbe
  const volume20=ratio,volume5=previous5>0?b.volume/previous5:0,recentVolume=recent>0?b.volume/recent:0,gain=(b.close/p.close-1)*100,closeLocation=b.high>b.low?(b.close-b.low)/(b.high-b.low):0;
  const fast=available.slice(0,3),decisionPeriod=available.includes(60)?60:available.includes(55)?55:maRole(available,60);
  const normal=body>=.6*atr&&gain>=3&&volume20>=1.2&&closeLocation>=.7&&periods.length>=4&&dispersion<10&&fast.every(n=>b.close>ma(n,i))&&b.close/ma(maRole(available,20),i)<1.16;
+ const contextPeriods=[...new Set([5,13,20,30,60].map(n=>maRole(available,n)))].sort((a,b)=>a-b),prior=contextPeriods.map(n=>ma(n,i-1));
+ const bullishContinuation=normal&&contextPeriods.length>=4&&prior.every((v,k)=>Number.isFinite(v)&&(!k||prior[k-1]>v))&&contextPeriods.filter(n=>n>=20).every(n=>ma(n,i-1)>ma(n,i-4))&&p.close>=ma(decisionPeriod,i-1);
  const includes60=periods.includes(60)||periods.includes(55),strong=normal&&gain>5&&closeLocation>=.9&&volume20>=2&&volume5>=1.5&&recentVolume>=1.1&&includes60&&dispersion<5&&middleOffset<=.25;
- return {version:3,system:maSystem(available),configured:available,date:b.time,lines:periods.length,periods,decisionPeriod,includes60,dispersion,middleOffset,volume20,volume5,recentVolume,gain,closeLocation,normal,strong};
+ return {version:3,system:maSystem(available),configured:available,date:b.time,lines:periods.length,periods,decisionPeriod,includes60,dispersion,middleOffset,volume20,volume5,recentVolume,gain,closeLocation,normal,strong,bullishContinuation};
 }
 export function multiLineEvidence(bars:Candle[],configured?:number[]):MultiLineEvidence|null{
  const i=bars.length-1;if(i<64)return null;
@@ -29,7 +31,7 @@ export function classicShapes(bars:Candle[],i:number,ma:(period:number,index:num
  const solid=body>=.6*atr&&location>=.7,participation=ratio>=1.5,nearBase=bias20<16;
  const add=(kind:ClassicShape['kind'],label:string,detail:string,priority:number,position:ClassicShape['position']='below',anchorTime?:string)=>out.push({kind,label,detail,priority,position,anchorTime});
  const systems=(configured?[configured]:[CLASSIC_MA,FIBONACCI_MA]).map(p=>multiLineAt(bars,i,ma,atr,ratio,p)),hits=systems.filter(e=>e.normal),best=[...hits].sort((a,b)=>Number(b.strong)-Number(a.strong)||b.lines-a.lines)[0];
- if(best){const name=best.strong?'强力一阳多线':'一阳多线 · '+best.lines+'线';add('multi',name,systems.map(e=>`${maSystemName(e.system)}实体穿MA${e.periods.join('/')}；${e.normal?'有效':'条件未齐'}，线束离散${e.dispersion.toFixed(2)}%，中轴偏移${(e.middleOffset*100).toFixed(1)}%实体。`).join(' ')+`20日相对量${ratio.toFixed(2)}倍；普通不要求中轴居中，强力另需居中及55/60线等全部条件。`,best.strong?99:91);}
+ if(best){const name=best.strong?'强力一阳多线'+(best.bullishContinuation?' · 多头':''):best.bullishContinuation?'多头一阳多线 · '+best.lines+'线':'一阳多线 · '+best.lines+'线';add('multi',name,systems.map(e=>`${maSystemName(e.system)}实体穿MA${e.periods.join('/')}；${e.normal?'有效':'条件未齐'}，线束离散${e.dispersion.toFixed(2)}%，中轴偏移${(e.middleOffset*100).toFixed(1)}%实体。`).join(' ')+`${best.bullishContinuation?'前一根核心均线已多头排列，20/30/55或60对应周期斜率向上，属于趋势中回落后的实体穿线；并非只认底部首次启动。':''}20日相对量${ratio.toFixed(2)}倍；普通不要求中轴居中，强力另需居中及55/60线等全部条件。`,best.strong?99:91);}
  const recentCross=(x:number,y:number)=>Array.from({length:5},(_,k)=>i-k).some(j=>ma(x,j-1)<=ma(y,j-1)&&ma(x,j)>ma(y,j));
  const cluster=Math.min(...Array.from({length:5},(_,k)=>{const v=[5,10,20].map(n=>ma(n,i-k-1));return (Math.max(...v)/Math.min(...v)-1)*100;}));
  if(solid&&gain>=2&&participation&&m5>m10&&m10>m20&&[5,10,20].every(n=>ma(n,i)>ma(n,i-3))&&cluster<2&&recentCross(5,10)&&recentCross(5,20)&&recentCross(10,20)&&b.open<=Math.min(m5,m10,m20)&&b.close>Math.max(m5,m10,m20)&&nearBase)

@@ -38,7 +38,7 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: string) => range === 'ALL' ? length : (unit==='week'?[4,13,26,52]:unit==='month'?[1,3,6,12]:[22,66,132,264])[['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit, amount,amountDate,guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string;amount?:number|null;amountDate?:string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
   const display=usePreferences(),light=display.theme==='light';
   const chipEligible=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&!(/^(?:000\d{3}\.SH|399\d{3}\.SZ)$/.test(symbol));
   const [chipsOpen,setChipsOpen]=useState(false);
@@ -54,7 +54,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const extra=useMemo(()=>({boll:bollinger(candles),rsi:rsi(candles),sar:parabolicSar(candles)}),[candles]);
   const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
   const [shapesVisible,setShapesVisible]=useState(true),[crossMarkers,setCrossMarkers]=useState(false);
-  const study=useMemo(()=>chartStudy(candles,{symbol,unit,maPeriods:preferences.filter(p=>p.enabled).map(p=>p.period)}),[candles,symbol,unit,preferences]);
+  const study=useMemo(()=>chartStudy(candles,{symbol,unit,amount:amountDate===candles.at(-1)?.time?amount??null:null,maPeriods:preferences.filter(p=>p.enabled).map(p=>p.period)}),[candles,symbol,unit,preferences,amount,amountDate]);
   const shapes=study.patternMarks,tradeMarkers=unit==='day'?study.tradeMarkers:providedTrades;
   const [indicatorLabels,setIndicatorLabels]=useState(true);
 
@@ -72,7 +72,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const maxPeriod = Math.max(0, ...activePeriods);
 
   useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(preferences));window.dispatchEvent(new Event('atlas:ma-changed')); } catch { /* storage can be disabled */ } }, [preferences]);
-  useEffect(() => { visibleRef.current = null; setHoverTime(null); }, [symbol, candles]);
+  useEffect(() => { visibleRef.current = null; setHoverTime(null); }, [symbol,unit]);
   useEffect(() => {
     if (!expanded) return;
     const previous = document.body.style.overflow;
@@ -139,7 +139,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
             if (event.invalidationDate) points.push({ time: chartTime(event.invalidationDate), position: 'aboveBar', shape: 'arrowDown', color: '#c99a9a', text: uiText('确认失效'), size: 1 });
           }
           points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-          if(markers)for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:uiText(p.side==='buy'?'买':'卖'),size:1});
+          if(markers)for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.confirmed===false?'#cfad6e':p.side==='buy'?UP:DOWN,text:uiText(p.confirmed===false?p.label:p.side==='buy'?'买':'卖'),size:1});
           points.sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time)));
           prices.setMarkers(points);
           const overlay=chartPatternOverlay(priceRef.current!,main,prices,candles,shapesVisible?shapes:[],new Set(markers?tradeMarkers.map(t=>t.time):[]),light,uiText);
@@ -282,7 +282,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       <div className="terminal-ohlc" aria-live="off"><strong>{uiText(current?.time)}</strong>{uiText(current && <><span>{uiText("开")}<b>{uiText(number(current.open))}</b></span><span>{uiText("高")}<b className="terminal-up">{uiText(number(current.high))}</b></span><span>{uiText("低")}<b className="terminal-down">{uiText(number(current.low))}</b></span><span>{uiText("收")}<b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{uiText(number(current.close))}</b></span></>)}</div>
     </>)}
     {uiText(chartError && <div className="terminal-error" role="alert">{uiText("图表无法显示：")}{uiText(chartError)}</div>)}
-    {!compact&&<div className="terminal-pattern-readout" aria-label={uiText('当前K线形态')} aria-live="off"><small>{uiText('形态')}</small>{current&&shapes.some(m=>m.time===current.time)?shapes.filter(m=>m.time===current.time).map(m=><span key={m.kind} title={uiText(m.detail)}>{uiText(m.label)}{m.provisional?' · '+uiText('待收盘'):''}</span>):<span className="pattern-empty">—</span>}</div>}
+    {!compact&&<div className="terminal-pattern-readout" aria-label={uiText('当前K线形态')} aria-live="off"><small>{uiText('形态')}</small>{tradeMarkers.filter(m=>m.time===current?.time).map(m=><span key={'trade-'+m.side} title={m.reason}>{m.label}</span>)}{current&&shapes.some(m=>m.time===current.time)?shapes.filter(m=>m.time===current.time).map(m=><span key={m.kind} style={{color:m.direction==='bullish'?UP:m.direction==='bearish'?DOWN:undefined}} title={uiText(m.detail)}>{uiText(m.label)}{m.provisional?' · '+uiText('待收盘'):''}</span>):<span className="pattern-empty">—</span>}</div>}
     <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
     {uiText(!compact && chipsOpen && chipEligible && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
     {uiText(!compact && <>

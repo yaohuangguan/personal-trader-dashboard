@@ -11,10 +11,11 @@ export type StrategySetup={date:string;index:number;kind:'multi'|'breakout'|'rec
 export type StrategyPart={label:string;score:number;max:number;reason:string};
 export type FollowBar={date:string;day:number;close:number;volume20:number;volumeLaunch:number;adhesion:number;state:string;supportHeld:boolean};
 export type SetupEpisode={setup:StrategySetup;failedAt:string|null;follow:FollowBar[]};
-export type TimingMetrics={atr:number;volume20:number;volume5:number;volumeLaunch:number|null;pullbackVolume:number|null;closeLocation:number;bias60:number;bias20:number;trigger:number;age:number|null;volumeLabel:string;volumeDetail:string;momentum:string;support:number|null};
+export type TimingMetrics={decisionPeriod:number;trendPeriod:number;adhesion:number;atr:number;volume20:number;volume5:number;volumeLaunch:number|null;pullbackVolume:number|null;closeLocation:number;bias60:number;bias20:number;trigger:number;age:number|null;volumeLabel:string;volumeDetail:string;momentum:string;support:number|null};
 export type StrategyPlan={kind:'breakout'|'multi'|'retest'|'recovery'|'pattern'|'prepare'|'wait'|'manage'|'exit';label:string;action:string;direction:'bullish'|'bearish'|'neutral';score:number;structureScore:number;exitRisk:number;phase:string;flat:Stance;holding:Stance;setup:StrategySetup|null;followUp:SetupEpisode|null;holdingStop:number|null;metrics:TimingMetrics|null;patternEvidence:PatternMark[];maPeriods:number[];parts:StrategyPart[];provisional:boolean;asOf:string|null;entry:[number,number]|null;stop:number|null;targets:number[];riskPct:number|null;reasons:string[];checks:{label:string;pass:boolean;detail:string}[];warnings:string[]};
 export type StrategySignal=TradeMarker&{kind:string;stop?:number;target?:number;entryZone?:[number,number];confirmed:true};
-export type StrategyAnalysis={version:string;plan:StrategyPlan;signals:StrategySignal[];riskStops:{time:string;price:number}[];timeline:{date:string;phase:string;label:string;reason:string}[];episodes:SetupEpisode[];method:string};
+export type TimingAlert=TradeMarker&{kind:string;confirmed:false;provisional:boolean;conditions:string[];stop?:number;entryZone?:[number,number]};
+export type StrategyAnalysis={version:string;plan:StrategyPlan;signals:StrategySignal[];alerts:TimingAlert[];riskStops:{time:string;price:number}[];timeline:{date:string;phase:string;label:string;reason:string}[];episodes:SetupEpisode[];method:string};
 const mean=(a:number[])=>a.length?a.reduce((s,v)=>s+v,0)/a.length:0;
 const clamp=(n:number,lo=0,hi=1)=>Math.max(lo,Math.min(hi,n));
 const blank=(asOf:string|null,provisional:boolean):StrategyPlan=>({kind:'wait',label:'等待有效结构',action:'观望',direction:'neutral',score:0,structureScore:0,exitRisk:0,phase:'base',flat:{action:'观望',reason:'等待有效量价证据。'},holding:{action:'核验支撑',reason:'尚不能建立有效的结构风控计划。'},setup:null,followUp:null,holdingStop:null,metrics:null,patternEvidence:[],maPeriods:[...CLASSIC_MA],parts:[],provisional,asOf,entry:null,stop:null,targets:[],riskPct:null,reasons:[],checks:[],warnings:[]});
@@ -22,22 +23,22 @@ const blank=(asOf:string|null,provisional:boolean):StrategyPlan=>({kind:'wait',l
 export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string;amount?:number|null;maPeriods?:number[];name?:string}={}):StrategyAnalysis{
  const now=options.now||new Date(),clock=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now),part=(key:string)=>clock.find(p=>p.type===key)?.value||'',today=`${part('year')}-${part('month')}-${part('day')}`,minute=Number(part('hour'))*60+Number(part('minute'));
  const rows=input.filter(c=>c.time<=today).slice().sort((a,b)=>a.time.localeCompare(b.time));
- const provisional=rows.at(-1)?.time===today&&minute<900,signals:StrategySignal[]=[],riskStops:{time:string;price:number}[]=[],timeline:StrategyAnalysis['timeline']=[],episodes:SetupEpisode[]=[];
+ const provisional=rows.at(-1)?.time===today&&minute<900,signals:StrategySignal[]=[],alerts:TimingAlert[]=[],riskStops:{time:string;price:number}[]=[],timeline:StrategyAnalysis['timeline']=[],episodes:SetupEpisode[]=[];
  let plan=blank(rows.at(-1)?.time||null,!!provisional);
- const method='量价结构信号只使用当时已知日线；回踩不等于买点，破位后允许新证据建立修复计划。买点分衡量当前入场条件，结构质量与退出风险单列，均非收益概率。初始失效价参考启动实体半位与ATR，回踩转强参考已发生的回踩低点；2R/3R是风险预算刻度，不能视为预测目标。盘中仅预警。形态识别与量价、动能、位置和风控共用同一因果链，单独形态不代表买卖。历史标记不含未保存的当时板块、资金和情绪，不能冒充完整综合决策或真实持仓。';
+ const method='量价结构信号只使用当时已知日线；回踩不等于买点，破位后允许新证据建立修复计划。买点分衡量当前入场条件，结构质量与退出风险单列，均非收益概率。初始失效价参考启动实体半位与ATR，回踩转强参考已发生的回踩低点；2R/3R是风险预算刻度，不能视为预测目标。盘中仅预警，条件失效可撤销。买入观察/卖预警与已确认买卖点分层显示，观察信号不参与历史成交统计。形态识别与量价、动能、位置和风控共用同一因果链，单独形态不代表买卖。历史标记不含未保存的当时板块、资金和情绪，不能冒充完整综合决策或真实持仓。';
  const valid=rows.every((c,i)=>/^\d{4}-\d{2}-\d{2}$/.test(c.time)&&[c.open,c.high,c.low,c.close,c.volume].every(Number.isFinite)&&c.low>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&c.volume>=0&&(!i||c.time>rows[i-1].time));
- if(!valid||options.maPeriods!==undefined&&maPeriods(options.maPeriods).length<2||rows.length<65||!rows.at(-1)?.volume){plan.reasons=['需要至少65根有效的日线；缺失数据不产生买卖点。'];return {version:STRATEGY_VERSION,plan,signals,riskStops,timeline,episodes,method};}
+ if(!valid||options.maPeriods!==undefined&&maPeriods(options.maPeriods).length<2||rows.length<65||!rows.at(-1)?.volume){plan.reasons=['需要至少65根有效的日线；缺失数据不产生买卖点。'];return {version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes,method};}
  const sums=[0],volumes=[0],ranges=[0];
  rows.forEach((c,i)=>{sums.push(sums[i]+c.close);volumes.push(volumes[i]+c.volume);ranges.push(ranges[i]+Math.max(c.high-c.low,Math.abs(c.high-(rows[i-1]?.close??c.open)),Math.abs(c.low-(rows[i-1]?.close??c.open))));});
- const selected=maPeriods(options.maPeriods),rawMA=(p:number,i:number)=>i+1>=p?(sums[i+1]-sums[i+1-p])/p:NaN,ma=(p:number,i:number)=>rawMA(maRole(selected,p),i);
+ const selected=maPeriods(options.maPeriods),decisionPeriod=maRole(selected,60),trendPeriod=maRole(selected,20),rawMA=(p:number,i:number)=>i+1>=p?(sums[i+1]-sums[i+1-p])/p:NaN,ma=(p:number,i:number)=>rawMA(maRole(selected,p),i);
  const shapeMap=new Map<string,PatternMark[]>(),indicatorMap=new Map<string,ReturnType<typeof indicatorMarks>>();
  for(const mark of patternMarks(rows,now,{symbol:options.symbol,name:options.name,maPeriods:selected}))shapeMap.set(mark.time,[...(shapeMap.get(mark.time)||[]),mark]);
  for(const mark of indicatorMarks(rows,now))indicatorMap.set(mark.time,[...(indicatorMap.get(mark.time)||[]),mark]);
  const entryShapes=new Set(['multi','spider','cannon','pointer-confirmed','double-bottom','head-shoulders-bottom','rounding-bottom','old-duck','bear-trap-reclaim','morning-star','bull-engulf','breakout','reclaim','island-bottom','beauty-breakout']);
- const riskShapes=new Set(['bear-engulf','dark-cloud','evening-star','three-crows','double-top','head-shoulders-top','island-top','death-bloom','high-volume-bear','ma20-loss']);
+ const riskShapes=new Set(['bear-engulf','dark-cloud','evening-star','three-crows','double-top','head-shoulders-top','island-top','death-bloom','high-volume-bear','ma20-loss','vp-stall','high-volume-rejection']);
  const hist=new Map(macd(rows).map(p=>[p.time,p.histogram]));
  let setup:StrategySetup|null=null,position:{reference:number;stop:number;peak:number;target:number;trimmed:boolean}|null=null;
- const attempts:number[]=[];let lastPhase='';
+ const attempts:number[]=[];let lastPhase='';const lastAlert=new Map<string,number>();
  for(let i=64;i<rows.length;i++){
   const c=rows[i],prev=rows[i-1],prior=rows.slice(i-20,i),atr=(ranges[i]-ranges[i-20])/20,base=(volumes[i]-volumes[i-20])/20,base5=(volumes[i]-volumes[i-5])/5;
   if(!(atr>0&&base>0&&c.volume>0))continue;
@@ -99,7 +100,7 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
    {label:'结构准备',max:20,score:Math.round(activeSetup&&!broken?12+clamp((10-compression)/10)*5+Math.min(3,activeSetup.attempts):0),reason:activeSetup?`${activeSetup.date} ${activeSetup.kind==='recovery'?'破位后收复':activeSetup.kind==='multi'?'放量穿线观察':'箱体突破'}；近40根有${activeSetup.attempts}次试探，次数不是成功保证。`:'尚无可跟踪的量价启动结构。'},
    {label:'承接与量能',max:20,score:Math.round(rebound?20:impulse?17:touch&&c.close>=support!&&location>=.5?10:c.close<prev.close&&location<.35?3:7),reason:volumeLabel+'；'+volumeDetail+(entryEvidence.length?'；形态证据：'+entryEvidence.map(m=>m.label).join('、'):'')},
    {label:'动能与短线修复',max:20,score:Math.round((momentumImproving?10:3)+(c.close>m13?6:0)+(ma(5,i)>ma(5,i-2)?4:0)),reason:`${momentum}；${c.close>m13?'守住':'尚未收复'}MA13。`},
-   {label:'入场位置',max:20,score:extended?0:safeZone?20:Math.round(12*clamp(1-Math.max(0,c.close-zone[1])/atr/2)),reason:extended?`距MA60 ${bias60.toFixed(2)}%、距MA20 ${bias20.toFixed(2)}%，新买入位置与结构质量分开评价。`:`观察区${zone.map(v=>v.toFixed(2)).join('–')}；当前${safeZone?'处于':'偏离'}计划区。`},
+   {label:'入场位置',max:20,score:extended?0:safeZone?20:Math.round(12*clamp(1-Math.max(0,c.close-zone[1])/atr/2)),reason:extended?`距MA${decisionPeriod} ${bias60.toFixed(2)}%、距MA${trendPeriod} ${bias20.toFixed(2)}%，新买入位置与结构质量分开评价。`:`观察区${zone.map(v=>v.toFixed(2)).join('–')}；当前${safeZone?'处于':'偏离'}计划区。`},
    {label:'股性与风险空间',max:20,score:Math.round((active?8:2)+(room?6:0)+(riskPct>0&&riskPct<=8?6:0)),reason:`${character?.label||'历史弹性随触发核验'}；结构风险${riskPct.toFixed(2)}%，${resistance>c.close+.2*atr?'历史阻力空间'+reward.toFixed(2)+'R':'上方缺少可识别历史阻力，2R仅是计划刻度'}。`},
   ];
   let score=parts.reduce((n,p)=>n+p.score,0);
@@ -129,7 +130,14 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
     position.peak=peak;position.stop=Math.max(position.stop,Math.min(peak-2.2*atr,c.close-.15*atr));if(c.high>=position.target)position.trimmed=true;
    }
   }
-  const current:StrategyPlan={...blank(c.time,localProvisional),kind:broken?'exit':rebound?'retest':activeSetup?.kind??'wait',label,action:flat.action,direction:broken||downFan?'bearish':eligible?'bullish':'neutral',score,structureScore:Math.round(clamp((activeSetup&&!broken?35:5)+(c.close>m20?20:0)+(c.close>m60?15:0)+(momentumImproving?15:3)+(active?10:0)+(activeSetup?.attempts?Math.min(5,activeSetup.attempts*2):0),0,100)),exitRisk:clamp(exitRisk,0,100),phase,flat,holding,setup:activeSetup?{...activeSetup}:null,metrics:{atr,volume20:ratio,volume5:ratio5,volumeLaunch:volLaunch,pullbackVolume,closeLocation:location,bias60,bias20,trigger,age,volumeLabel,volumeDetail,momentum,support},parts,entry:activeSetup?zone:null,stop:activeSetup?stop:null,patternEvidence:evidence,maPeriods:selected,targets:activeSetup&&risk>0&&safeZone&&!extended&&!broken?[c.close+2*risk,c.close+3*risk]:[],riskPct:activeSetup?riskPct:null,reasons:[flat.reason,holding.reason],checks:[{label:'结构环境',pass:environment,detail:`MA60五根变化${(slope*100).toFixed(2)}%；当前${c.close>=m60?'在':'低于'}MA60。`},{label:'主动承接',pass:hasTrigger,detail:volumeLabel+'；'+momentum},{label:'入场位置',pass:safeZone&&!extended,detail:`观察区${zone.map(v=>v.toFixed(2)).join('–')}；距MA60 ${bias60.toFixed(2)}%。`},{label:'风险收益',pass:room&&riskPct>0&&riskPct<=8,detail:`失效价${stop.toFixed(2)}；结构风险${riskPct.toFixed(2)}%，${resistance>c.close+.2*atr?'阻力空间'+reward.toFixed(2)+'R':'上方无可识别历史阻力，2R仅为计划'}。`}],warnings:[]};
+  const current:StrategyPlan={...blank(c.time,localProvisional),kind:broken?'exit':rebound?'retest':activeSetup?.kind??'wait',label,action:flat.action,direction:broken||downFan?'bearish':eligible?'bullish':'neutral',score,structureScore:Math.round(clamp((activeSetup&&!broken?35:5)+(c.close>m20?20:0)+(c.close>m60?15:0)+(momentumImproving?15:3)+(active?10:0)+(activeSetup?.attempts?Math.min(5,activeSetup.attempts*2):0),0,100)),exitRisk:clamp(exitRisk,0,100),phase,flat,holding,setup:activeSetup?{...activeSetup}:null,metrics:{decisionPeriod,trendPeriod,adhesion,atr,volume20:ratio,volume5:ratio5,volumeLaunch:volLaunch,pullbackVolume,closeLocation:location,bias60,bias20,trigger,age,volumeLabel,volumeDetail,momentum,support},parts,entry:activeSetup?zone:null,stop:activeSetup?stop:null,patternEvidence:evidence,maPeriods:selected,targets:activeSetup&&risk>0&&safeZone&&!extended&&!broken?[c.close+2*risk,c.close+3*risk]:[],riskPct:activeSetup?riskPct:null,reasons:[flat.reason,holding.reason],checks:[{label:'结构环境',pass:environment,detail:`MA${decisionPeriod}五根变化${(slope*100).toFixed(2)}%；当前${c.close>=m60?'在':'低于'}MA${decisionPeriod}。`},{label:'主动承接',pass:hasTrigger,detail:volumeLabel+'；'+momentum},{label:'入场位置',pass:safeZone&&!extended,detail:`观察区${zone.map(v=>v.toFixed(2)).join('–')}；距MA${decisionPeriod} ${bias60.toFixed(2)}%。`},{label:'风险收益',pass:room&&riskPct>0&&riskPct<=8,detail:`失效价${stop.toFixed(2)}；结构风险${riskPct.toFixed(2)}%，${resistance>c.close+.2*atr?'阻力空间'+reward.toFixed(2)+'R':'上方无可识别历史阻力，2R仅为计划'}。`}],warnings:[]};
+  const riskAlert=riskEvidence.length>0||topDivergence&&c.close<prev.close&&ratio>=1.3;
+  const currentSignal=signals.some(s=>s.time===c.time),riskKinds=riskEvidence.map(m=>m.label).join('、')||(topDivergence?'顶背离与价格转弱':'结构承接转弱');
+  if(!currentSignal&&riskAlert&&i-(lastAlert.get('sell')??-999)>=3){
+   alerts.push({time:c.time,side:'sell',price:c.close,label:localProvisional?'卖预警':'减仓观察',reason:`${riskKinds}。${localProvisional?'当日K线未收盘，形态可随价格修复而撤销；':'收盘形态风险观察；'}结合既定持仓防守线${priorHoldingStop.toFixed(2)}与前低${prev.low.toFixed(2)}，不假定实际持仓或成交。`,kind:'risk-alert',confirmed:false,provisional:localProvisional,stop:priorHoldingStop,conditions:['跌破既定防守线或放量失守前低时优先风控','若承接恢复、收回关键支撑，降低预警等级']});if(!localProvisional)lastAlert.set('sell',i);
+  }else if(!currentSignal&&!riskAlert&&hasTrigger&&!broken&&!downFan&&!extended&&entryEvidence.length&&i-(lastAlert.get('buy')??-999)>=3){
+   alerts.push({time:c.time,side:'buy',price:c.close,label:localProvisional?'买预警':'买入观察',reason:entryEvidence.map(m=>m.label).join('、')+'；'+flat.reason+' 不等同于已确认买点；观察区'+zone.map(v=>v.toFixed(2)).join('–')+'，失效价'+stop.toFixed(2)+'。',kind:'entry-alert',confirmed:false,provisional:localProvisional,entryZone:zone,stop,conditions:parts.filter(p=>p.score<p.max*.7).map(p=>p.label+'：'+p.reason)});if(!localProvisional)lastAlert.set('buy',i);
+  }
   current.holdingStop=priorHoldingStop;
   if(bottomDivergence)current.warnings.push('底背离仅提示动能衰减，仍需价格与量能转强；不提前标买。');
   if(topDivergence)current.warnings.push('确认顶背离：结合价格破位核验退出，不因背离单独清仓。');
@@ -140,7 +148,7 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
   if(localProvisional)current.warnings.push('当前日线未完成，盘中只预警；不外推全天量，也不画已确认买点。');
   if(!active)current.warnings.push('历史低弹性或延续偏弱，当前形态需要更充分的参与和承接证据。');
   if(extended)current.warnings.push('结构质量与当前买入时机不同：主升可以很强，当前位置仍可能不适合追入。');
-  if(eligible&&!localProvisional&&!position&&!exitedToday&&!downFan){signals.push({time:c.time,side:'buy',price:c.close,label:'买 · '+(entryEvidence[0]?.label||label),reason:flat.reason+(entryEvidence.length?' 触发：'+entryEvidence.map(m=>m.label).join('、')+'。':''),kind:rebound?'retest':activeSetup!.kind,stop,target:current.targets[0],entryZone:zone,confirmed:true});position={reference:c.close,stop,peak:c.high,target:current.targets[0],trimmed:false};}
+  if(eligible&&!localProvisional&&!position&&!exitedToday&&!downFan){if(alerts.at(-1)?.time===c.time&&alerts.at(-1)?.side==='buy')alerts.pop();signals.push({time:c.time,side:'buy',price:c.close,label:'买 · '+(entryEvidence[0]?.label||label),reason:flat.reason+(entryEvidence.length?' 触发：'+entryEvidence.map(m=>m.label).join('、')+'。':''),kind:rebound?'retest':activeSetup!.kind,stop,target:current.targets[0],entryZone:zone,confirmed:true});position={reference:c.close,stop,peak:c.high,target:current.targets[0],trimmed:false};}
   if(i===rows.length-1){
    if(options.amount!==undefined&&(options.amount===null||options.amount<2e8)&&current.flat.action==='买入观察'){
     current.score=Math.min(current.score,49);current.action='观望';current.flat={action:'观望',reason:options.amount===null?'当日成交额无法核验，流动性条件待确认。':'当日成交额不足2亿元，未通过流动性底线。'};current.reasons[0]=current.flat.reason;current.warnings.push(current.flat.reason);const last=signals.at(-1);if(last?.time===c.time&&last.side==='buy')signals.pop();
@@ -149,5 +157,5 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
   }
   if(!localProvisional&&phase!==lastPhase){timeline.push({date:c.time,phase,label,reason:flat.reason});lastPhase=phase;}
  }
- return {version:STRATEGY_VERSION,plan,signals,riskStops,timeline,episodes:episodes.slice(-6),method};
+ return {version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes:episodes.slice(-6),method};
 }

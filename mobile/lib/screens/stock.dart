@@ -1,3 +1,5 @@
+import '../core/patch_daily_quote.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -176,8 +178,11 @@ class _StockPageState extends State<StockPage> {
           RegExp(r'^68[89]').hasMatch(widget.symbol)
       ? '股'
       : '手';
-  List<Bar> get bars =>
-      rows(obj(analysis?['market'])['candles']).map(Bar.fromJson).toList();
+  List<Bar> get bars => patchDailyQuote(
+    rows(obj(analysis?['market'])['candles']).map(Bar.fromJson).toList(),
+    q,
+    volumeUnit,
+  );
   Future<void> sheet(String title, Widget child) => showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -785,6 +790,8 @@ class _StockPageState extends State<StockPage> {
       return MarketChart(
         key: ValueKey('${widget.symbol}-day'),
         bars: bars,
+        amount: numOf(q['amount']),
+        amountDate: str(q['asOf'], '').split('T').first,
         name: name,
         symbol: widget.symbol,
         volumeUnit: volumeUnit,

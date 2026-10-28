@@ -31,7 +31,7 @@ export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week
   const body=b.close-b.open,abs=Math.abs(body),range=b.high-b.low,upper=b.high-Math.max(b.open,b.close),lower=Math.min(b.open,b.close)-b.low,location=range?(b.close-b.low)/range:.5,gain=(b.close/p.close-1)*100;
   const prior=bars.slice(i-20,i),priorHigh=Math.max(...prior.map(c=>c.high)),priorLow=Math.min(...prior.map(c=>c.low)),advance=(p.close/bars[i-11].close-1)*100,highContext=(advance>=18||p.close/ma(20,i-1)-1>.12)&&p.close>=priorHigh-atr*1.5,lowContext=advance<=-6&&p.close<=priorLow+atr*1.5;
   const provisional=unit==='day'&&b.time===day&&minute<900;
-  const emit=(kind:string,label:string,detail:string,bull=true,priority=65,spacing=8,anchorTime?:string,chartVisible=true)=>{if(i-(last.get(kind)??-999)<spacing)return;out.push({time:b.time,kind,label,detail,position:bull?'below':'above',priority,provisional,status:'observation',anchorTime,chartVisible});if(!provisional)last.set(kind,i);};
+  const emit=(kind:string,label:string,detail:string,bull=true,priority=65,spacing=8,anchorTime?:string,chartVisible=true)=>{if(i-(last.get(kind)??-999)<spacing)return;out.push({time:b.time,kind,label,detail,direction:['braid','boll-squeeze','vp-flat','volume-pile'].includes(kind)?'neutral':bull?'bullish':'bearish',position:bull?'below':'above',priority,provisional,status:'observation',anchorTime,chartVisible});if(!provisional)last.set(kind,i);};
   const small=abs<=atr*.35&&range>=atr*.65,prevBody=p.close-p.open,firstBody=a.close-a.open;
   if(highContext&&small&&upper>=Math.max(abs*2,range*.55)&&lower<range*.2)emit('shooting-star','射击之星','前序上涨后出现小实体长上影；为受阻观察，不把长上影自动解释为仙人指路。',false,80);
   if(highContext&&small&&lower>=Math.max(abs*2,range*.55)&&upper<range*.2)emit('hanging-man','吊颈线','前序上涨后的长下影小实体；需要后续承接核验，不能仅凭下影认定见底。',false,72);
@@ -118,6 +118,7 @@ export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week
   if(sv!==undefined&&sp!==undefined&&p.close<=sp&&b.close>sv&&body>.5*atr&&ratio>=1.2)emit('sar-up','SAR向上转向','SAR由价格上方翻到下方，作为修复辅助证据。',true,42,8);
   if(ratio>=1.5&&gain>=2)emit('vp-up','量增价涨',`前20根相对量${ratio.toFixed(2)}倍，涨幅${gain.toFixed(2)}%；需结合所处价格位置。`,true,30,8);
   if(ratio<=.75&&gain>=2&&b.close>ma(20,i))emit('vp-dry-up','量缩价涨','价格上涨而参与量低于20根均量75%；不直接推定为锁仓。',true,25,10);
+  if(highContext&&ratio>=2&&upper>=.6*atr&&location<.45&&b.high>p.high&&gain<5)emit('high-volume-rejection','放量冲高回落','上涨背景中放量冲高、上影显著且最新价回落至振幅下部；盘中须继续核验承接，收盘前可以失效。',false,88,5);
   if(ratio>=2&&Math.abs(gain)<.5&&highContext)emit('vp-stall','量大滞涨','上涨背景中相对量≥2倍而涨幅绝对值不足0.5%；需要复核承接。',false,78,8);
   if(ratio>=1.5&&gain<=-2)emit('vp-down','量增价跌','下跌伴随相对量≥1.5倍；抛压偏强，复核支撑是否失效。',false,65,8);
   if(ratio<=.75&&gain<=-2)emit('vp-dry-down','缩量回落 · 承接待核验','缩量跌幅≥2%；既可能回踩也可能承接衰退，不直接命名洗盘。',false,30,10);

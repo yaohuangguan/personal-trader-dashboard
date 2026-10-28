@@ -1,3 +1,5 @@
+import '../core/patch_daily_quote.dart';
+
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
@@ -17,6 +19,8 @@ class MarketChart extends StatefulWidget {
     super.key,
     required this.bars,
     required this.symbol,
+    this.amount,
+    this.amountDate,
     this.unit = 'day',
     this.name = '',
     this.terminal = false,
@@ -33,6 +37,8 @@ class MarketChart extends StatefulWidget {
   final List<Json> events, trades, patterns;
   final bool expanded;
   final bool terminal;
+  final double? amount;
+  final String? amountDate;
   final double? viewportHeight;
   @override
   State<MarketChart> createState() => _MarketChartState();
@@ -428,14 +434,29 @@ class _MarketChartState extends State<MarketChart> {
     if (!mounted || widget.bars.isEmpty) return;
     final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
     final key =
-        '${widget.symbol}:${widget.unit}:$periods:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
+        '${widget.symbol}:${widget.unit}:$periods:${widget.amount}:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
     if (studyKey == key) return;
+    final sameParameters =
+        studyKey.split(':').take(3).join(':') ==
+        key.split(':').take(3).join(':');
     studyKey = key;
     final request = ++studyRequest;
     setState(() {
-      studyTrades = [];
-      studyPatterns = [];
-      studyIndicators = [];
+      studyTrades = sameParameters
+          ? studyTrades
+                .where((m) => m['time'] != widget.bars.last.time)
+                .toList()
+          : [];
+      studyPatterns = sameParameters
+          ? studyPatterns
+                .where((m) => m['time'] != widget.bars.last.time)
+                .toList()
+          : [];
+      studyIndicators = sameParameters
+          ? studyIndicators
+                .where((m) => m['time'] != widget.bars.last.time)
+                .toList()
+          : [];
       studyStatus = '标注依据当前MA · 核验中';
     });
     try {
@@ -446,6 +467,9 @@ class _MarketChartState extends State<MarketChart> {
           'name': widget.name,
           'unit': widget.unit,
           'ma': periods,
+          'amount': widget.amountDate == widget.bars.last.time
+              ? widget.amount
+              : null,
           'candles': widget.bars
               .map(
                 (b) => {
@@ -472,6 +496,62 @@ class _MarketChartState extends State<MarketChart> {
         setState(() => studyStatus = '标注更新失败 · 点此重试');
       }
     }
+  }
+
+  Future<void> annotationDetails() async {
+    if (widget.bars.isEmpty) return;
+    final index = (hover ?? (widget.bars.length - offset - 1)).clamp(
+          0,
+          widget.bars.length - 1,
+        ),
+        date = widget.bars[index].time;
+    final items = [
+      ...studyTrades,
+      ...studyPatterns,
+      ...studyIndicators,
+    ].where((m) => m['time'] == date).toList();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .65,
+        minChildSize: .3,
+        maxChildSize: .9,
+        builder: (ctx, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text('$date · 标注依据', style: Theme.of(ctx).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            Text(studyStatus),
+            if (items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text('该根暂无有效形态或买卖条件；长按K线可选择其他日期。'),
+              ),
+            for (final m in items)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      str(m['label']),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(str(m['reason'] ?? m['detail'])),
+                    if (m['provisional'] == true) const Text('盘中预警，收盘前可以失效。'),
+                  ],
+                ),
+              ),
+            const Text('买入观察/卖预警是条件提示；已确认买卖点与历史规则跟踪另行区分，不代表账户实际持仓或成交。'),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _smallIcon(IconData icon, String title, VoidCallback action) =>
@@ -724,6 +804,7 @@ class _MarketChartState extends State<MarketChart> {
                   _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
                 _smallIcon(Icons.show_chart, '图表指标', indicatorSettings),
                 _smallIcon(Icons.tune, '均线参数', settings),
+                _smallIcon(Icons.info_outline, '标注依据', annotationDetails),
                 if (!widget.expanded)
                   _smallIcon(Icons.fullscreen, '展开图表', expand),
               ],
@@ -1232,7 +1313,10 @@ class _FullscreenChartState extends State<FullscreenChart> {
   late List<Json> trades = widget.trades;
   late List<Json> patterns = widget.patterns;
   Timer? timer;
-  bool loading = false;
+  bool loading = false, quoteLoading = false;
+  double? quoteAmount;
+  String? quoteDate;
+  int refreshTick = 0;
   @override
   void initState() {
     super.initState();
@@ -1242,7 +1326,47 @@ class _FullscreenChartState extends State<FullscreenChart> {
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    timer = Timer.periodic(const Duration(seconds: 60), (_) => refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) refreshQuote();
+    });
+    timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      refreshQuote();
+      if (++refreshTick % 12 == 0) refresh();
+    });
+  }
+
+  Future<void> refreshQuote() async {
+    if (quoteLoading ||
+        !mounted ||
+        !cnStock(widget.symbol) ||
+        widget.unit != 'day' ||
+        !context.read<AtlasStore>().foreground ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      return;
+    }
+    quoteLoading = true;
+    try {
+      final result = await context.read<AtlasStore>().api.get(
+        '/api/desk/quotes',
+        parameters: {'symbols': widget.symbol},
+      );
+      final quote = rows(result['items'])
+          .where((q) => q['symbol'] == widget.symbol)
+          .firstOrNull;
+      if (!mounted || quote == null) return;
+      final updated = patchDailyQuote(bars, quote, widget.volumeUnit);
+      if (!identical(updated, bars)) {
+        setState(() {
+          bars = updated;
+          quoteAmount = numOf(quote['amount']);
+          quoteDate = str(quote['asOf'], '').split('T').first;
+        });
+      }
+    } catch (_) {
+      /* Keep the last verified candle; background quote failure does not replace the chart. */
+    } finally {
+      quoteLoading = false;
+    }
   }
 
   Future<void> refresh() async {
@@ -1310,6 +1434,8 @@ class _FullscreenChartState extends State<FullscreenChart> {
               MediaQuery.orientationOf(context) == Orientation.portrait;
           final chart = MarketChart(
             bars: bars,
+            amount: quoteAmount,
+            amountDate: quoteDate,
             symbol: widget.symbol,
             name: widget.name,
             unit: widget.unit,
@@ -1578,11 +1704,16 @@ class ChartPainter extends CustomPainter {
             if (m['chartVisible'] == false) return false;
             final index = dates[str(m['time'])];
             return index != null && index >= start && index < end;
-          }).toList()..sort(
-            (a, b) => (numOf(b['priority']) ?? 0).compareTo(
-              numOf(a['priority']) ?? 0,
-            ),
-          );
+          }).toList()..sort((a, b) {
+            final current =
+                (b['time'] == data.bars.last.time ? 1 : 0) -
+                (a['time'] == data.bars.last.time ? 1 : 0);
+            return current != 0
+                ? current
+                : (numOf(b['priority']) ?? 0).compareTo(
+                    numOf(a['priority']) ?? 0,
+                  );
+          });
       final occupied = <Rect>[];
       for (final t in showSignals ? trades : <Json>[]) {
         final index = dates[str(t['time'])];
@@ -1639,11 +1770,13 @@ class ChartPainter extends CustomPainter {
             px = x(index),
             markFont = math.max(11.0, math.min(13.0, font - 1));
         final title =
-                str(mark['label']) + (mark['provisional'] == true ? '?' : ''),
+                str(mark['label']) + (mark['provisional'] == true ? '·预警' : ''),
             labelWidth = textWidth(title, size: markFont),
-            colour = mark['provisional'] == true
-                ? const Color(0xffb59760)
-                : const Color(0xff8faac4);
+            colour = mark['direction'] == 'bullish'
+                ? up
+                : mark['direction'] == 'bearish'
+                ? down
+                : muted;
         final above = mark['position'] == 'above',
             dotY = above ? y(bar.high) - 4 : y(bar.low) + 5;
         c.drawCircle(Offset(px, dotY), 2.2, Paint()..color = colour);
@@ -1655,6 +1788,8 @@ class ChartPainter extends CustomPainter {
             candidates = [
               above ? y(bar.high) - 21 : y(bar.low) + 10,
               above ? y(bar.low) + 10 : y(bar.high) - 21,
+              above ? y(bar.high) - 48 : y(bar.low) + 37,
+              above ? y(bar.low) + 37 : y(bar.high) - 48,
             ];
         for (final ly in candidates) {
           final rect = Rect.fromLTWH(
@@ -1704,12 +1839,18 @@ class ChartPainter extends CustomPainter {
                 : y(data.bars[index].high) - 24;
         label(
           c,
-          buy ? '买 ↑' : '卖 ↓',
+          trade['confirmed'] == false
+              ? str(trade['label'])
+              : (buy ? '买 ↑' : '卖 ↓'),
           Offset(
             (px - 8).clamp(left, size.width - right - 24),
             py.clamp(15, priceHeight - 15),
           ),
-          color: buy ? up : down,
+          color: trade['confirmed'] == false
+              ? const Color(0xffcfad6e)
+              : buy
+              ? up
+              : down,
           size: 13,
           background: true,
         );
@@ -1864,9 +2005,7 @@ class ChartPainter extends CustomPainter {
           text,
           Offset(lx, ly),
           size: 11,
-          color: mark['bullish'] == true
-              ? const Color(0xffb88086)
-              : const Color(0xff6eaaa2),
+          color: mark['bullish'] == true ? up : down,
           background: true,
         );
       }

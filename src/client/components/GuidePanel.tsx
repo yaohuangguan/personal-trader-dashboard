@@ -19,8 +19,8 @@ export function GuideSummary({ data,candles=[],strategy,review,onOpen }: { data:
   const p=(strategy||analyzeStrategy(candles)).plan;
   return <button type="button" className="guide-summary" onClick={onOpen} aria-label={uiText("查看五线开花分析")}>
     <div><span>{uiText("五线量价研判")}</span><strong>{uiText(p.label)}</strong><small className={'bias-'+marketContext(candles,data.provisional).structure.direction}>{uiText('结构准备度')} {p.structureScore}/100 · {uiText(marketContext(candles,data.provisional).structure.state)}</small></div>
-    <div><span>{uiText("当前买点分")}</span><b>{review?review.entryScore??'—':p.score} / 100 · {uiText(review?.flat.action||p.flat.action)}</b></div><div><span>{uiText("五线粘合系数")}</span><b>{uiText(fmt(data.adhesionPct, '%'))}</b></div>
-    <div><span>{uiText("当前 BIAS60")}</span><b>{uiText(fmt(data.bias60, '%'))}</b></div>
+    <div><span>{uiText("当前买点分")}</span><b>{review?review.entryScore??'—':p.score} / 100 · {uiText(review?.flat.action||p.flat.action)}</b></div><div><span>{uiText("五线粘合系数")}</span><b>{uiText(fmt(p.metrics?.adhesion??data.adhesionPct, '%'))}</b></div>
+    <div><span>{'当前 BIAS'+(p.metrics?.decisionPeriod??60)}</span><b>{uiText(fmt(p.metrics?.bias60??data.bias60, '%'))}</b></div>
     <div><span>{uiText(p.setup ? '启动观察日' : '历史日线')}</span><b>{uiText(p.setup?.date || data.asOf || '—')}</b></div>
     <ArrowRight size={15} />
   </button>;
