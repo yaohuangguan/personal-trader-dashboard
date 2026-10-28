@@ -13,6 +13,7 @@ import '../core/indicators.dart';
 import '../widgets/common.dart';
 import '../widgets/market_chart.dart';
 import '../widgets/daily_trend.dart';
+import '../widgets/flow_research.dart';
 import '../widgets/live_chart_feed.dart';
 import 'guide.dart';
 import 'f10.dart';
@@ -1018,42 +1019,7 @@ class _BookPanelState extends State<BookPanel> {
               ),
             )
           else
-            AsyncPanel(
-              key: ValueKey('${widget.symbol}-flow'),
-              load: () => s.api.get(
-                '/api/desk/flow',
-                parameters: {'symbol': widget.symbol},
-              ),
-              builder: (r) {
-                final last = rows(r['points']).lastOrNull ?? {};
-                return Column(
-                  children: [
-                    for (final e in {
-                      'main': '主力净流入',
-                      'superLarge': '超大单',
-                      'large': '大单',
-                      'medium': '中单',
-                      'small': '小单',
-                    }.entries)
-                      ListTile(
-                        title: Text(
-                          s.t(
-                            e.key == 'main'
-                                ? str(r['mainLabel'], e.value)
-                                : e.value,
-                          ),
-                        ),
-                        trailing: Text(
-                          amount(last[e.key]),
-                          style: TextStyle(color: tone(last[e.key])),
-                        ),
-                      ),
-                    SourceLine(r, extra: str(last['time'])),
-                    if (r['notice'] != null) Notice(str(r['notice'])),
-                  ],
-                );
-              },
-            ),
+            FlowResearch(widget.symbol),
         ],
       ),
     );
@@ -1425,61 +1391,7 @@ class StockFlowSummary extends StatelessWidget {
   const StockFlowSummary(this.symbol, {super.key});
   final String symbol;
   @override
-  Widget build(BuildContext context) => Panel(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          tr(context, '资金面'),
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-        ),
-        AsyncPanel(
-          load: () => context.read<AtlasStore>().api.get(
-            '/api/desk/flow',
-            parameters: {'symbol': symbol},
-          ),
-          builder: (r) {
-            final last = rows(r['points']).lastOrNull ?? {};
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final e in {
-                  'main': '主力净流入',
-                  'superLarge': '超大单',
-                  'large': '大单',
-                  'medium': '中单',
-                  'small': '小单',
-                }.entries)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            tr(context, e.value),
-                            style: TextStyle(color: muted, fontSize: 15),
-                          ),
-                        ),
-                        Text(
-                          amount(last[e.key]),
-                          style: TextStyle(
-                            fontSize: 19,
-                            color: tone(last[e.key]),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                SourceLine(r, extra: str(last['time'])),
-                if (r['notice'] != null) Notice(str(r['notice'])),
-                Notice(tr(context, '按成交单大小分类估算，不等于机构实际持仓或Level-2。')),
-              ],
-            );
-          },
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) => Panel(child: FlowResearch(symbol));
 }
 
 class StockEmotion extends StatelessWidget {

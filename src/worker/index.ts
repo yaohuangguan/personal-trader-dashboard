@@ -505,6 +505,7 @@ export default {
  async fetch(request:Request,env:Env):Promise<Response>{
   try {
    const incoming=new URL(request.url);
+   if(['/sw.js','/version.json'].includes(incoming.pathname)&&env.ASSETS){const resource=await env.ASSETS.fetch(request),response=new Response(resource.body,resource);response.headers.set('cache-control','no-store, max-age=0');if(incoming.pathname==='/sw.js')response.headers.set('service-worker-allowed','/');return response;}
    const migration=await clientMigrationRoute(request,env.SHARES);if(migration)return migration;
    const synced=await watchSyncRoute(request,env.MARKET_SCANNER);if(synced)return synced;
    if(new URL(request.url).pathname==='/api/chart-study'){
@@ -514,7 +515,11 @@ export default {
     const ma=parseMAPeriods(body.ma.join(','));return json(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}));
    }
 
-   if(env.PUBLIC_ORIGIN&&incoming.hostname==='personal-market-atlas.nzs.workers.dev'&&request.method==='GET'&&!incoming.pathname.startsWith('/api/'))return new Response(null,{status:308,headers:{location:env.PUBLIC_ORIGIN+incoming.pathname+incoming.search,'cache-control':'public, max-age=300'}});
+   // Old installed PWAs must download their same-origin shell before the new
+   // worker can activate and migrate navigation to guanlan. Redirecting these
+   // asset fetches across origins makes installation fail CORS checks.
+   const migrationAsset=incoming.pathname==='/index.html'||incoming.pathname==='/manifest.webmanifest'||incoming.pathname==='/favicon.svg'||incoming.pathname.startsWith('/assets/')||incoming.pathname.startsWith('/icons/');
+   if(env.PUBLIC_ORIGIN&&incoming.hostname==='personal-market-atlas.nzs.workers.dev'&&request.method==='GET'&&!incoming.pathname.startsWith('/api/')&&!migrationAsset)return new Response(null,{status:308,headers:{location:env.PUBLIC_ORIGIN+incoming.pathname+incoming.search,'cache-control':'public, max-age=300'}});
    if(env.LEGACY_STATE&&incoming.pathname.startsWith('/api/close-report/'))return env.LEGACY_STATE.fetch(request);
    const share=await shareRoute(request,env.SHARES,env.PUBLIC_ORIGIN);if(share)return share;
    const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;

@@ -13,7 +13,7 @@ id = "f1156c885e0c4bf9baeb5f36d4ce0a78"
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/sw.js", "/version.json"]
 
 [vars]
 APP_NAME = "观澜 · ATLAS"

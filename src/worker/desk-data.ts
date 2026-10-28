@@ -1,4 +1,6 @@
 import {parseMinuteBars,aggregate120} from '../shared/minute-bars';
+import {observeFlow} from '../shared/flow-observation';
+import type {FlowPayload,FlowPoint} from '../shared/desk-types';
 import {aggregateDaily} from '../shared/market-models';
 import {sinaAdjustedDaily,sinaBeijingDaily,sinaIndexDaily} from './research';
 // HTTP adapters ported from a-stock-data v3.10.3 (Apache-2.0).
@@ -149,7 +151,7 @@ export function parseTickPage(text: string, wire: string, page: number): Tick[] 
     return { sequence: Number(seq), time, price: Number(price), volume: Number(volume), amount: Number(amount), side: side as Tick['side'] };
   }) : [];
 }
-export async function ticks(raw: string) {
+export async function ticks(raw: string, recentPages = 1) {
   const { symbol, wire } = chineseSymbol(raw);
   if (symbol.endsWith('.BJ') || wire.startsWith('sh000') || wire.startsWith('sz399')) throw new Error('该分笔接口不覆盖北交所和指数');
   const base = 'https://stock.gtimg.cn/data/index.php?appn=detail&c=' + wire;
@@ -158,9 +160,17 @@ export async function ticks(raw: string) {
   if (!match || !match[2]) throw new Error('来源未提供最近交易日分笔');
   const page = match[2].split('|').length - 1;
   if (page > 299) throw new Error('分笔页数超出已验证范围');
-  const text = new TextDecoder('gbk').decode(await (await request(base + '&action=data&p=' + page)).arrayBuffer());
-  const items = parseTickPage(text, wire, page).sort((a, b) => b.sequence - a.sequence);
+  const pages=Array.from({length:Math.min(6,Math.max(1,recentPages),page+1)},(_,i)=>page-i);
+  const parsed=await Promise.all(pages.map(async p=>{const text=new TextDecoder('gbk').decode(await(await request(base+'&action=data&p='+p,4500)).arrayBuffer());return parseTickPage(text,wire,p);}));
+  const items = [...new Map(parsed.flat().map(r=>[r.sequence,r])).values()].sort((a, b) => b.sequence - a.sequence);
   return { ...stamp('腾讯财经成交分笔（约3秒聚合）', base), symbol, date: cnDate(match[1]), items, partial: true as const, level2: false as const, volumeUnit: '手' as const };
+}
+export async function flowObservation(raw:string){
+ const {symbol}=chineseSymbol(raw);
+ const [sample,snapshot]=await Promise.allSettled([memo('flow-ticks:'+symbol,45,()=>ticks(symbol,6)),memo('quotes:'+symbol,3,()=>quotes([symbol]))]);
+ if(sample.status==='rejected')return{available:false,source:'腾讯财经公开聚合分笔',sourceUrl:'https://gu.qq.com/',fetchedAt:new Date().toISOString(),reason:'最近成交样本暂不可用，请稍后刷新。'};
+ const q=snapshot.status==='fulfilled'?snapshot.value.items.find(r=>r.symbol===symbol):undefined;
+ return {...observeFlow(sample.value,q?.amount??null,q?.asOf.slice(0,10)),source:sample.value.source,sourceUrl:sample.value.sourceUrl,fetchedAt:sample.value.fetchedAt};
 }
 function mapSector(row: Row): Sector {
   const leaderCode = String(row.f140 || '');
@@ -193,19 +203,31 @@ export async function industryRanks(fallback = false) {
   return { ...stamp('新浪行业公开行情（来源未提供交易日期）', url), items, classification: 'sina-industry', notice: (fallback ? '东方财富列表暂不可用，已切换新浪行业口径；' : '独立使用新浪行业口径；') + '两者分类与成分不同。' };
 }
 async function sinaPeers(code: string) {
-  if (!/^SN:new_[a-z0-9]{2,20}$/.test(code)) throw new Error('无效新浪行业代码');
+  if (!/^SN:(?:new_[a-z0-9]{2,20}|gn_[A-Za-z0-9_]{1,40})$/.test(code)) throw new Error('无效新浪行业或概念代码');
   const url = 'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?' + new URLSearchParams({ page: '1', num: '16', sort: 'changepercent', asc: '0', node: code.slice(3), symbol: '' });
   const response = await request(url, 6000);
   const raw = JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as Row[];
   if (!Array.isArray(raw)) throw new Error('新浪行业成分格式异常');
   const items: Peer[] = raw.filter(r => /^(sh|sz)\d{6}$/.test(String(r.symbol))).map(r => { const wire = String(r.symbol); return { symbol: wire.slice(2) + '.' + wire.slice(0, 2).toUpperCase(), name: clean(r.name), price: num(r.trade), changePercent: num(r.changepercent), mainNet: null }; });
-  return { ...stamp('新浪行业成分公开行情（来源未提供交易日期）', url), code, items, classification: 'sina-industry', notice: '当前是新浪行业成分，主力净额没有提供；不代替东方财富板块归属。' };
+  const concept=code.startsWith('SN:gn_');
+  return { ...stamp('新浪'+(concept?'概念':'行业')+'成分公开行情（来源未提供交易日期）', url), code, items, classification: concept?'sina-concept':'sina-industry', notice: '当前是新浪'+(concept?'概念':'行业')+'成分，主力净额没有提供；不代替东方财富板块归属。', delayMinutes:undefined as number|undefined,resolvedName:undefined as string|undefined,requestedCode:undefined as string|undefined,related:false };
 }
-export async function peers(code: string) {
+export async function peers(code: string, name='') {
   if (code.startsWith('SN:')) return sinaPeers(code);
   if (!/^BK\d{4,6}$/.test(code)) throw new Error('无效板块代码');
   const url = emUrl('clist/get', { fs: 'b:' + code, pn: '1', pz: '16', po: '1', np: '1', fid: 'f3', fields: 'f2,f3,f12,f13,f14,f62' });
-  const data = await listData(url);
+  let data;
+  try{data=await listData(url);}catch(error){
+    // An alternative classification must be named, never presented as EM members.
+    if(!name)throw error;
+    const {sectorMap}=await import('./sector-map');
+    const maps=await Promise.allSettled([memo('heat:concept',90,()=>sectorMap('concept')),memo('heat:industry',90,()=>sectorMap('industry'))]);
+    const all=maps.flatMap(r=>r.status==='fulfilled'?r.value.items:[]),key=(s:string)=>s.replace(/概念|板块|行业/g,'');
+    const exact=all.find(r=>key(r.name)===key(name));
+    const related=exact||all.find(r=>name==='面板'&&/触摸屏|显示|液晶|电子信息/.test(r.name)||name==='电子'&&/电子信息/.test(r.name)||name==='光学光电子'&&/电子器件/.test(r.name));
+    if(!related)throw error;
+    const result=await sinaPeers(related.code);return{...result,requestedCode:code,resolvedName:related.name,related:true,notice:'东方财富成分接口暂不可用，展示新浪「'+related.name+'」相关分类参考，非原板块成分；不同来源分类可能重叠或不同。主力净额未提供。'};
+  }
   const items: Peer[] = rowList(data.data.diff).filter(r => /^\d{6}$/.test(String(r.f12))).map(r => ({ symbol: String(r.f12) + (Number(r.f13) === 1 ? '.SH' : /^(4|8|92)/.test(String(r.f12)) ? '.BJ' : '.SZ'), name: String(r.f14 || ''), price: num(r.f2), changePercent: num(r.f3), mainNet: num(r.f62) }));
   return { ...stamp('东方财富板块成分' + (data.delayMinutes ? '（约15分钟延迟）' : ''), data.sourceUrl), delayMinutes: data.delayMinutes, code, items };
 }
@@ -229,18 +251,27 @@ export async function fundFlow(raw: string, signal?:AbortSignal) {
   }catch{
    signal?.throwIfAborted();
    try{
-    const fallback='https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get?'+new URLSearchParams({secid,klt:'101',lmt:'5',fields1:'f1,f2,f3,f7',fields2:'f51,f52,f53,f54,f55,f56'});
+    const fallback='https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get?'+new URLSearchParams({secid,klt:'101',lmt:'60',fields1:'f1,f2,f3,f7',fields2:'f51,f52,f53,f54,f55,f56'});
     const payload=await(await eastmoney(fallback,6000,signal)).json() as {data?:{code?:string;klines?:string[]}};
     return {...stamp('东方财富日资金流估算（备用源）',fallback),symbol,period:'daily' as const,notice:'盘中资金源暂不可用，当前展示来源提供的最近交易日日度估算，非盘中实时。',points:parse(payload,true)};
    }catch{
     signal?.throwIfAborted();
-    const fallback='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?'+new URLSearchParams({page:'1',num:'20',sort:'opendate',asc:'0',daima:symbol.slice(-2).toLowerCase()+symbol.slice(0,6)});
-    try{const response=await request(fallback,6000,signal),rows=JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as Row[];
-     const points=(Array.isArray(rows)?rows:[]).filter(r=>/^\d{4}-\d{2}-\d{2}$/.test(String(r.opendate))&&num(r.netamount)!==null).map(r=>({time:String(r.opendate),main:num(r.netamount),superLarge:null,small:null,medium:null,large:null})).sort((a,b)=>a.time.localeCompare(b.time));
-     if(!points.length)throw new Error('日资金源暂无记录');return {...stamp('新浪日资金流估算（独立备用源）',fallback),symbol,period:'daily' as const,classification:'sina-net-flow',mainLabel:'资金净额（新浪口径）',points,notice:'东财资金源暂不可用，已切换新浪日度净额；各源分类口径不同，缺失的大中小单不补值，当前不是盘中实时。'};
-    }catch{return {source:'东方财富 / 新浪资金流',sourceUrl:fallback,available:true,dataAvailable:false,symbol,period:'daily' as const,points:[],fetchedAt:new Date().toISOString(),notice:'资金源暂时均不可用，请稍后刷新。未用旧日期或零值代替当前资金。'};}
+    try{return await memo('flow-history:'+symbol,300,()=>fundFlowHistory(symbol,signal));}
+    catch{return {source:'东方财富 / 新浪资金流',sourceUrl:'https://finance.sina.com.cn/stock/moneyflow/',available:true,dataAvailable:false,symbol,period:'daily' as const,points:[],fetchedAt:new Date().toISOString(),notice:'资金源暂时均不可用，请稍后刷新。未用旧日期或零值代替当前资金。'};}
    }
   }
+}
+export function parseSinaFlow(rows:unknown):FlowPoint[]{
+ if(!Array.isArray(rows))throw new Error('日资金流响应格式异常');
+ const points=rows.filter(r=>r&&/^\d{4}-\d{2}-\d{2}$/.test(String(r.opendate))&&Number.isFinite(Date.parse(r.opendate))&&(num(r.r0_net)!==null||num(r.netamount)!==null)).map(r=>({time:String(r.opendate),main:num(r.r0_net),totalNet:num(r.netamount),mainRatio:num(r.r0_ratio)===null?null:num(r.r0_ratio)!*100,superLarge:null,small:null,medium:null,large:null}));
+ if(!points.length)throw new Error('日资金源暂无记录');return [...new Map(points.map(r=>[r.time,r])).values()].sort((a,b)=>a.time.localeCompare(b.time));
+}
+export async function fundFlowHistory(raw:string,signal?:AbortSignal):Promise<FlowPayload>{
+ const {symbol,wire}=chineseSymbol(raw);
+ const url='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?'+new URLSearchParams({page:'1',num:'60',sort:'opendate',asc:'0',daima:wire});
+ let response:Response;try{response=await request(url,5500,signal);}catch{signal?.throwIfAborted();response=await request(url,4500,signal);}
+ const rows=JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer()));
+ return {...stamp('新浪日资金流估算',url),symbol,period:'daily',classification:'sina-net-flow',mainLabel:'主力净额（新浪口径）',points:parseSinaFlow(rows),notice:'新浪按成交单额统计的日度估算，主力净额与全部净额分别展示，不是盘中实时。与东财口径不同，不拼接累计；未提供四档数据不补值。主力为来源分类名称，无法确认机构账户。'};
 }
 export async function reports(raw: string) {
   const { code } = chineseSymbol(raw);

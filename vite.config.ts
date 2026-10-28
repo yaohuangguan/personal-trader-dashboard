@@ -1,11 +1,16 @@
+import {execFileSync} from 'node:child_process';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const buildId=process.env.ATLAS_BUILD_ID||execFileSync('git',['rev-parse','--short=8','HEAD'],{encoding:'utf8'}).trim()+'-'+Date.now().toString(36);
 export default defineConfig({
+ define:{__APP_BUILD__:JSON.stringify(buildId)},
  plugins: [
   react(),
+  {name:'atlas-build-version',generateBundle(){this.emitFile({type:'asset',fileName:'version.json',source:JSON.stringify({build:buildId})});}},
   VitePWA({
+   strategies:'injectManifest',srcDir:'src/pwa',filename:'sw.js',
    registerType:'prompt',
    injectRegister:null,
    includeAssets:['favicon.svg','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png'],
@@ -21,22 +26,8 @@ export default defineConfig({
      {src:'/icons/icon-512-maskable.png',sizes:'512x512',type:'image/png',purpose:'maskable'}
     ]
    },
-   workbox:{
-    importScripts:['/push-worker.js'],
-    navigateFallback:'/index.html',
-    navigateFallbackDenylist:[/^\/api\//],
-    globPatterns:['**/*.{html,js,css,svg,png,woff2,ico}'],
-    cleanupOutdatedCaches:true,
-    skipWaiting:false,
-    clientsClaim:true,
-    runtimeCaching:[
-     // Financial and news APIs must always be requested from the network, never served as "current" from an offline cache.
-     {urlPattern:({url}: {url:URL})=>url.origin===self.location.origin&&url.pathname.startsWith('/api/'),
-      handler:'NetworkOnly' as const},
-     {urlPattern:/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/,
-      handler:'StaleWhileRevalidate',options:{cacheName:'market-atlas-fonts',expiration:{maxEntries:16,maxAgeSeconds:60*60*24*30}}}
-    ]
-   }
+   injectManifest:{globPatterns:['**/*.{html,js,css,svg,png,woff2,ico,webmanifest}'],maximumFileSizeToCacheInBytes:3*1024*1024}
+
   })
  ],
  server:{port:5173,proxy:{'/api':'http://127.0.0.1:8787'}},

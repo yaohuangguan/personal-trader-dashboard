@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {parseFeed} from '../src/worker/index';
+import worker,{parseFeed} from '../src/worker/index';
 
 test('RSS article stays attributed and in-app synopsis is from publisher, not invented',()=>{
  const xml='<rss><channel><item><title>Company publishes results</title>'+
@@ -29,10 +29,15 @@ test('no app-owned research UI opens a third-party new tab',()=>{
   assert.doesNotMatch(text,/window\.open\(/g,path);
  }
 });
-test('PWA manifest config has standalone mode and HTTP API requests network-only',()=>{
+test('PWA manifest config has standalone mode and a maskable application icon',()=>{
  const config=readFileSync('vite.config.ts','utf8');
  assert.match(config,/display:'standalone'/);
- assert.match(config,/handler:'NetworkOnly'/);
- assert.match(config,/navigateFallbackDenylist:/);
  assert.match(config,/icon-512-maskable\.png/);
+});
+test('legacy PWA can update same-origin shell assets while navigation migrates and SW never caches',async()=>{
+ const env={PUBLIC_ORIGIN:'https://guanlan.nzs.workers.dev',ASSETS:{fetch:async()=>new Response('asset',{headers:{'cache-control':'public, max-age=99999'}})}};
+ for(const path of ['/sw.js','/version.json','/assets/main.js','/index.html','/icons/icon-192.png']){
+  const r=await worker.fetch(new Request('https://personal-market-atlas.nzs.workers.dev'+path),env);assert.equal(r.status,200,path);assert.equal(await r.text(),'asset');if(path==='/sw.js'||path==='/version.json')assert.match(r.headers.get('cache-control')||'',/no-store/);
+ }
+ const r=await worker.fetch(new Request('https://personal-market-atlas.nzs.workers.dev/?symbol=300545.SZ'),env);assert.equal(r.status,308);assert.equal(r.headers.get('location'),'https://guanlan.nzs.workers.dev/?symbol=300545.SZ');
 });

@@ -58,6 +58,55 @@ class _StockSectorsState extends State<StockSectors> {
             ),
           ),
         ),
+        AsyncPanel(
+          load: () => s.api.get(
+            '/api/desk/sector-map',
+            parameters: {'type': 'concept'},
+          ),
+          builder: (r) => Panel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  s.t('独立概念成分'),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: s.t('选择概念（新浪独立分类）'),
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: rows(r['items'])
+                      .map(
+                        (b) => DropdownMenuItem(
+                          value: str(b['code']),
+                          child: Text(
+                            '${str(b['name'])} ${percent(b['changePercent'])}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    final b = rows(r['items'])
+                        .where((b) => b['code'] == value)
+                        .firstOrNull;
+                    if (b != null)
+                      setState(() {
+                        selected = value;
+                        name = str(b['name']);
+                      });
+                  },
+                ),
+                Notice(s.t('可直接查看机器人、创新药等概念成分；不同来源分类分别标识。')),
+              ],
+            ),
+          ),
+        ),
         if (selected != null) SectorMembers(selected!, name),
         const SizedBox(height: 10),
         Panel(
@@ -109,13 +158,16 @@ class SectorMembers extends StatelessWidget {
     final s = context.read<AtlasStore>();
     return AsyncPanel(
       key: ValueKey(code),
-      load: () => s.api.get('/api/desk/peers', parameters: {'code': code}),
+      load: () => s.api.get(
+        '/api/desk/peers',
+        parameters: {'code': code, 'name': name},
+      ),
       builder: (r) => Panel(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '$name · ${s.t('板块成分')}',
+              '${str(r['resolvedName'], name)} · ${s.t(r['related'] == true ? '相关分类参考' : '板块成分')}',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             ...rows(r['items']).map(
@@ -142,6 +194,7 @@ class SectorMembers extends StatelessWidget {
               ),
             ),
             SourceLine(r, extra: s.t('来源成分涨幅前16；未读取全成分')),
+            if (r['notice'] != null) Notice(str(r['notice'])),
           ],
         ),
       ),

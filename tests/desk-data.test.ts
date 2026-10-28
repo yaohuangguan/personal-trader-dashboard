@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries, memo, fundFlow } from '../src/worker/desk-data';
+import { parseQuotes, parseTickPage, num, peers, ranks, parseSinaIndustries, memo, fundFlow, parseSinaFlow } from '../src/worker/desk-data';
 import { marketSession, evaluateWatchRules } from '../src/shared/desk-types';
 import { deskRoute } from '../src/worker/desk-api';
 
@@ -111,8 +111,19 @@ test('an unavailable intraday flow falls back to attributed daily values without
 
 test('Sina independent fallback keeps its net-flow label and never invents size buckets',async()=>{
  const original=globalThis.fetch;globalThis.fetch=async input=>String(input).includes('sina.com.cn')?Response.json([{opendate:'2026-10-26',netamount:'-155293011.66',r0_net:'-106788556.84'}]):new Response('',{status:502});
- try{const r=await fundFlow('300031.SZ');assert.match(r.source,/新浪/);assert.match(r.mainLabel||'',/新浪口径/);assert.equal(r.period,'daily');assert.equal(r.points[0].main,-155293011.66);assert.equal(r.points[0].superLarge,null);assert.equal(r.points[0].large,null);assert.match(r.notice||'',/不是盘中实时/);}finally{globalThis.fetch=original;}
+ try{const r=await fundFlow('300031.SZ');assert.match(r.source,/新浪/);assert.match(r.mainLabel||'',/新浪口径/);assert.equal(r.period,'daily');assert.equal(r.points[0].main,-106788556.84);assert.equal(r.points[0].totalNet,-155293011.66);assert.equal(r.points[0].superLarge,null);assert.equal(r.points[0].large,null);assert.match(r.notice||'',/不是盘中实时/);}finally{globalThis.fetch=original;}
 });
 test('all unavailable flow sources return a recoverable empty state instead of a 502 crash',async()=>{
  const original=globalThis.fetch;globalThis.fetch=async()=>new Response('',{status:502});try{const r=await fundFlow('300032.SZ');assert.equal(r.available,true);assert.deepEqual(r.points,[]);assert.match(r.notice||'',/暂时均不可用/);}finally{globalThis.fetch=original;}
+});
+
+test('Sina main and total net flow remain distinct, missing main is not replaced by total',()=>{
+ const r=parseSinaFlow([{opendate:'2026-10-28',netamount:'7674708',r0_net:'4942205',r0_ratio:'0.05865497'},{opendate:'2026-10-27',netamount:'-10'}]);
+ assert.equal(r[1].main,4942205);assert.equal(r[1].totalNet,7674708);assert.equal(r[1].mainRatio,5.865497);assert.equal(r[0].main,null);
+ assert.throws(()=>parseSinaFlow([{opendate:'bad',r0_net:'1'}]));
+});
+
+test('Sina concepts use their own namespace and actual member response',async()=>{
+ const original=globalThis.fetch;let visited='';globalThis.fetch=async input=>{visited=String(input);return Response.json([{symbol:'sz300545',name:'Stock',trade:'22.38',changepercent:'2.75'}]);};
+ try{const r=await peers('SN:gn_cxy');assert.equal(r.classification,'sina-concept');assert.equal(r.items[0].symbol,'300545.SZ');assert.equal(r.items[0].mainNet,null);assert.equal(new URL(visited).searchParams.get('node'),'gn_cxy');}finally{globalThis.fetch=original;}
 });
