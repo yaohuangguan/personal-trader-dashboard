@@ -1,4 +1,4 @@
-name = "personal-market-atlas"
+name = "guanlan"
 account_id = "cdc04de9bc4c6a41b5003758e505a0d1"
 main = "src/worker/index.ts"
 compatibility_date = "2025-09-01"
@@ -16,22 +16,22 @@ not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 
 [vars]
-APP_NAME = "Market Atlas"
+APP_NAME = "观澜 · ATLAS"
+PUBLIC_ORIGIN = "https://guanlan.nzs.workers.dev"
 # Optional: configure SEC_USER_AGENT through wrangler secret put.
 # Optional: configure TWELVE_DATA_API_KEY / ALPHA_VANTAGE_API_KEY through wrangler secret put.
 
 [[durable_objects.bindings]]
 name = "SIGNAL_MONITOR"
 class_name = "SignalMonitor"
-
-[[migrations]]
-tag = "signal-monitor-v1"
-new_sqlite_classes = ["SignalMonitor"]
+script_name = "personal-market-atlas"
 
 [[durable_objects.bindings]]
 name = "MARKET_SCANNER"
 class_name = "MarketScanner"
+script_name = "personal-market-atlas"
 
-[[migrations]]
-tag = "full-market-v1"
-new_sqlite_classes = ["MarketScanner"]
+
+[[services]]
+binding = "LEGACY_STATE"
+service = "personal-market-atlas"

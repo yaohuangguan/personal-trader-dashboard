@@ -276,7 +276,7 @@ String articleLink(Json item) {
     'publishedAt': item['publishedAt'] ?? item['date'],
     'summary': plain(item['summary'] ?? item['content'], 1800),
   };
-  return 'https://personal-market-atlas.nzs.workers.dev/?article=${base64Url.encode(utf8.encode(jsonEncode(data))).replaceAll('=', '')}';
+  return 'https://guanlan.nzs.workers.dev/?article=${base64Url.encode(utf8.encode(jsonEncode(data))).replaceAll('=', '')}';
 }
 
 Json? parseArticleLink(String url) {

@@ -39,7 +39,7 @@ test('buy markers occur on the first confirmed close and survive a later failed 
 });
 test('Unicode shared news links open site content and reject malformed / executable source URLs',()=>{
  const item={id:'a',title:'宝通科技：公告',source:'公开来源',url:'https://example.com/a',summary:'<b>中文摘要</b>',publishedAt:null,category:'all',originalTitle:'宝通科技：公告'};
- const link=new URL(newsLink(item));assert.equal(link.hostname,'personal-market-atlas.nzs.workers.dev');assert.equal(readNewsLink(link.searchParams.get('article')!)?.summary,'中文摘要');assert.equal(readNewsLink('bogus'),null);const bad=new URL(newsLink({...item,url:'javascript:alert(1)'}));assert.equal(readNewsLink(bad.searchParams.get('article')!),null);
+ const link=new URL(newsLink(item));assert.equal(link.hostname,'guanlan.nzs.workers.dev');assert.equal(readNewsLink(link.searchParams.get('article')!)?.summary,'中文摘要');assert.equal(readNewsLink('bogus'),null);const bad=new URL(newsLink({...item,url:'javascript:alert(1)'}));assert.equal(readNewsLink(bad.searchParams.get('article')!),null);
 });
 test('pinyin initial search preserves real Chinese matches and removes synthetic US fallback',()=>{
  const found=parseTencentSearch('v_hint="sz~300031~宝通科技~btkj~GP-A";');assert.equal(found[0].symbol,'300031.SZ');assert.deepEqual(mergeSearch([{symbol:'BTKJ',name:'自定义代码 BTKJ',exchange:'US'}],found),found);

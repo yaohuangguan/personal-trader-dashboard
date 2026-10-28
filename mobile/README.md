@@ -1,6 +1,6 @@
 # Market Atlas mobile
 
-iOS-first Flutter client for the existing Market Atlas production API. The app uses native Flutter screens, compact quote/chart controls and Cupertino phone navigation. It is independently organized for mobile rather than reusing the web layout. Default API: https://personal-market-atlas.nzs.workers.dev.
+iOS-first Flutter client for the existing Market Atlas production API. The app uses native Flutter screens, compact quote/chart controls and Cupertino phone navigation. It is independently organized for mobile rather than reusing the web layout. Default API: https://guanlan.nzs.workers.dev.
 
 ## Run
 

@@ -2,7 +2,7 @@
 
 **观量价之澜，辨市场之势。** 一套以个股看盘、五线研究与全市场收盘筛选为中心的个人行情工作台，提供 React 网页 / PWA 与 Flutter iOS 客户端。
 
-[打开观澜](https://personal-market-atlas.nzs.workers.dev/) · [个股工作台](https://personal-market-atlas.nzs.workers.dev/?symbol=300545.SZ) · [选股雷达](https://personal-market-atlas.nzs.workers.dev/?view=screener) · [iOS 开发说明](mobile/README.md)
+[打开观澜](https://guanlan.nzs.workers.dev/) · [个股工作台](https://guanlan.nzs.workers.dev/?symbol=300545.SZ) · [选股雷达](https://guanlan.nzs.workers.dev/?view=screener) · [iOS 开发说明](mobile/README.md)
 
 ## 能做什么
 
@@ -59,7 +59,7 @@ Flutter iOS：见 [mobile/README.md](mobile/README.md)。
 
 ## 部署与收盘任务
 
-生产地址为 `personal-market-atlas.nzs.workers.dev`，Cloudflare账户由 `wrangler.toml` 固定。
+生产地址为 `guanlan.nzs.workers.dev`，Cloudflare账户由 `wrangler.toml` 固定。
 
 ```bash
 npx wrangler login

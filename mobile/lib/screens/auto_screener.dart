@@ -72,6 +72,13 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
         source
             .where(
               (c) =>
+                  !rows(
+                    c['patterns'],
+                  ).any((p) => ['multi', 'strongmulti'].contains(p['mode'])) ||
+                  obj(c['multiLine'])['version'] == 2,
+            )
+            .where(
+              (c) =>
                   (numOf(c['amount']) ?? 0) >= 2e8 &&
                   (numOf(obj(c['chip'])['concentration90']) ?? 99) <
                       double.parse(concentration) &&

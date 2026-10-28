@@ -1,3 +1,5 @@
+import ResizeRail,{usePanelWidth} from './components/ResizeRail';
+import type {CSSProperties} from 'react';
 import WatchSidebar from './components/WatchSidebar';
 import SignalCenter from './components/SignalCenter';
 import {t as uiText} from './preferences';
@@ -90,6 +92,9 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
 }
 export default function App(){
  usePreferences();
+ const [watchWidth,setWatchWidth]=usePanelWidth('atlas.watch-width.v1',innerWidth>=1600?360:innerWidth<=1200?320:340,320,560);
+ const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>readStored('atlas.sidebar-collapsed.v1',false));
+ useEffect(()=>{localStorage.setItem('atlas.sidebar-collapsed.v1',JSON.stringify(sidebarCollapsed));},[sidebarCollapsed]);
  const [view,setView]=useState<View>(()=>(['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(new URLSearchParams(window.location.search).get('view')||'')?new URLSearchParams(window.location.search).get('view') as View:'research');
  const [mobileNav,setMobileNav]=useState(false);const [workspaceNav,setWorkspaceNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
@@ -175,9 +180,9 @@ export default function App(){
  const focusedThemes=SECTORS.map(sector=>({sector,items:news.filter(n=>n.category===sector.id || sector.words.some(w=>n.title.toLowerCase().includes(w.toLowerCase())))}));
  const showNews=(category:string)=>{setNewsCategory(category);changeView('news');};
 
- return <div className={'app-shell '+(view==='research'?'stock-workspace-shell':'')+(view==='research'&&!workspaceNav?' has-watch-sidebar':'')}>
+ return <div style={{'--watch-rail':watchWidth+'px'} as CSSProperties} className={'app-shell '+(view==='research'?'stock-workspace-shell':'')+(view==='research'&&!workspaceNav?' has-watch-sidebar':'')+(sidebarCollapsed?' sidebar-is-collapsed':'')}>
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
-   <div className="brand"><Logo/><div className="brand-copy"><strong>观澜 · ATLAS</strong><span>MARKET RESEARCH</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
+   <div className="brand"><Logo/><div className="brand-copy"><strong>观澜 · ATLAS</strong><span>MARKET RESEARCH</span></div><button className="desktop-collapse icon-button" aria-label={uiText(sidebarCollapsed?'展开侧栏':'收起侧栏')} aria-expanded={!sidebarCollapsed} onClick={()=>setSidebarCollapsed(v=>!v)}><ChevronRight size={18} style={{transform:sidebarCollapsed?undefined:'rotate(180deg)'}}/></button><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
    {view==='research'&&!workspaceNav?<WatchSidebar watchlist={watchlist} markets={markets} selected={selected} onStock={chooseSymbol} onSearch={()=>setSearchOpen(true)} onRemove={toggleWatch} onWorkspace={()=>setWorkspaceNav(true)} onClose={()=>setMobileNav(false)}/>:<><div className="nav-label">WORKSPACE</div>
    <nav className="nav-list">{uiText(NAV.map(([id,label,Icon])=><button key={id} onClick={()=>{if(id==='news')setNewsCategory('all');changeView(id);}} className={'nav-item '+(view===id?'active':'')}><Icon size={17}/><span>{uiText(label)}</span>{uiText(id==='saved'&&saved.length>0&&<small className="nav-count">{uiText(saved.length)}</small>)}</button>))}</nav>
    <div className="sidebar-section">
@@ -187,6 +192,7 @@ export default function App(){
    <div className="sidebar-bottom"><div className="connection-icon"><span className="pulse-dot"/> RESEARCH FEEDS</div><p>{uiText("全球情报 · A股 / 美股 · 原始资料核验")}</p><small>{uiText("公开快照 · 五档 / 分笔 · 非授权Level-2")}</small></div>
 {view==='research'&&<button className="watch-workspace-button" onClick={()=>setWorkspaceNav(false)}><Star size={18}/>{uiText('返回自选列表')}</button>}</>}
   </aside>
+  {view==='research'&&!workspaceNav&&!sidebarCollapsed&&<ResizeRail className="watch-resize-rail" label="调整自选列表宽度" width={watchWidth} onChange={setWatchWidth} defaultWidth={innerWidth>=1600?360:340} min={320} max={()=>Math.min(560,innerWidth-(document.querySelector('.desk-right')?.getBoundingClientRect().width||350)-384)}/>}
   {uiText(mobileNav&&<button className="mobile-shade" aria-label={uiText("关闭导航")} onClick={()=>setMobileNav(false)}/>)}
   <div className="workspace">
    <header className="topbar">

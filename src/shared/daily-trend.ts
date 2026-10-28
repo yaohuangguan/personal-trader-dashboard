@@ -1,3 +1,4 @@
+import type {SessionReview} from './session-review';
 import {analyzeGuide} from './guide-analysis';
 import {stockCharacter} from './stock-character';
 import {guideAction} from './guide-action';
@@ -7,7 +8,7 @@ import {beijingParts} from './monitor';
 import {marketSession} from './desk-types';
 
 export type TrendDimension={key:string;weight:number;score:number|null;value:number|null;unit:string};
-export type DailyTrend={operation:ReturnType<typeof guideAction>|null;available:boolean;date:string|null;asOf:string|null;current:boolean;provisional:boolean;score:number|null;label:string;coveredWeight:number;dimensions:TrendDimension[];observations:string[];observationsEn:string[];risks:string[];risksEn:string[];levels:{support:number|null;resistance:number|null;vwap:number|null};volumeRatio:number|null;source:string;method:string};
+export type DailyTrend={sessionReview?:SessionReview;operation:ReturnType<typeof guideAction>|null;available:boolean;date:string|null;asOf:string|null;current:boolean;provisional:boolean;score:number|null;label:string;coveredWeight:number;dimensions:TrendDimension[];observations:string[];observationsEn:string[];risks:string[];risksEn:string[];levels:{support:number|null;resistance:number|null;vwap:number|null};volumeRatio:number|null;source:string;method:string};
 const clamp=(n:number)=>Math.max(0,Math.min(100,n));
 const valid=(c:Candle)=>/^\d{4}-\d{2}-\d{2}$/.test(c.time)&&[c.open,c.high,c.low,c.close,c.volume].every(Number.isFinite)&&c.low>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&c.volume>=0;
 const pct=(n:number)=>`${n>=0?'+':''}${n.toFixed(2)}%`;

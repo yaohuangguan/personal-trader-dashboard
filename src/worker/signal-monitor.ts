@@ -16,7 +16,7 @@ const base64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes)).replaceAll(
 export async function generateVapid():Promise<VapidKeys>{
  const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
  const privateKey=await crypto.subtle.exportKey('jwk',keys.privateKey),publicKey=await crypto.subtle.exportKey('raw',keys.publicKey);
- return {subject:'https://personal-market-atlas.nzs.workers.dev',publicKey:base64(new Uint8Array(publicKey)),privateKey:privateKey.d!};
+ return {subject:'https://guanlan.nzs.workers.dev',publicKey:base64(new Uint8Array(publicKey)),privateKey:privateKey.d!};
 }
 export class SignalMonitor {
  private busy=false;

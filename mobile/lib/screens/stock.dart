@@ -804,6 +804,7 @@ class _StockPageState extends State<StockPage> {
                 symbol: widget.symbol,
                 unit: timeframe,
                 volumeUnit: str(r['volumeUnit']),
+                patterns: rows(r['patternMarks']),
                 terminal: true,
                 viewportHeight: height,
               );

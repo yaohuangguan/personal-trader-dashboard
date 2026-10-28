@@ -18,7 +18,8 @@ test('beauty shoulder requires small, lower-volume consolidation above launch mi
  const failed=bars.map((b,i)=>i===bars.length-2?{...b,low:101}:b);assert.ok(!patternMatches(failed,now).some(p=>p.mode==='beauty'));
 });
 test('cannon requires an up-down-up sequence with the last close above both preceding highs',()=>{
- let bars=append(flat(),{open:100,close:105,high:106,low:99,volume:150000});bars=append(bars,{open:104,close:102,high:105,low:100,volume:80000});bars=append(bars,{open:103,close:107,high:108,low:102,volume:200000});assert.ok(patternMatches(bars,now).some(p=>p.mode==='cannon'));
+ let bars=append(flat(),{open:100,close:105,high:106,low:99,volume:150000});bars=append(bars,{open:104,close:102.7,high:105,low:100,volume:80000});bars=append(bars,{open:103,close:107,high:108,low:102,volume:200000});assert.ok(patternMatches(bars,now).some(p=>p.mode==='cannon'));
+ assert.ok(!patternMatches(bars.map((b,i)=>i===bars.length-2?{...b,close:101}:b),now).some(p=>p.mode==='cannon'));
  assert.ok(!patternMatches(bars.map((b,i)=>i===bars.length-1?{...b,close:105}:b),now).some(p=>p.mode==='cannon'));
 });
 test('liquidity floor applies at exactly 200 million, with stale/unaligned/unknown data excluded',()=>{

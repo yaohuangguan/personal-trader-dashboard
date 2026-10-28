@@ -1489,6 +1489,7 @@ class ChartPainter extends CustomPainter {
       };
       final visible =
           patterns.where((m) {
+            if (m['chartVisible'] == false) return false;
             final index = dates[str(m['time'])];
             return index != null && index >= start && index < end;
           }).toList()..sort(
@@ -1560,7 +1561,7 @@ class ChartPainter extends CustomPainter {
         final above = mark['position'] == 'above',
             dotY = above ? y(bar.high) - 4 : y(bar.low) + 5;
         c.drawCircle(Offset(px, dotY), 2.2, Paint()..color = colour);
-        if (labels >= 8) continue;
+        if (labels >= 6) continue;
         final lx = (px - labelWidth / 2).clamp(
               left,
               size.width - right - labelWidth,

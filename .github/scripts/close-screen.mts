@@ -46,7 +46,7 @@ await pool(targets,8,async(stock,index)=>{
 candidates.sort((a,b)=>(b.ranking?.score||0)-(a.ranking?.score||0)||(a.chip?.concentration90||99)-(b.chip?.concentration90||99));
 const report:CloseReport={id:date+'-'+(process.env.GITHUB_RUN_ID||Date.now()),date,generatedAt:Date.now(),total:all.length,eligible:checked+failures.length,checked,failed:failures.length,failureSample:failures.slice(0,60),rejected,candidates,complete:failures.length===0,source:'新浪全证券名单 / 腾讯同日快照、前复权与未复权日线 / 新浪北交所',elapsedMs:Date.now()-started,cacheHits};
 await mkdir('close-report',{recursive:true});await writeFile('close-report/report.json',JSON.stringify(report));console.log(JSON.stringify({...report,candidates:candidates.length}));
-const base=process.env.SCREEN_WORKER_URL||'https://personal-market-atlas.nzs.workers.dev',token=process.env.SCREEN_JOB_TOKEN;
+const base=process.env.SCREEN_WORKER_URL||'https://guanlan.nzs.workers.dev',token=process.env.SCREEN_JOB_TOKEN;
 if(!token)throw new Error('SCREEN_JOB_TOKEN missing; report saved but not published');
 async function publish(action:string,body:unknown){const r=await fetch(base+'/api/close-report/'+action,{method:'POST',headers:{Authorization:'Bearer '+token,'content-type':'application/json','User-Agent':'MarketAtlas-Close-Job'},body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('Report publish '+r.status+': '+await r.text());}
 const chunks:ScreenCandidate[][]=[];let chunk:ScreenCandidate[]=[];for(const c of candidates){if(chunk.length&&(chunk.length>=20||Buffer.byteLength(JSON.stringify([...chunk,c]))>90000)){chunks.push(chunk);chunk=[];}chunk.push(c);}if(chunk.length)chunks.push(chunk);

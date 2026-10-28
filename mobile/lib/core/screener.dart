@@ -1,3 +1,5 @@
+import 'multi_filters.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -272,7 +274,7 @@ class ScreenerController extends ChangeNotifier {
       state['scope'] = 'all';
       state['options'] = {
         'strategy': 'auto',
-        'modes': 'bloom,bullish,multi,beauty,spider,cannon,limitup',
+        'modes': 'bloom,bullish,multi,strongmulti,beauty,spider,cannon,limitup',
         'concentration': '20',
         'maxCap': '',
         'activity': '0',
@@ -339,7 +341,10 @@ class ScreenerController extends ChangeNotifier {
       state['candidates'] = rows(state['candidates']).where((c) {
         final chip = obj(c['chip']), char = obj(c['character']);
         final modes = str(options['modes'], 'bloom').split(',');
-        return (numOf(c['amount']) ?? 0) >= 2e8 &&
+        return (!rows(c['patterns'])
+                    .any((p) => ['multi', 'strongmulti'].contains(p['mode'])) ||
+                obj(c['multiLine'])['version'] == 2) &&
+            (numOf(c['amount']) ?? 0) >= 2e8 &&
             (numOf(chip['concentration90']) ?? 99) <
                 (numOf(options['concentration']) ?? 20) &&
             (options['maxCap'] == '' ||
@@ -353,8 +358,16 @@ class ScreenerController extends ChangeNotifier {
                 rows(c['patterns']).any(
                   (p) =>
                       modes.contains(p['mode']) &&
+                      (!['multi', 'strongmulti'].contains(p['mode']) ||
+                          passesMultiEvidence(
+                            obj(c['multiLine']),
+                            str(p['mode']),
+                            options,
+                          )) &&
                       (numOf(chip['concentration90']) ?? 99) <
-                          (p['mode'] == 'multi' ? 15 : 20),
+                          (['multi', 'strongmulti'].contains(p['mode'])
+                              ? 15
+                              : 20),
                 ));
       }).toList();
       state['phase'] = job['phase'] == 'screening'

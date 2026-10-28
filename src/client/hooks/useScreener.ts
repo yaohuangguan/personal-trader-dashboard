@@ -1,5 +1,5 @@
 import {filterReport} from '../../shared/close-report';
-import {DEFAULT_SCREEN,type ScreenOptions} from '../../shared/pattern-screen';
+import {DEFAULT_SCREEN,multiParams,type ScreenOptions} from '../../shared/pattern-screen';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuotesPayload } from '../../shared/desk-types';
 import type { UniverseItem, UniversePage, ScreenCandidate } from '../../shared/screening';
@@ -85,7 +85,7 @@ export function useScreener() {
       if (!active.targets.length && !active.cursor) update({ targets: active.universe.filter(s => (active.scope === 'watchlist' || s.price !== null && s.price > 0) && (!active.excludeST || !/ST|退/i.test(s.name)) && (s.amount || 0) >= 2e8) });
       update({ phase: 'scanning', message: '使用原始日线逐只核验，已命中候选会持续显示。' });
       for(let index=active.cursor;index<active.targets.length;index+=4){
-        ac.signal.throwIfAborted();const batch=active.targets.slice(index,index+4),params=new URLSearchParams({symbols:batch.map(s=>s.symbol).join(','),modes:active.options.modes.join(','),strategy:active.options.auto?'auto':'patterns',concentration:String(active.options.concentration),recentLimitUp:active.options.recentLimitUp?'1':'0',maxCap:active.options.maxMarketCap===null?'':String(active.options.maxMarketCap/1e8),activity:active.options.activity?'1':'0'});
+        ac.signal.throwIfAborted();const batch=active.targets.slice(index,index+4),params=new URLSearchParams({...multiParams(active.options.multi),symbols:batch.map(s=>s.symbol).join(','),modes:active.options.modes.join(','),strategy:active.options.auto?'auto':'patterns',concentration:String(active.options.concentration),recentLimitUp:active.options.recentLimitUp?'1':'0',maxCap:active.options.maxMarketCap===null?'':String(active.options.maxMarketCap/1e8),activity:active.options.activity?'1':'0'});
         try{
           const output=await fetchJson<{items:{symbol:string;candidate:ScreenCandidate|null;reason?:string;unverified?:boolean}[]}>('/api/desk/screen-batch?'+params);ac.signal.throwIfAborted();
           for(const item of output.items){

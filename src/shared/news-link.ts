@@ -1,6 +1,6 @@
 import type {NewsItem} from './types';
 const plain=(v:unknown,n:number)=>typeof v==='string'?v.replace(/<[^>]*>/g,'').slice(0,n):'';
-export function newsLink(item:NewsItem,origin='https://personal-market-atlas.nzs.workers.dev'){
+export function newsLink(item:NewsItem,origin='https://guanlan.nzs.workers.dev'){
  const data={title:plain(item.title,240),source:plain(item.source,100),url:plain(item.url,2048),publishedAt:item.publishedAt,summary:plain(item.summary,1800)};
  const bytes=new TextEncoder().encode(JSON.stringify(data)),encoded=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join('')).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
  return new URL('/?article='+encoded,origin).toString();

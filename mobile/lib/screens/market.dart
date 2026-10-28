@@ -193,6 +193,7 @@ class _MarketPageState extends State<MarketPage> {
                             name: indexNames[indexSymbols.indexOf(index)],
                             unit: timeframe,
                             volumeUnit: str(data['volumeUnit']),
+                            patterns: rows(data['patternMarks']),
                             terminal: true,
                             viewportHeight: c.maxHeight,
                           );

@@ -169,6 +169,45 @@ class _DecisionDetailsState extends State<DecisionDetails> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (rows(a['patternCoverage']).isNotEmpty)
+          Panel(
+            child: OpenSection(
+              title: Text(tr(context, '指南形态覆盖与数据条件')),
+              children: [
+                for (final group in rows(a['patternCoverage']))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '${tr(context, str(group['group']))} · §${group['chapter']}',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          (group['items'] as List? ?? [])
+                              .map((s) => tr(context, str(s)))
+                              .join(' · '),
+                          style: const TextStyle(fontSize: 13, height: 1.8),
+                        ),
+                        Text(
+                          tr(context, str(group['requirement'])),
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.7,
+                            color: muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
         if (metrics.isNotEmpty)
           Panel(
             child: OpenSection(
@@ -257,7 +296,7 @@ class _DecisionDetailsState extends State<DecisionDetails> {
         ],
         Panel(
           child: OpenSection(
-            title: Text(tr(context, '一阳多线后 · 10日连续观察')),
+            title: Text(tr(context, '启动后 · 10日连续观察')),
             children: [
               if (episodes.isNotEmpty)
                 SingleChildScrollView(

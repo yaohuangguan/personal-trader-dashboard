@@ -1,3 +1,5 @@
+import ResizeRail,{usePanelWidth} from './ResizeRail';
+import type {CSSProperties} from 'react';
 import StockSnapshot from './StockSnapshot';
 import {analyzeStrategy} from '../../shared/strategy';
 import type {DecisionPayload} from '../../shared/trade-review';
@@ -49,6 +51,7 @@ function NewsFeed({ items, compact = false, loading, error }: { items: NewsItem[
   </button>))}</div>;
 }
 export function FlashNewsDesk() {
+  const [quoteWidth,setQuoteWidth]=usePanelWidth('atlas.quote-width.v1',380,280,600);
   const [auto, setAuto] = useState(true), [filter, setFilter] = useState('all');
   const feed = useLiveEndpoint<FlashPayload>('/api/desk/flash', 60000, auto);
   const items = (feed.data?.items || []).filter(item => filter === 'all' || (filter === 'important' ? item.important : item.source === filter));
@@ -80,6 +83,7 @@ function readRules(): WatchRule[] {
 
 type Props = { symbol: string; market?: MarketPayload; marketError?: string; markets: Record<string, MarketPayload>; watchlist: string[]; onSelect: (symbol: string) => void; onToggleWatch: (symbol: string) => void; onSearch: () => void; onRefresh: () => void };
 export default function ResearchDesk({ symbol, market:baseMarket, marketError, markets, watchlist, onSelect, onToggleWatch, onSearch, onRefresh }: Props) {
+  const [quoteWidth,setQuoteWidth]=usePanelWidth('atlas.quote-width.v1',380,280,600);
   const [auto, setAuto] = useState(true), [chartMode, setChartMode] = useState('daily'), [contextTab, setContextTab] = useState('guide'), [bookTab, setBookTab] = useState('book');
   const [watchFilter, setWatchFilter] = useState('all'), [sectorCode, setSectorCode] = useState('');
   const [externalSector, setExternalSector] = useState<Sector | null>(null);
@@ -139,7 +143,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
         </section>);
   return <Tooltip.Provider delayDuration={250}><div className="research-desk" data-testid="research-desk">
     <div className="desk-market-tape" aria-label={uiText("大盘联动")}>{uiText(INDEXES.map(s => { const q = quoteMap.get(s); return <button type="button" key={s} onClick={() => onSelect(s)}><span>{uiText(q?.name || ({ '000001.SH': '上证指数', '399001.SZ': '深证成指', '399006.SZ': '创业板指', '000300.SH': '沪深300', '000688.SH': '科创50' }[s]))}</span><b>{uiText(number(q?.price))}</b><small className={tone(q?.changePercent)}>{uiText(pct(q?.changePercent))}</small></button>; }))}<div className="desk-tape-stamp"><Radio size={12} />{uiText("公开快照")}</div></div>
-    <div className="desk-mobile-sticky" data-testid="mobile-quote"><b>{name}</b><span>{symbol}</span><strong className={tone(change)}>{number(price)}</strong><em className={tone(change)}>{pct(change)}</em></div><div className="desk-layout">
+    <div className="desk-mobile-sticky" data-testid="mobile-quote"><b>{name}</b><span>{symbol}</span><strong className={tone(change)}>{number(price)}</strong><em className={tone(change)}>{pct(change)}</em></div><div className="desk-layout" style={{'--quote-rail':quoteWidth+'px'} as CSSProperties}>
       <aside className="desk-watch">
         <div className="desk-block-heading"><h2>{uiText("我的自选")}<small>{uiText(watchlist.length)}</small></h2><button type="button" className="desk-icon" aria-label={uiText("搜索并添加自选")} onClick={onSearch}><Plus size={16} /></button></div>
         <div className="desk-watch-filters">{uiText([['all', '全部'], ['cn', 'A股'], ['us', '美股']].map(([id, label]) => <button type="button" aria-pressed={watchFilter === id} className={watchFilter === id ? 'active' : ''} onClick={() => setWatchFilter(id)} key={id}>{uiText(label)}</button>))}</div>
@@ -173,7 +177,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
         </Tabs.Root></section>
       </div>
 
-      <aside className="desk-right"><div className="desk-pinned-quote">{securityCard}</div><div className="desk-right-stream">
+      <aside className="desk-right"><ResizeRail className="quote-resize-rail" label="调整盘口信息宽度" side="right" width={quoteWidth} onChange={setQuoteWidth} defaultWidth={380} max={()=>Math.min(600,(document.querySelector('.desk-layout')?.getBoundingClientRect().width||1000)-344)}/><div className="desk-pinned-quote">{securityCard}</div><div className="desk-right-stream">
         <section className="desk-orderbook"><Tabs.Root value={bookTab} onValueChange={setBookTab}><div className="desk-block-heading"><Tabs.List className="desk-tabs" aria-label={uiText("盘口类型")}><Tabs.Trigger value="book">{uiText("五档盘口")}</Tabs.Trigger><Tabs.Trigger value="level2">Level-2</Tabs.Trigger><Tabs.Trigger value="ticks">{uiText("成交分笔")}</Tabs.Trigger></Tabs.List><Hint text={uiText("公开五档和约3秒聚合分笔；没有授权十档、逐笔委托队列或完整交易所 Level-2。")} /></div>
           <Tabs.Content value="book"><Book quote={quote} loading={quotes.loading} error={uiText(quotes.error)} /></Tabs.Content>
           <Tabs.Content value="level2"><Level2Panel symbol={symbol}/></Tabs.Content><Tabs.Content value="ticks">{uiText(tickData.data?.items.length ? <><div className="desk-ticks-head"><span>{uiText("时间")}</span><span>{uiText("成交价")}</span><span>{uiText("量（手）")}</span></div><div className="desk-ticks-list">{uiText(tickData.data.items.slice(0, 45).map(t => <div key={t.sequence}><time>{uiText(t.time)}</time><b className={t.side === 'B' ? 'is-up' : t.side === 'S' ? 'is-down' : ''}>{uiText(number(t.price))}</b><span>{uiText(number(t.volume, 0))}<small>{uiText(t.side === 'B' ? 'B' : t.side === 'S' ? 'S' : '·')}</small></span></div>))}</div><Source text={uiText((tickData.data.date || '') + ' · 最近一页 · 聚合分笔，非全日完整明细')} error={uiText(tickData.error)} /></> : <Empty loading={tickData.loading} text={uiText(tickData.error || '暂无分笔数据')} />)}</Tabs.Content>

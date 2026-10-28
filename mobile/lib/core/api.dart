@@ -45,7 +45,7 @@ class AtlasApi {
           base ??
           const String.fromEnvironment(
             'ATLAS_API_BASE',
-            defaultValue: 'https://personal-market-atlas.nzs.workers.dev',
+            defaultValue: 'https://guanlan.nzs.workers.dev',
           ),
       client = client ?? http.Client();
   final String base;

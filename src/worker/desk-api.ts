@@ -1,5 +1,8 @@
 import {sectorMap,sectorDetail,sectorNews} from './sector-map';
+import {loadSessionReview} from './session-review';
 import {watchInsight} from './watch-insight';
+import {guidePatternMarks} from '../shared/guide-patterns';
+import {patternMarks} from '../shared/pattern-marks';
 import {patternScreen,patternBatch} from './pattern-screen';
 import {f10} from './f10';
 import {dailyTrend} from '../shared/daily-trend';
@@ -40,7 +43,8 @@ export async function deskRoute(request: Request): Promise<Response | null> {
     if (kind === 'history') {
       const period = url.searchParams.get('period') || '';
       if (!['day','week','month','m5','m15','m30','m60','m120'].includes(period)) return respond({ error: '周期须为日、周、月或5/15/30/60/120分钟' }, 400);
-      return respond(await memo(kind + symbol + period, period.startsWith('m')&&period!=='month'?60:600, () => history(symbol, period)));
+      const data=await memo(kind + symbol + period, period.startsWith('m')&&period!=='month'?60:600, () => history(symbol, period));
+      return respond({...data,patternMarks:period==='day'?patternMarks(data.candles):period==='week'||period==='month'?guidePatternMarks(data.candles,new Date(),period):[]});
     }
     if(kind==='f10')return respond(await memo('f10'+symbol,1800,()=>f10(symbol)));
     if(kind==='trend')return respond(await memo('trend:'+symbol,30,async()=>{
@@ -51,9 +55,10 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       ]);
       if(results[0].status==='rejected')throw new Error('走势分析需要可核验日线，当前来源不可用');
       const daily=results[0].value,q=results[1].status==='fulfilled'?results[1].value.items:[];
-      return dailyTrend(daily.candles,{symbol,volumeUnit:daily.volumeUnit as '股'|'手',source:daily.source,
+      const trend=dailyTrend(daily.candles,{symbol,volumeUnit:daily.volumeUnit as '股'|'手',source:daily.source,
         quote:q.find(r=>r.symbol===symbol),benchmark:q.find(r=>r.symbol==='000300.SH'),
         intraday:results[2].status==='fulfilled'?results[2].value:undefined});
+      return {...trend,sessionReview:await loadSessionReview(q.find(r=>r.symbol===symbol),q.find(r=>r.symbol==='000300.SH'))};
     }));
     if (kind === 'chips')return respond(await memo(kind+symbol,600,()=>chips(symbol)));
     if (kind === 'intraday') return respond(await memo(kind + symbol, 15, () => intraday(symbol)));

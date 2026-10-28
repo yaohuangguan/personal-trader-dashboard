@@ -1,5 +1,7 @@
+import {chartPatternOverlay} from './chart-pattern-overlay';
+import {guidePatternMarks} from '../../shared/guide-patterns';
 import type {TradeMarker} from '../../shared/guide-action';
-import {patternMarks,primaryPatternMarks,type PatternMark} from '../../shared/pattern-marks';
+import {patternMarks,type PatternMark} from '../../shared/pattern-marks';
 import {t as uiText} from '../preferences';
 import ChipProfile from './ChipProfile';
 import {chartColor,usePreferences} from '../preferences';
@@ -49,7 +51,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const extra=useMemo(()=>({boll:bollinger(candles),rsi:rsi(candles),sar:parabolicSar(candles)}),[candles]);
   const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
   const [shapesVisible,setShapesVisible]=useState(true),[crossMarkers,setCrossMarkers]=useState(false);
-  const shapes=useMemo(()=>unit==='day'?patternMarkers||patternMarks(candles):[],[patternMarkers,candles,unit]);
+  const shapes=useMemo(()=>patternMarkers||(unit==='day'?patternMarks(candles):unit==='week'||unit==='month'?guidePatternMarks(candles,new Date(),unit):[]),[patternMarkers,candles,unit]);
   const [hoverTime, setHoverTime] = useState<string | null>(null), [chartError, setChartError] = useState('');
   const indicators = useMemo(() => chartIndicators(candles, preferences), [candles, preferences]);
   const candleByTime = useMemo(() => new Map(candles.map(c => [c.time, c])), [candles]);
@@ -133,21 +135,9 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
           if(markers)for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:uiText(p.side==='buy'?'买':'卖'),size:1});
           points.sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time)));
-          const primaries=primaryPatternMarks(shapes),indices=new Map(candles.map((c,i)=>[c.time,i]));
-          const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.classList.add('pattern-box-overlay');svg.setAttribute('aria-label',uiText('已识别的放量换手箱体'));priceRef.current!.appendChild(svg);removers.push(()=>svg.remove());
-          updateAnnotations=(range)=>{
-            const span=range?range.to-range.from:66,width=priceRef.current?.clientWidth||800,pixels=Math.max(1,width/Math.max(1,span));
-            const visible=primaries.filter(m=>!range||((indices.get(m.time)??-1)>=range.from-1&&(indices.get(m.time)??-1)<=range.to+1)),selected:PatternMark[]=[];
-            for(const mark of [...visible].sort((a,b)=>b.priority-a.priority||b.time.localeCompare(a.time))){const index=indices.get(mark.time)!;if(selected.length<12&&selected.every(old=>Math.abs(index-indices.get(old.time)!)*pixels>Math.max(mark.label.length,old.label.length)*7+22))selected.push(mark);}
-            const annotated=shapesVisible?visible.filter(m=>!markers||!tradeMarkers.some(p=>p.time===m.time)).map(m=>({time:chartTime(m.time),position:m.position==='above'?'aboveBar' as const:'belowBar' as const,shape:'circle' as const,color:m.provisional?'#a98d58':'#8faac4',text:selected.includes(m)?uiText(m.label)+(m.provisional?' · '+uiText('待收盘'):''):'',size:.65})):[];
-            prices.setMarkers([...points,...annotated].sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time))));
-            svg.replaceChildren();svg.setAttribute('width',String(width));svg.setAttribute('height',String(priceRef.current?.clientHeight||390));
-            if(shapesVisible)for(const mark of shapes.filter(m=>m.range).slice(-8)){
-              const box=mark.range!,x1=main.timeScale().timeToCoordinate(chartTime(box.from)),x2=main.timeScale().timeToCoordinate(chartTime(box.to)),y1=prices.priceToCoordinate(box.high),y2=prices.priceToCoordinate(box.low);
-              if(x1===null||x2===null||y1===null||y2===null||x2<0||x1>width)continue;
-              const rect=document.createElementNS(svg.namespaceURI,'rect');rect.setAttribute('x',String(Math.max(0,x1)));rect.setAttribute('y',String(Math.min(y1,y2)));rect.setAttribute('width',String(Math.max(0,Math.min(width,x2)-Math.max(0,x1))));rect.setAttribute('height',String(Math.abs(y2-y1)));rect.setAttribute('fill','rgba(130,155,180,.035)');rect.setAttribute('stroke','#829bb4');rect.setAttribute('stroke-dasharray','4 4');const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=uiText(mark.label)+' · '+uiText('截至')+' '+mark.time;rect.appendChild(title);svg.appendChild(rect);
-            }
-          };
+          prices.setMarkers(points);
+          const overlay=chartPatternOverlay(priceRef.current!,main,prices,candles,shapesVisible?shapes:[],new Set(markers?tradeMarkers.map(t=>t.time):[]),light,uiText);
+          updateAnnotations=overlay.update;removers.push(overlay.destroy);
           updateAnnotations(main.timeScale().getVisibleLogicalRange());
         }
       }
@@ -207,6 +197,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         const onCrosshair: Parameters<IChartApi['subscribeCrosshairMove']>[0] = param => {
           if (syncingCrosshair) return;
           syncingCrosshair = true;
+          if(pane===panes[0])updateAnnotations(pane.chart.timeScale().getVisibleLogicalRange());
           try {
             const key = param.time ? timeKey(param.time) : null;
             setHoverTime(key);
@@ -282,7 +273,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       <div className="terminal-ohlc" aria-live="off"><strong>{uiText(current?.time)}</strong>{uiText(current && <><span>{uiText("开")}<b>{uiText(number(current.open))}</b></span><span>{uiText("高")}<b className="terminal-up">{uiText(number(current.high))}</b></span><span>{uiText("低")}<b className="terminal-down">{uiText(number(current.low))}</b></span><span>{uiText("收")}<b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{uiText(number(current.close))}</b></span></>)}</div>
     </>)}
     {uiText(chartError && <div className="terminal-error" role="alert">{uiText("图表无法显示：")}{uiText(chartError)}</div>)}
-    {current&&shapes.some(m=>m.time===current.time)&&<div className="terminal-pattern-readout" aria-label={uiText('当前K线形态')}>{shapes.filter(m=>m.time===current.time).map(m=><span key={m.kind} title={uiText(m.detail)}>{uiText(m.label)}{m.provisional?' · '+uiText('待收盘'):''}</span>)}</div>}
+    {!compact&&<div className="terminal-pattern-readout" aria-label={uiText('当前K线形态')} aria-live="off"><small>{uiText('形态')}</small>{current&&shapes.some(m=>m.time===current.time)?shapes.filter(m=>m.time===current.time).map(m=><span key={m.kind} title={uiText(m.detail)}>{uiText(m.label)}{m.provisional?' · '+uiText('待收盘'):''}</span>):<span className="pattern-empty">—</span>}</div>}
     <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
     {uiText(!compact && chipsOpen && chipEligible && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
     {uiText(!compact && <>

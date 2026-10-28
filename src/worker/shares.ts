@@ -1,7 +1,7 @@
 import {shareArticle} from '../shared/share';
 export interface ShareStore {get(key:string):Promise<string|null>;put(key:string,value:string):Promise<void>}
 const requests=new Map<string,{at:number;count:number}>();
-export async function shareRoute(request:Request,store?:ShareStore):Promise<Response|null>{
+export async function shareRoute(request:Request,store?:ShareStore,canonicalOrigin?:string):Promise<Response|null>{
  const u=new URL(request.url),read=/^\/api\/shares\/([A-Za-z0-9_-]{16})$/.exec(u.pathname),create=u.pathname==='/api/shares';
  if(!read&&!create)return null;
  const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
@@ -19,5 +19,5 @@ export async function shareRoute(request:Request,store?:ShareStore):Promise<Resp
   if(entry.count>=15)return reply({error:'分享过于频繁，请稍后重试'},429);if(requests.size>1000)requests.clear();entry.count++;requests.set(key,entry);
   try{await store.put('article:'+id,value);}catch{return reply({error:'暂时无法保存分享，请稍后重试'},503);}
  }
- return reply({id,url:u.origin+'/n/'+id});
+ return reply({id,url:(canonicalOrigin||u.origin)+'/n/'+id});
 }

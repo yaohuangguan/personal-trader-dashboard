@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "preview": "wrangler dev --port 8787",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy && wrangler deploy --config wrangler.legacy.toml"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",

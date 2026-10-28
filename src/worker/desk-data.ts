@@ -249,33 +249,33 @@ export async function reports(raw: string) {
   if (!Array.isArray(payload.data)) throw new Error('研报源响应不可用');
   return { ...stamp('东方财富研报索引', url), items: payload.data.map(r => ({ title: clean(r.title), date: String(r.publishDate || '').slice(0, 10), organization: clean(r.orgSName), rating: clean(r.emRatingName), url: /^\w+$/.test(String(r.infoCode)) ? 'https://data.eastmoney.com/report/zw_stock.jshtml?infocode=' + r.infoCode : 'https://data.eastmoney.com/report/' })) };
 }
-async function wscn() {
+async function wscn(signal?:AbortSignal) {
   const url = 'https://api-one-wscn.awtmt.com/apiv1/content/lives?channel=global-channel&limit=35';
-  const payload = await (await request(url)).json() as { code?: number; data?: { items?: Row[] } };
+  const payload = await (await request(url,signal?4500:9000,signal)).json() as { code?: number; data?: { items?: Row[] } };
   if (payload.code !== 20000 || !Array.isArray(payload.data?.items)) throw new Error('快讯源响应异常');
   return payload.data.items.map(r => ({ id: 'wscn-' + r.id, title: clean(r.title || r.content_text).slice(0, 180), summary: clean(r.content_text).slice(0, 260), publishedAt: num(r.display_time) ? new Date(Number(r.display_time) * 1000).toISOString() : null, source: '华尔街见闻', url: String(r.uri || 'https://wallstreetcn.com/live/global'), category: 'all', originalTitle: clean(r.title), important: Number(r.score) >= 2 }));
 }
-async function cls() {
+async function cls(signal?:AbortSignal) {
   const params = { appName: 'CailianpressWeb', os: 'web', sv: '7.7.5', last_time: '', refresh_type: '1', rn: '30' };
   const query = Object.entries(params).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => k + '=' + v).join('&');
   const sign = createHash('md5').update(createHash('sha1').update(query).digest('hex')).digest('hex');
-  const payload = await (await request('https://www.cls.cn/v1/roll/get_roll_list?' + query + '&sign=' + sign)).json() as { errno?: number; data?: { roll_data?: Row[] } };
+  const payload = await (await request('https://www.cls.cn/v1/roll/get_roll_list?' + query + '&sign=' + sign,signal?4500:9000,signal)).json() as { errno?: number; data?: { roll_data?: Row[] } };
   if (payload.errno || !Array.isArray(payload.data?.roll_data)) throw new Error('电报源响应异常');
   return payload.data.roll_data.map(r => ({ id: 'cls-' + r.id, title: clean(r.title || r.brief || r.content).slice(0, 180), summary: clean(r.brief || r.content).slice(0, 260), publishedAt: num(r.ctime) ? new Date(Number(r.ctime) * 1000).toISOString() : null, source: '财联社', url: 'https://www.cls.cn/detail/' + String(r.id), category: 'all', originalTitle: clean(r.title), important: String(r.level) === 'A' }));
 }
-export async function flash() {
-  const fetched = await Promise.allSettled([cls(), wscn()]), sources: string[] = [], warnings: string[] = [], items: FlashItem[] = [];
+export async function flash(signal?:AbortSignal) {
+  const fetched = await Promise.allSettled([cls(signal), wscn(signal)]), sources: string[] = [], warnings: string[] = [], items: FlashItem[] = [];
   fetched.forEach((r, i) => { const name = ['财联社', '华尔街见闻'][i]; if (r.status === 'fulfilled') { sources.push(name); items.push(...r.value); } else warnings.push(name + '暂不可用'); });
   if (!items.length) throw new Error('两路7×24快讯源暂不可用');
   const seen = new Set<string>();
   const unique = items.filter(n => { const key = n.title.replace(/[\s\p{P}]/gu, ''); if (!key || seen.has(key)) return false; seen.add(key); return true; }).sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || '')).slice(0, 65);
   return { ...stamp(sources.join(' / '), 'https://www.cls.cn/telegraph'), items: unique, warnings, sources };
 }
-export async function stockNews(raw: string) {
+export async function stockNews(raw: string, signal?:AbortSignal) {
   const { code } = chineseSymbol(raw);
   const param = JSON.stringify({ uid: '', keyword: code, type: ['cmsArticleWebOld'], client: 'web', clientType: 'web', clientVersion: 'curr', param: { cmsArticleWebOld: { searchScope: 'default', sort: 'default', pageIndex: 1, pageSize: 20, preTag: '', postTag: '' } } });
   const url = 'https://search-api-web.eastmoney.com/search/jsonp?cb=jQuery_news&param=' + encodeURIComponent(param);
-  const text = await (await eastmoney(url)).text(), begin = text.indexOf('('), end = text.lastIndexOf(')');
+  const text = await (await eastmoney(url,signal?4500:9000,signal)).text(), begin = text.indexOf('('), end = text.lastIndexOf(')');
   if (begin < 0 || end <= begin) throw new Error('个股新闻响应格式异常');
   const data = JSON.parse(text.slice(begin + 1, end)) as { result?: { cmsArticleWebOld?: Row[] } };
   if (!Array.isArray(data.result?.cmsArticleWebOld)) throw new Error('来源未提供个股新闻，可能暂时限流');

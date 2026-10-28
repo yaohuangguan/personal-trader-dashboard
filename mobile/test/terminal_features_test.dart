@@ -70,7 +70,7 @@ void main() {
       'summary': '摘要',
     });
     expect(parseArticleLink(u)?['title'], '宝通科技');
-    expect(Uri.parse(u).host, 'personal-market-atlas.nzs.workers.dev');
+    expect(Uri.parse(u).host, 'guanlan.nzs.workers.dev');
     expect(
       parseArticleLink(
         articleLink({'title': 'bad', 'url': 'javascript:alert(1)'}),

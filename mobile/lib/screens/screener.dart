@@ -1,3 +1,5 @@
+import '../widgets/multi_filters.dart';
+import '../core/multi_filters.dart';
 import 'auto_screener.dart';
 
 import 'dart:convert';
@@ -27,9 +29,11 @@ class _ScreenerPageState extends State<ScreenerPage> {
       character = 'potential',
       query = '';
   final Set<String> modes = {'bloom'};
+  Json multiOptions = {...multiDefaults};
   String concentration = '20', maxCap = '1000';
   bool recentLimitUp = false, activity = true;
   Json get options => {
+    ...multiOptions,
     'modes': modes.join(','),
     'concentration': concentration,
     'maxCap': maxCap,
@@ -107,6 +111,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                       'bloom': '五线开花',
                       'bullish': '多头排列',
                       'multi': '一阳多线',
+                      'strongmulti': '强力一阳多线',
                       'beauty': '美人肩',
                       'spider': '金蜘蛛',
                       'cannon': '多方炮',
@@ -130,6 +135,12 @@ class _ScreenerPageState extends State<ScreenerPage> {
                       ),
                   ],
                 ),
+                if (modes.contains('multi') || modes.contains('strongmulti'))
+                  MultiLineFilters(
+                    values: multiOptions,
+                    disabled: scan.running,
+                    onChanged: (v) => setState(() => multiOptions = v),
+                  ),
                 OpenSection(
                   tilePadding: EdgeInsets.zero,
                   title: Text(
@@ -192,7 +203,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                 ),
                 Notice(
                   s.t(
-                    '一阳多线需实体上穿至少三线且含MA60、90%集中度<15%；其余模式集中度<20%。筹码按量价与换手模型估算；涨停按近10根已收盘未复权日线规则估算，不含未收盘当天。',
+                    '一阳多线至少实体穿过四条核心线；强力另需含MA60、密集线束居中、大阳倍量收近高点。两种模式90%集中度均<15%；其余模式<20%。筹码按量价与换手模型估算；涨停按近10根已收盘未复权日线规则估算，不含未收盘当天。',
                   ),
                 ),
               ],

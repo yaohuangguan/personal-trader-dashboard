@@ -1,3 +1,5 @@
+import '../screens/news.dart' show openNews;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -18,6 +20,60 @@ class DailyTrendPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (obj(r['sessionReview']).isNotEmpty) ...[
+          Text(
+            tr(context, str(obj(r['sessionReview'])['title'])),
+            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            tr(context, str(obj(r['sessionReview'])['summary'])),
+            style: const TextStyle(fontSize: 14, height: 1.7),
+          ),
+          for (final evidence in rows(obj(r['sessionReview'])['evidence']))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    tr(context, str(evidence['label'])),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    tr(context, str(evidence['detail'])),
+                    style: const TextStyle(fontSize: 14, height: 1.7),
+                  ),
+                  Text(
+                    '${str(evidence['source'])} · ${str(evidence['asOf'], '—')}',
+                    style: TextStyle(color: muted, fontSize: 11, height: 1.6),
+                  ),
+                  for (final item in rows(evidence['items']))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: InkWell(
+                        onTap: () => openNews(context, item),
+                        child: Text(
+                          '${item['title']} · ${item['source']} · ${item['publishedAt']}',
+                          style: const TextStyle(fontSize: 13, height: 1.7),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ...((obj(r['sessionReview'])['conditions'] as List?) ?? []).map(
+            (s) => Text(
+              tr(context, str(s)),
+              style: const TextStyle(fontSize: 13, height: 1.7),
+            ),
+          ),
+          const Divider(height: 28),
+        ],
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
