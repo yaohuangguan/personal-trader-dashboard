@@ -5,7 +5,7 @@ import type {StrategyAnalysis} from './strategy';
 import {maPeriods,maRole} from './ma-system';
 import {classicShapes} from './shape-rules';
 import {guidePatternMarks} from './guide-patterns';
-export type PatternMark={direction?:'bullish'|'bearish'|'neutral';time:string;kind:string;label:string;detail:string;position:'above'|'below';priority:number;provisional:boolean;chartVisible?:boolean;status?:'candidate'|'confirmed'|'observation';anchorTime?:string;knownAt?:string;range?:{from:string;to:string;low:number;high:number}};
+export type PatternMark={direction?:'bullish'|'bearish'|'neutral';time:string;kind:string;label:string;detail:string;position:'above'|'below';priority:number;provisional:boolean;chartVisible?:boolean;status?:'candidate'|'confirmed'|'observation';anchorTime?:string;knownAt?:string;trendScale?:'short'|'swing';regime?:'up'|'down'|'range';range?:{from:string;to:string;low:number;high:number}};
 const avg=(a:number[])=>a.length?a.reduce((n,v)=>n+v,0)/a.length:0;
 /** Shape annotations are observations, not orders. Future candles cannot remove earlier observations. */
 export function patternMarks(input:Candle[],now=new Date(),options:{symbol?:string;name?:string;maPeriods?:number[]}={}):PatternMark[]{

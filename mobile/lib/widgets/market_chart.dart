@@ -62,7 +62,10 @@ class _MarketChartState extends State<MarketChart> {
   String paneMode = 'macd', overlay = 'MA';
   bool rsi = false;
   int? hover;
-  List<Json> studyTrades = [], studyPatterns = [], studyIndicators = [];
+  List<Json> studyTrades = [],
+      studyPatterns = [],
+      studyIndicators = [],
+      studyRegimes = [];
   int studyRequest = 0;
   String studyKey = '', studyStatus = '标注依据当前MA · 核验中';
   bool volume = true, macd = true, kdj = true, markers = true;
@@ -448,6 +451,7 @@ class _MarketChartState extends State<MarketChart> {
                   'tradeMarkers': studyTrades,
                   'patternMarks': studyPatterns,
                   'indicatorMarks': studyIndicators,
+                  'trendRegimes': studyRegimes,
                   'verification': {
                     'symbol': widget.symbol,
                     'unit': widget.unit,
@@ -529,6 +533,7 @@ class _MarketChartState extends State<MarketChart> {
     studyTrades = rows(seed['tradeMarkers']);
     studyPatterns = rows(seed['patternMarks']);
     studyIndicators = rows(seed['indicatorMarks']);
+    studyRegimes = rows(seed['trendRegimes']);
     studyKey = currentStudyKey;
     studyReady = true;
     studyStatus = 'K线与标注 · 同步快照';
@@ -599,6 +604,7 @@ class _MarketChartState extends State<MarketChart> {
         studyTrades = rows(result['tradeMarkers']);
         studyPatterns = rows(result['patternMarks']);
         studyIndicators = rows(result['indicatorMarks']);
+        studyRegimes = rows(result['trendRegimes']);
         studyStatus = '当前 MA${periods.join('/')} · 形态量价 v4';
       });
     } catch (_) {
@@ -650,6 +656,34 @@ class _MarketChartState extends State<MarketChart> {
             Text('$date · 标注依据', style: Theme.of(ctx).textTheme.titleLarge),
             const SizedBox(height: 12),
             Text(studyStatus),
+            if (date == widget.bars.last.time)
+              for (final r in studyRegimes)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '最新${str(r['label'])} · ${r['direction'] == 'up'
+                            ? '上涨'
+                            : r['direction'] == 'down'
+                            ? '下跌'
+                            : r['direction'] == 'range'
+                            ? '震荡'
+                            : '待确认'}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: r['direction'] == 'up'
+                              ? up
+                              : r['direction'] == 'down'
+                              ? down
+                              : muted,
+                        ),
+                      ),
+                      Text(str(r['detail'])),
+                    ],
+                  ),
+                ),
             if (items.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 20),

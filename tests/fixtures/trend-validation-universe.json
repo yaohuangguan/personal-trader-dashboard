@@ -1,0 +1,23 @@
+{
+  "protocol": "trend-regime-v2-20261029",
+  "selection": "Fixed sector-diverse code list, selected before examining returns or revised signals. Excludes the user screenshot cases and the prior three performance cases. SHA256(symbol) first byte parity assigns development/holdout. Failed histories stay in coverage counts; no replacements by performance.",
+  "asOf": "2026-10-28",
+  "symbols": [
+    "601398.SH", "600036.SH", "601328.SH", "600900.SH", "600030.SH",
+    "601088.SH", "601857.SH", "601899.SH", "600111.SH", "000807.SZ",
+    "000630.SZ", "600309.SH", "002709.SZ", "002812.SZ", "300274.SZ",
+    "300750.SZ", "002594.SZ", "002050.SZ", "600660.SH", "600690.SH",
+    "600196.SH", "300122.SZ", "300347.SZ", "002422.SZ", "600763.SH",
+    "000858.SZ", "600887.SH", "002714.SZ", "002475.SZ", "002241.SZ",
+    "002230.SZ", "002371.SZ", "688012.SH", "688256.SH", "688981.SH",
+    "300394.SZ", "300124.SZ", "002008.SZ", "002179.SZ", "600760.SH"
+  ],
+  "checks": [
+    "Both directions and both horizons; neutral consolidation is not a trend",
+    "No historical signal changes when later bars are appended",
+    "Intraday provisional states never become confirmed historical events before close",
+    "Compare old valid events and unchanged entry/exit decisions separately from changed trend labels",
+    "Forward returns/drawdowns are evaluation only; never inputs to recognition",
+    "Report failures, whipsaws, sample counts, latency and limitations instead of claiming universal precision"
+  ]
+}

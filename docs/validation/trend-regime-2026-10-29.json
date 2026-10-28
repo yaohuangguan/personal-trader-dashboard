@@ -1,0 +1,325 @@
+{
+  "baselineCommit": "a49cef4fa101eec8eed267f0b16696ad81ab1d0c",
+  "ruleLock": {
+    "version": "directional-regime-v2",
+    "sha256": "0835d20a75a25e65048a5b1e3508a1d7fcd6d49ff7d1e05e676a5c14109caa98",
+    "phase": "before_holdout_evaluation",
+    "holdoutStockCount": 24
+  },
+  "reports": [
+    {
+      "protocol": "trend-regime-v2-20261029",
+      "split": "development",
+      "ruleSha256": "0835d20a75a25e65048a5b1e3508a1d7fcd6d49ff7d1e05e676a5c14109caa98",
+      "stockCount": 16,
+      "available": 16,
+      "unavailable": [],
+      "summaries": [
+        {
+          "type": "old",
+          "scale": "legacy-up",
+          "direction": "up",
+          "events": 53,
+          "complete": 53,
+          "directionalFollowThrough": 0.33962264150943394,
+          "meanDirectionalReturn": 0.3287552544346265,
+          "meanAdverseExcursion": -5.238028446526646,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "short",
+          "direction": "up",
+          "events": 136,
+          "complete": 136,
+          "directionalFollowThrough": 0.5441176470588235,
+          "meanDirectionalReturn": 0.4016785415606532,
+          "meanAdverseExcursion": -4.373818252412126,
+          "oppositeWithin5": 2,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "short",
+          "direction": "down",
+          "events": 154,
+          "complete": 150,
+          "directionalFollowThrough": 0.5333333333333333,
+          "meanDirectionalReturn": 0.08269770623211102,
+          "meanAdverseExcursion": -4.42505200408418,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "swing",
+          "direction": "up",
+          "events": 46,
+          "complete": 42,
+          "directionalFollowThrough": 0.4523809523809524,
+          "meanDirectionalReturn": -1.0560450273200241,
+          "meanAdverseExcursion": -9.86041891331098,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "swing",
+          "direction": "down",
+          "events": 52,
+          "complete": 38,
+          "directionalFollowThrough": 0.5,
+          "meanDirectionalReturn": -1.3367679989891352,
+          "meanAdverseExcursion": -8.389984408349415,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        }
+      ],
+      "limitations": "Fixed sector-diverse convenience sample, not random full-market or future live testing. Forward statistics are descriptive, not labelled detection accuracy, winning probabilities or evidence of an executable strategy. Two MA systems on same stock are correlated; events overlap. Does not include trading costs, price-limit fills, delistings or independent fund/sector histories.",
+      "prefixChecks": 160,
+      "legacyShapes": 8290,
+      "retainedShapes": 8290,
+      "confirmedSignalCasesUnchanged": 32,
+      "comparedCases": 32
+    },
+    {
+      "protocol": "trend-regime-v2-20261029",
+      "split": "holdout",
+      "ruleSha256": "0835d20a75a25e65048a5b1e3508a1d7fcd6d49ff7d1e05e676a5c14109caa98",
+      "stockCount": 24,
+      "available": 24,
+      "unavailable": [],
+      "summaries": [
+        {
+          "type": "old",
+          "scale": "legacy-up",
+          "direction": "up",
+          "events": 70,
+          "complete": 66,
+          "directionalFollowThrough": 0.4696969696969697,
+          "meanDirectionalReturn": -0.7040337746567326,
+          "meanAdverseExcursion": -4.692838489123939,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 4
+        },
+        {
+          "type": "new",
+          "scale": "short",
+          "direction": "up",
+          "events": 208,
+          "complete": 204,
+          "directionalFollowThrough": 0.5,
+          "meanDirectionalReturn": 0.21091227743089164,
+          "meanAdverseExcursion": -4.123399960448382,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "short",
+          "direction": "down",
+          "events": 252,
+          "complete": 250,
+          "directionalFollowThrough": 0.496,
+          "meanDirectionalReturn": -0.42071394522402733,
+          "meanAdverseExcursion": -4.494325542196822,
+          "oppositeWithin5": 2,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "swing",
+          "direction": "up",
+          "events": 40,
+          "complete": 38,
+          "directionalFollowThrough": 0.34210526315789475,
+          "meanDirectionalReturn": -0.18411680850965204,
+          "meanAdverseExcursion": -8.407573955561793,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        },
+        {
+          "type": "new",
+          "scale": "swing",
+          "direction": "down",
+          "events": 95,
+          "complete": 83,
+          "directionalFollowThrough": 0.6265060240963856,
+          "meanDirectionalReturn": -0.5107499331367348,
+          "meanAdverseExcursion": -9.145566548791194,
+          "oppositeWithin5": 0,
+          "lowEfficiencyStarts": 0
+        }
+      ],
+      "limitations": "Fixed sector-diverse convenience sample, not random full-market or future live testing. Forward statistics are descriptive, not labelled detection accuracy, winning probabilities or evidence of an executable strategy. Two MA systems on same stock are correlated; events overlap. Does not include trading costs, price-limit fills, delistings or independent fund/sector histories.",
+      "prefixChecks": 240,
+      "legacyShapes": 12582,
+      "retainedShapes": 12582,
+      "confirmedSignalCasesUnchanged": 48,
+      "comparedCases": 48
+    }
+  ],
+  "snapshots": [
+    {
+      "symbol": "000630.SZ",
+      "sha256": "803ecc1a5a0662e9a5e5532662d48f5854c64573b41729f9d80258ee63b2ce62"
+    },
+    {
+      "symbol": "000807.SZ",
+      "sha256": "50ab0afb8abf1cd0e26983db78af0835382713ea3be4ed49e7ee1199f7661cbe"
+    },
+    {
+      "symbol": "000858.SZ",
+      "sha256": "9fbc145a34d227b075225169bbdffd40e76dae577db854278f4093696fbf8408"
+    },
+    {
+      "symbol": "002008.SZ",
+      "sha256": "eb00c5d55bf01e827f79d69c5ab9132e6ab51357a6141fe7235e82e95f4a2091"
+    },
+    {
+      "symbol": "002050.SZ",
+      "sha256": "0674c90cfeba320a095aaef88a1aa17d774d1704e52bac378e0985c64060b5e4"
+    },
+    {
+      "symbol": "002179.SZ",
+      "sha256": "07547ec5270d363126621649dd1c2dd948c80d92f5056a3923303c4dbb09a1ad"
+    },
+    {
+      "symbol": "002230.SZ",
+      "sha256": "f11ef8462bfe1165b161634d655009ba1fbc915c7d95700aa44dab81fb20da16"
+    },
+    {
+      "symbol": "002241.SZ",
+      "sha256": "a44137aee20426097d84439e1222737fa0d15750b174607b2720a3fc22de4385"
+    },
+    {
+      "symbol": "002371.SZ",
+      "sha256": "6054e37c2ea26be445583696a25b678ee9f498460644d5180111e1558b789ac0"
+    },
+    {
+      "symbol": "002422.SZ",
+      "sha256": "9cc266815f3a60f5a99032577701dd9fb8424fc4a0ebc1c3c2cb4358980c8b00"
+    },
+    {
+      "symbol": "002475.SZ",
+      "sha256": "468f43417b84ebdf7574e4082260cfef9199c5841d3570734fbddb23d24923a8"
+    },
+    {
+      "symbol": "002594.SZ",
+      "sha256": "833b02143bcf1ed9f68e302b93d4aef550baab1332229918c35344a18e0e86cc"
+    },
+    {
+      "symbol": "002709.SZ",
+      "sha256": "833ae502e4e4969c3e38a422740ee3aea0b21520004a791866e00fec2a8330ac"
+    },
+    {
+      "symbol": "002714.SZ",
+      "sha256": "b26cd6efb64ffd0120f3646e0cfdd03551a0f1182812cf781d946c02b2d3c353"
+    },
+    {
+      "symbol": "002812.SZ",
+      "sha256": "495236225272192c838b516f86e9dfaeb14ad1e8bd9bc25e66c0652bf3c82fdb"
+    },
+    {
+      "symbol": "300122.SZ",
+      "sha256": "ce17e214f60d98095b9e6f853cb737babdb2d28861c00820eb5e3c868014d871"
+    },
+    {
+      "symbol": "300124.SZ",
+      "sha256": "ee865caa3426b4880eed1c9f4ce9c26a77ac27aabc622cf248ca7fce0e27cb26"
+    },
+    {
+      "symbol": "300274.SZ",
+      "sha256": "59afc08767ec71854757e280435ecd8ac140a7634ddcbcd5c4bf5e80db0c51d3"
+    },
+    {
+      "symbol": "300347.SZ",
+      "sha256": "a0e6b97aeccdd06d00db8a1be8beb201faeb253514c1aa756bdef5d69265afa0"
+    },
+    {
+      "symbol": "300394.SZ",
+      "sha256": "4bd2d8d3879061815bf3da57f775d314fe4d5a69d587e201103740b26a2cb2da"
+    },
+    {
+      "symbol": "300750.SZ",
+      "sha256": "12021fb94d1238f04ff67f4f57c41d8d918b5bc5588971743d16f75ec8c77188"
+    },
+    {
+      "symbol": "600030.SH",
+      "sha256": "4797bb66eb6330d99759cec7c9374a6410ace29f319c710655c426f134fb86cf"
+    },
+    {
+      "symbol": "600036.SH",
+      "sha256": "98610288b49ec61f719a18377bcf739d96bd4f19437839c9ef365a6229887782"
+    },
+    {
+      "symbol": "600111.SH",
+      "sha256": "ece1c40f906faef734554369a312e7dc845103b283f21fde5a5b154cc5c8c582"
+    },
+    {
+      "symbol": "600196.SH",
+      "sha256": "d74777e2a87f3647e6ae6d0bcb7ee35f6d495c13aa87e4b568f12228df888db1"
+    },
+    {
+      "symbol": "600309.SH",
+      "sha256": "ac6c098e38625748e656ffc1e0847ab4c92959809c6ed062df2f44b43786b257"
+    },
+    {
+      "symbol": "600660.SH",
+      "sha256": "a40469d45a8d8e4df44773be2ba68fd44455ab56c52c773011040cd9276c8545"
+    },
+    {
+      "symbol": "600690.SH",
+      "sha256": "0a6c41e1b0765fd5a04cd491f98edd6880e69d4e789ccf03bc4fdabd509f48f4"
+    },
+    {
+      "symbol": "600760.SH",
+      "sha256": "8c598dfb4e7c7ed3d49cd61f1a0406dc4cfababb70d9fda586905e65ab8985c3"
+    },
+    {
+      "symbol": "600763.SH",
+      "sha256": "a69d5f2ad976add6ca1c5b92d3bf283aa2d3c770118587086851f8091a1ac7bb"
+    },
+    {
+      "symbol": "600887.SH",
+      "sha256": "83275f28aa3c80ee06be0a2d982ff70cf93c633285f2b99b20e87b13054a1e2a"
+    },
+    {
+      "symbol": "600900.SH",
+      "sha256": "50add7214cb53b385e9d9d7b3604093c7ba904f9f57980791adf63e058a79190"
+    },
+    {
+      "symbol": "601088.SH",
+      "sha256": "653a087a69734decf31bd7768b423ddb8627173eeb80cb881610e5fe624e0d10"
+    },
+    {
+      "symbol": "601328.SH",
+      "sha256": "d40a4db0348d7440f41e66ae5c39bc6b4c58a9bb556d7c979702ceeb0328b225"
+    },
+    {
+      "symbol": "601398.SH",
+      "sha256": "50b7d7d7008a3efbc9a5137236e09c123be4ff5dfd74eac0c23058c5cabaa761"
+    },
+    {
+      "symbol": "601857.SH",
+      "sha256": "9b732dc4cc4f32aca3f8fc4b205f65bb5aa7da2b90e64dac67318fc09ad90af5"
+    },
+    {
+      "symbol": "601899.SH",
+      "sha256": "a8e1753a51920ecb1be78fb2b310713b9384e3dcebea745c9005fcb920432d5f"
+    },
+    {
+      "symbol": "688012.SH",
+      "sha256": "2138c9c6e331d45a76930d35a43fbe0abae00bd090c2f3e2be8a612c5c373c0a"
+    },
+    {
+      "symbol": "688256.SH",
+      "sha256": "db5431f513573e05d56d6b9211d6b83cbb3d4567bd4d510d1f49f8c951519232"
+    },
+    {
+      "symbol": "688981.SH",
+      "sha256": "eeb092b9393f5994c337705ad0435f3840ffe598dc623ee453499a17568f0f65"
+    }
+  ]
+}

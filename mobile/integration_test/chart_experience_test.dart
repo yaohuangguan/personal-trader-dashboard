@@ -54,7 +54,7 @@ void main() {
                   },
                 ],
               },
-              '/api/analysis' => {
+              '/api/analysis' || '/api/chart-bundle' => {
                 'market': {
                   'candles': candles,
                   'provider': 'Native integration fixture',
@@ -64,6 +64,20 @@ void main() {
               },
               _ => {'items': []},
             };
+            if (request.url.path == '/api/chart-bundle') {
+              data['study'] = {
+                'tradeMarkers': [],
+                'patternMarks': [],
+                'indicatorMarks': [],
+                'verification': {
+                  'symbol': '300545.SZ',
+                  'unit': 'day',
+                  'maPeriods': [5, 13, 20, 30, 60, 120, 144, 250],
+                  'candleCount': candles.length,
+                  'last': candles.last,
+                },
+              };
+            }
             return http.Response(
               jsonEncode(data),
               200,

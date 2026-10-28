@@ -84,6 +84,11 @@ export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week
     if(hit.kind==='beauty'&&!provisional){const from=bars.findIndex(c=>c.time===hit.anchorTime)+1,recent=bars.slice(from,i+1);shoulder={launch:hit.anchorTime!,seen:i,high:Math.max(...recent.map(c=>c.high)),low:Math.min(...recent.map(c=>c.low))};}
    }
    if(gain<=-3&&body<-.8*atr&&ratio>=1.5&&[5,10,20,30,60].filter(n=>b.open>=ma(n,i)&&b.close<ma(n,i)).length>=3)emit('death-bloom','死亡开花 · 断头铡刀','放量阴线实体切断至少三条核心均线；风控观察不推定资金身份。',false,99,7);
+   // Freeze reference MAs at the previous close. Today's long body must not move its own hurdle.
+   const cutPeriods=[...new Set([5,13,20,30,60].map(n=>selectedPeriods?maRole(selected,n):n))],cut=cutPeriods.filter(n=>{const line=mas.get(n)?.get(p.time);return line!==undefined&&b.open>=line-.03*atr&&b.close<line-.08*atr;});
+   const supportedBefore=bars.slice(i-5,i).filter((c,k)=>c.close>=ma(20,i-5+k)-.15*atr).length>=2,belowMiddle=b.close<ma(20,i-1)-.15*atr,longBear=body<=-1.1*atr&&location<=.25&&b.close<p.low-.05*atr;
+   if(supportedBefore&&belowMiddle&&longBear&&cut.length>=3&&(ratio>=1.2||abs>=1.8*atr))emit('guillotine','断头铡刀',`此前有中期支撑／反弹，当前长阴实体切断前一日MA${cut.join('/')}共${cut.length}条线并收近低位；实体${(abs/atr).toFixed(2)}ATR，相对量${ratio.toFixed(2)}倍。高开不是必要条件，不因缺少60线或不到1.5倍量漏掉已发生的穿线破位；形态风险不保证后续继续下跌。`,false,103,5);
+   else if(supportedBefore&&belowMiddle&&longBear&&b.open>p.close+.25*atr&&cut.length>=2&&ratio>=1.2)emit('gap-reversal-loss','高开低走 · 长阴破位',`高开后长阴失守前低和中期线，实体切断MA${cut.join('/')}；尚不足三线，单独命名而不冒充断头铡刀。相对量${ratio.toFixed(2)}倍。`,false,100,5);
    if(i>=255&&impulse&&ma(250,i)/ma(250,i-5)>=.999&&ma(250,i-5)<=ma(250,i-20)&&m5>m10&&m10>m20&&b.close>m60&&p.close<=ma(60,i-1)&&tight<8)emit('golden-bloom','黄金开花 · 海底捞月','250线由下行转近平，中短线多头，当前放量收复60线；长期背景已核验。',true,94,15);
    const pulls=bars.slice(i-4,i),pullBase=mean(pulls.map(c=>c.volume)),touch60=pulls.some((c,k)=>c.low<=ma(60,i-4+k)+.5*atr)&&pulls.every((c,k)=>c.close>=ma(60,i-4+k)-.1*atr);
    if(impulse&&m60>ma(60,i-5)&&priorHigh>m60*1.12&&touch60&&pullBase<base*.8&&b.close>p.high)emit('air-refuel','空中加油 · 60线再起','原有上升背景、缩量回踩60线且收盘守住，当前放量转强。',true,92,12);
