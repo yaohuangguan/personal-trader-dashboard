@@ -60,3 +60,6 @@
  .terminal-settings{margin:10px;padding:10px}.terminal-settings-grid{gap:8px}.terminal-ma-setting{gap:4px}.terminal-ma-setting input[type=number]{width:56px}
  .terminal-expanded{inset:0;border:0;border-radius:0}.terminal-status{padding:10px;font-size:0.75rem}.terminal-method{padding:2px 10px 10px}
 }
+.pattern-box-overlay{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden}.terminal-price-pane{position:relative}
+.terminal-pattern-readout{display:flex;flex-wrap:wrap;gap:8px;padding:6px 12px;font-size:12px;color:var(--muted)}
+.terminal-pattern-readout span{padding:3px 6px;background:#8a9cb80c;border-radius:4px}

@@ -106,6 +106,7 @@ void main() {
         }
       }
       await s.setTheme('dark');
+      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
       s.dispose();
       await push.dispose();

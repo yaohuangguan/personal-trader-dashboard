@@ -175,7 +175,7 @@ export default function App(){
  const focusedThemes=SECTORS.map(sector=>({sector,items:news.filter(n=>n.category===sector.id || sector.words.some(w=>n.title.toLowerCase().includes(w.toLowerCase())))}));
  const showNews=(category:string)=>{setNewsCategory(category);changeView('news');};
 
- return <div className={'app-shell '+(view==='research'?'stock-workspace-shell':'')}>
+ return <div className={'app-shell '+(view==='research'?'stock-workspace-shell':'')+(view==='research'&&!workspaceNav?' has-watch-sidebar':'')}>
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
    <div className="brand"><Logo/><div className="brand-copy"><strong>观澜 · ATLAS</strong><span>MARKET RESEARCH</span></div><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
    {view==='research'&&!workspaceNav?<WatchSidebar watchlist={watchlist} markets={markets} selected={selected} onStock={chooseSymbol} onSearch={()=>setSearchOpen(true)} onRemove={toggleWatch} onWorkspace={()=>setWorkspaceNav(true)} onClose={()=>setMobileNav(false)}/>:<><div className="nav-label">WORKSPACE</div>

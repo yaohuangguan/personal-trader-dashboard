@@ -92,7 +92,7 @@ class _StockPageState extends State<StockPage> {
       final r = cnStock(widget.symbol)
           ? await api.get(
               '/api/analysis',
-              parameters: {'symbol': widget.symbol},
+              parameters: {'symbol': widget.symbol, 'review': '1'},
             )
           : {
               'market': await api.get(
@@ -775,6 +775,7 @@ class _StockPageState extends State<StockPage> {
         volumeUnit: volumeUnit,
         events: rows(obj(analysis?['guide'])['events']),
         trades: rows(analysis?['tradeMarkers']),
+        patterns: rows(analysis?['patternMarks']),
         terminal: true,
         viewportHeight: height,
       );

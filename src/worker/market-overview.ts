@@ -3,7 +3,7 @@ import type {ChipBar} from '../shared/market-models';
 type Row=Record<string,unknown>;
 const n=(v:unknown)=>v===null||v===''||v===undefined||!Number.isFinite(Number(v))?null:Number(v);
 const stamp=(source:string,sourceUrl:string)=>({source,sourceUrl,available:true,fetchedAt:new Date().toISOString()});
-async function get(url:string,timeout=6500){const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0',Referer:url.includes('sina')?'https://finance.sina.com.cn/':'https://quote.eastmoney.com/'},signal:AbortSignal.timeout(timeout)});if(!r.ok)throw new Error('数据源 HTTP '+r.status);return r;}
+async function get(url:string,timeout=6500,signal?:AbortSignal){signal?.throwIfAborted();const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0',Referer:url.includes('sina')?'https://finance.sina.com.cn/':'https://quote.eastmoney.com/'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout)});if(!r.ok)throw new Error('数据源 HTTP '+r.status);return r;}
 function symbol(code:string,market?:unknown){return code+'.'+(market===1||/^6/.test(code)?'SH':market===0||/^[03]/.test(code)?'SZ':'BJ');}
 export async function gainers(){
  const url='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?'+new URLSearchParams({page:'1',num:'80',sort:'changepercent',asc:'0',node:'hs_a',symbol:'',_s_r_a:'page'});
@@ -12,20 +12,20 @@ export async function gainers(){
  const items=rows.filter(r=>/^(sh|sz|bj)\d{6}$/.test(String(r.symbol))).map(r=>({symbol:String(r.symbol).slice(2)+'.'+String(r.symbol).slice(0,2).toUpperCase(),name:String(r.name),price:n(r.trade),changePercent:n(r.changepercent),amount:n(r.amount),turnover:n(r.turnoverratio)}));
  return {...stamp('新浪全市场涨幅前80公开快照',url),items,date:null,scope:'源包含沪深北股票，按涨幅降序，非全市场上涨家数；来源未提供交易日期。'};
 }
-export async function marketPools(date:string){
+export async function marketPools(date:string,signal?:AbortSignal){
  const definitions=[['up','getTopicZTPool','fbt:asc'],['down','getTopicDTPool','fund:asc'],['broken','getTopicZBPool','fbt:asc'],['yesterday','getYesterdayZTPool','zs:desc']] as const;
  const pools={} as Record<'up'|'down'|'broken'|'yesterday',Pool>;
- for(const [key,endpoint,sort] of definitions){
+ await Promise.all(definitions.map(async([key,endpoint,sort])=>{
   try{
    const url='https://push2ex.eastmoney.com/'+endpoint+'?'+new URLSearchParams({ut:'7eea3edcaed734bea9cbfc24409ed989',dpt:'wz.ztzt',Pageindex:'0',pagesize:'10000',sort,date:date.replaceAll('-','')});
-   const data=(await (await get(url,4500)).json() as {data?:{pool?:Row[];qdate?:number;tc?:number}}).data;
+   const data=(await (await get(url,4500,signal)).json() as {data?:{pool?:Row[];qdate?:number;tc?:number}}).data;
    if(!data||!Array.isArray(data.pool)||String(data.qdate)!==date.replaceAll('-',''))throw new Error('此交易日尚无可核验的池数据');
    const unique=new Map<string,RankedStock>();
    for(const r of data.pool){const code=String(r.c);if(!/^\d{6}$/.test(code))continue;unique.set(code,{symbol:symbol(code,r.m),name:String(r.n),price:n(r.p)===null?null:Number(r.p)/1000,changePercent:n(r.zdp),amount:n(r.amount),turnover:n(r.hs),industry:String(r.hybk||''),date});}
    if(n(data.tc)!==null&&data.pool.length!==Number(data.tc))throw new Error('来源股票池未完整返回');
    pools[key]={available:true,items:[...unique.values()].sort((a,b)=>(b.changePercent??-Infinity)-(a.changePercent??-Infinity)),total:unique.size,date};
   }catch(e){pools[key]={available:false,items:[],total:null,date,reason:e instanceof Error?e.message:'来源暂不可用'};}
- }
+ }));
  return {...stamp('东方财富公开涨跌停池','https://quote.eastmoney.com/ztb/detail#type=ztgc'),date,pools,notice:'东财股票池口径；不等于沪深北全市场涨跌家数。昨日涨停为上一交易日涨停股在所选交易日的表现。'};
 }
 export async function dragon(end:string){

@@ -30,20 +30,21 @@ export function chineseSymbol(input: string) {
   if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) throw new Error('该公开接口支持沪深北证券代码；其他市场保留已配置的行情源。');
   return { symbol, code: symbol.slice(0, 6), wire: symbol.slice(-2).toLowerCase() + symbol.slice(0, 6), secid: (symbol.endsWith('.SH') ? '1.' : '0.') + symbol.slice(0, 6) };
 }
-async function request(url: string, timeout = 9000) {
-  const response = await fetch(url, { headers: { 'User-Agent': UA, Referer: url.includes('eastmoney') ? 'https://quote.eastmoney.com/' : 'https://gu.qq.com/' }, signal: AbortSignal.timeout(timeout) });
+async function request(url: string, timeout = 9000, signal?:AbortSignal) {
+  signal?.throwIfAborted();
+  const response = await fetch(url, { headers: { 'User-Agent': UA, Referer: url.includes('eastmoney') ? 'https://quote.eastmoney.com/' : 'https://gu.qq.com/' }, signal: signal?AbortSignal.any([signal,AbortSignal.timeout(timeout)]):AbortSignal.timeout(timeout) });
   if (!response.ok) throw new Error('数据源 HTTP ' + response.status);
   return response;
 }
 let nextEastmoneyStart = 0;
-async function eastmoney(url: string, timeout = 9000) {
+async function eastmoney(url: string, timeout = 9000, signal?:AbortSignal) {
   // Keep the wait in the calling request's context. A cross-request promise
   // queue can retain a timer after its owner request has already completed.
   const delay = Math.max(0, nextEastmoneyStart - Date.now());
   if (delay > 4500) throw new Error('数据源访问保护中，请稍后刷新');
   nextEastmoneyStart = Date.now() + delay + 900;
   if (delay) await new Promise<void>(resolve => setTimeout(resolve, delay));
-  return request(url, timeout);
+  return request(url, timeout,signal);
 }
 async function listData(url: string) {
   let failure: unknown;
@@ -81,9 +82,9 @@ export function parseQuotes(text: string, now = new Date()): Snapshot[] {
   }
   return result;
 }
-export async function quotes(symbols: string[]) {
+export async function quotes(symbols: string[], signal?:AbortSignal) {
   const resolved = symbols.map(chineseSymbol), url = 'https://qt.gtimg.cn/q=' + resolved.map(s => s.wire).join(',');
-  const response = await request(url);
+  const response = await request(url,9000,signal);
   const items = parseQuotes(new TextDecoder('gbk').decode(await response.arrayBuffer()));
   if (!items.length) throw new Error('行情源没有返回有效快照');
   return { ...stamp('腾讯财经公开快照', url), items, unavailable: resolved.map(s => s.symbol).filter(s => !items.some(q => q.symbol === s)), level2: false as const, depth: 5 as const };
@@ -163,12 +164,13 @@ export async function ticks(raw: string) {
 }
 function mapSector(row: Row): Sector {
   const leaderCode = String(row.f140 || '');
-  return { code: String(row.f12 || ''), name: String(row.f14 || ''), changePercent: num(row.f3), leader: String(row.f128 || row.f204 || ''), leaderSymbol: /^\d{6}$/.test(leaderCode) ? leaderCode + (Number(row.f141) === 1 ? '.SH' : '.SZ') : null, mainNet: num(row.f62) };
+  const stamp=num(row.f124),asOf=stamp&&stamp>1577836800&&stamp*1000<=Date.now()+300000?new Date(stamp*1000).toISOString():null;
+  return { code: String(row.f12 || ''), name: String(row.f14 || ''), changePercent: num(row.f3), leader: String(row.f128 || row.f204 || ''), leaderSymbol: /^\d{6}$/.test(leaderCode) ? leaderCode + (Number(row.f141) === 1 ? '.SH' : '.SZ') : null, mainNet: num(row.f62),asOf };
 }
-export async function sectors(raw: string) {
+export async function sectors(raw: string, signal?:AbortSignal) {
   const { symbol, secid } = chineseSymbol(raw);
-  const url = emUrl('slist/get', { secid, spt: '3', pi: '0', pz: '100', po: '1', fields: 'f12,f14,f3,f128,f140,f141' });
-  const data = await (await eastmoney(url)).json() as { data?: { diff?: unknown } };
+  const url = emUrl('slist/get', { secid, spt: '3', pi: '0', pz: '100', po: '1', fields: 'f12,f14,f3,f128,f140,f141,f124' });
+  const data = await (await eastmoney(url,4500,signal)).json() as { data?: { diff?: unknown } };
   if (!data.data) throw new Error('板块归属源暂未返回数据');
   return { ...stamp('东方财富板块归属', url), symbol, boards: rowList(data.data.diff).map(mapSector).filter(s => /^BK\d+$/.test(s.code)) };
 }
@@ -213,7 +215,7 @@ export async function ranks() {
   try { data = await listData(url); } catch { return industryRanks(true); }
   return { ...stamp('东方财富行业涨幅排行' + (data.delayMinutes ? '（约15分钟延迟）' : ''), data.sourceUrl), delayMinutes: data.delayMinutes, items: rowList(data.data.diff).map(mapSector) };
 }
-export async function fundFlow(raw: string) {
+export async function fundFlow(raw: string, signal?:AbortSignal) {
   const { symbol, secid } = chineseSymbol(raw);
   const url = emUrl('stock/fflow/kline/get', { secid, klt: '1', fields1: 'f1,f2,f3,f7', fields2: 'f51,f52,f53,f54,f55,f56,f57' });
   const parse = (payload: {data?:{code?:string;klines?:string[]}}, daily: boolean) => {
@@ -222,16 +224,18 @@ export async function fundFlow(raw: string) {
     return payload.data.klines.map(row=>{const r=row.split(',');if(daily&&!/^\d{4}-\d{2}-\d{2}$/.test(r[0]))throw new Error('日资金流缺少有效交易日期');if(r.length<6||num(r[1])===null)throw new Error('资金流字段不可用');return {time:r[0],main:num(r[1]),small:num(r[2]),medium:num(r[3]),large:num(r[4]),superLarge:num(r[5])};});
   };
   try {
-    const payload=await(await eastmoney(url,4000)).json() as {data?:{code?:string;klines?:string[]}};
+    const payload=await(await eastmoney(url,4000,signal)).json() as {data?:{code?:string;klines?:string[]}};
     return {...stamp('东方财富盘中资金流估算',url),symbol,period:'intraday' as const,points:parse(payload,false)};
   }catch{
+   signal?.throwIfAborted();
    try{
     const fallback='https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get?'+new URLSearchParams({secid,klt:'101',lmt:'5',fields1:'f1,f2,f3,f7',fields2:'f51,f52,f53,f54,f55,f56'});
-    const payload=await(await eastmoney(fallback,6000)).json() as {data?:{code?:string;klines?:string[]}};
+    const payload=await(await eastmoney(fallback,6000,signal)).json() as {data?:{code?:string;klines?:string[]}};
     return {...stamp('东方财富日资金流估算（备用源）',fallback),symbol,period:'daily' as const,notice:'盘中资金源暂不可用，当前展示来源提供的最近交易日日度估算，非盘中实时。',points:parse(payload,true)};
    }catch{
+    signal?.throwIfAborted();
     const fallback='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/MoneyFlow.ssl_qsfx_zjlrqs?'+new URLSearchParams({page:'1',num:'20',sort:'opendate',asc:'0',daima:symbol.slice(-2).toLowerCase()+symbol.slice(0,6)});
-    try{const response=await request(fallback,6000),rows=JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as Row[];
+    try{const response=await request(fallback,6000,signal),rows=JSON.parse(new TextDecoder('gbk').decode(await response.arrayBuffer())) as Row[];
      const points=(Array.isArray(rows)?rows:[]).filter(r=>/^\d{4}-\d{2}-\d{2}$/.test(String(r.opendate))&&num(r.netamount)!==null).map(r=>({time:String(r.opendate),main:num(r.netamount),superLarge:null,small:null,medium:null,large:null})).sort((a,b)=>a.time.localeCompare(b.time));
      if(!points.length)throw new Error('日资金源暂无记录');return {...stamp('新浪日资金流估算（独立备用源）',fallback),symbol,period:'daily' as const,classification:'sina-net-flow',mainLabel:'资金净额（新浪口径）',points,notice:'东财资金源暂不可用，已切换新浪日度净额；各源分类口径不同，缺失的大中小单不补值，当前不是盘中实时。'};
     }catch{return {source:'东方财富 / 新浪资金流',sourceUrl:fallback,available:true,dataAvailable:false,symbol,period:'daily' as const,points:[],fetchedAt:new Date().toISOString(),notice:'资金源暂时均不可用，请稍后刷新。未用旧日期或零值代替当前资金。'};}

@@ -1,4 +1,5 @@
 import type {TradeMarker} from '../../shared/guide-action';
+import {patternMarks,primaryPatternMarks,type PatternMark} from '../../shared/pattern-marks';
 import {t as uiText} from '../preferences';
 import ChipProfile from './ChipProfile';
 import {chartColor,usePreferences} from '../preferences';
@@ -12,6 +13,7 @@ import { bollinger,rsi,parabolicSar,chartIndicators, defaultMAs, migrateMAPrefer
 
 const UP = '#f04a55', DOWN = '#28cdb6';
 const SETTINGS_KEY = 'atlas.chart.ma.v2';
+const NO_TRADES:TradeMarker[]=[];
 type Range = '1M' | '3M' | '6M' | '1Y' | 'ALL';
 type Panel = 'VOL' | 'MACD' | 'KDJ' | 'RSI';
 const chartTime=(value:string):Time=>value.length>10?Math.floor(Date.parse(value.replace(' ','T')+':00+08:00')/1000) as Time:value as Time;
@@ -31,7 +33,7 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: string) => range === 'ALL' ? length : (unit==='week'?[4,13,26,52]:unit==='month'?[1,3,6,12]:[22,66,132,264])[['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, tradeMarkers=[], chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: string;tradeMarkers?:TradeMarker[]; chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, tradeMarkers=NO_TRADES,patternMarkers,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
   const display=usePreferences(),light=display.theme==='light';
   const chipEligible=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&!(/^(?:000\d{3}\.SH|399\d{3}\.SZ)$/.test(symbol));
   const [chipsOpen,setChipsOpen]=useState(false);
@@ -46,6 +48,8 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const [overlay,setOverlay]=useState('MA');
   const extra=useMemo(()=>({boll:bollinger(candles),rsi:rsi(candles),sar:parabolicSar(candles)}),[candles]);
   const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
+  const [shapesVisible,setShapesVisible]=useState(true),[crossMarkers,setCrossMarkers]=useState(false);
+  const shapes=useMemo(()=>unit==='day'?patternMarkers||patternMarks(candles):[],[patternMarkers,candles,unit]);
   const [hoverTime, setHoverTime] = useState<string | null>(null), [chartError, setChartError] = useState('');
   const indicators = useMemo(() => chartIndicators(candles, preferences), [candles, preferences]);
   const candleByTime = useMemo(() => new Map(candles.map(c => [c.time, c])), [candles]);
@@ -73,6 +77,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   useEffect(() => {
     if (!priceRef.current || !candles.length) return;
     const panes: Pane[] = [], instances: IChartApi[] = [], observers: ResizeObserver[] = [], removers: (() => void)[] = [];
+    let updateAnnotations: (range:LogicalRange|null)=>void=()=>{};
     let syncingCrosshair = false, syncingRange = false;
     const resizeTargets: { chart: IChartApi; element: HTMLDivElement; height: number }[] = [];
     const paneHeight = (width: number, height: number) => !compact && width < 600 ? (height > 300 ? 280 : Math.round(height * 0.82)) : height;
@@ -113,22 +118,37 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         for (const line of preferences.filter(p => p.enabled && overlay==='MA')) addLine(main, indicators.ma[line.period] || [], line.color);
         if(overlay==='BOLL')for(const [key,color] of [['mid','#eeeeee'],['upper','#f7cf65'],['lower','#ed89bf']] as const)addLine(main,extra.boll.map(p=>({time:p.time,value:p[key]})),color);
         if(overlay==='SAR'){const line=addLine(main,extra.sar,'#f7cf65');line.applyOptions({lineVisible:false,pointMarkersVisible:true,pointMarkersRadius:2});}
-        if (markers) {
-          const points: SeriesMarker<Time>[] = indicators.signals.map(signal => ({
+        {
+          const points: SeriesMarker<Time>[] = crossMarkers?indicators.signals.map(signal => ({
             time: chartTime(signal.time), position: signal.kind === 'death' ? 'aboveBar' : 'belowBar',
             shape: signal.kind === 'bloom' ? 'circle' : signal.kind === 'golden' ? 'arrowUp' : 'arrowDown',
             color: signal.kind === 'bloom' ? '#f6cb70' : signal.kind === 'golden' ? UP : DOWN,
             text: signal.kind === 'bloom' ? uiText('均线展开') : uiText(signal.kind==='golden'?'金叉':'死叉'), size: signal.kind === 'bloom' ? 1 : 0.7,
-          }));
-          for (const event of guideEvents || []) {
+          })):[];
+          if(shapesVisible)for (const event of guideEvents || []) {
             points.push({ time: chartTime(event.date), position: 'belowBar', shape: 'circle', color: '#d9c89f', text: uiText('指南启动'), size: 1 });
             if (event.state === 'confirmed' && event.confirmationDate) points.push({ time: chartTime(event.confirmationDate), position: 'belowBar', shape: 'arrowUp', color: '#b6d6ca', text: uiText('开花确认'), size: 1 });
             if (event.invalidationDate) points.push({ time: chartTime(event.invalidationDate), position: 'aboveBar', shape: 'arrowDown', color: '#c99a9a', text: uiText('确认失效'), size: 1 });
           }
           points.sort((a, b) => String(a.time).localeCompare(String(b.time)));
-          for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:uiText(p.side==='buy'?'买':'卖'),size:1});
+          if(markers)for(const p of tradeMarkers)points.push({time:chartTime(p.time),position:p.side==='buy'?'belowBar':'aboveBar',shape:p.side==='buy'?'arrowUp':'arrowDown',color:p.side==='buy'?UP:DOWN,text:uiText(p.side==='buy'?'买':'卖'),size:1});
           points.sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time)));
-          prices.setMarkers(points);
+          const primaries=primaryPatternMarks(shapes),indices=new Map(candles.map((c,i)=>[c.time,i]));
+          const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.classList.add('pattern-box-overlay');svg.setAttribute('aria-label',uiText('已识别的放量换手箱体'));priceRef.current!.appendChild(svg);removers.push(()=>svg.remove());
+          updateAnnotations=(range)=>{
+            const span=range?range.to-range.from:66,width=priceRef.current?.clientWidth||800,pixels=Math.max(1,width/Math.max(1,span));
+            const visible=primaries.filter(m=>!range||((indices.get(m.time)??-1)>=range.from-1&&(indices.get(m.time)??-1)<=range.to+1)),selected:PatternMark[]=[];
+            for(const mark of [...visible].sort((a,b)=>b.priority-a.priority||b.time.localeCompare(a.time))){const index=indices.get(mark.time)!;if(selected.length<12&&selected.every(old=>Math.abs(index-indices.get(old.time)!)*pixels>Math.max(mark.label.length,old.label.length)*7+22))selected.push(mark);}
+            const annotated=shapesVisible?visible.filter(m=>!markers||!tradeMarkers.some(p=>p.time===m.time)).map(m=>({time:chartTime(m.time),position:m.position==='above'?'aboveBar' as const:'belowBar' as const,shape:'circle' as const,color:m.provisional?'#a98d58':'#8faac4',text:selected.includes(m)?uiText(m.label)+(m.provisional?' · '+uiText('待收盘'):''):'',size:.65})):[];
+            prices.setMarkers([...points,...annotated].sort((a,b)=>timeKey(a.time).localeCompare(timeKey(b.time))));
+            svg.replaceChildren();svg.setAttribute('width',String(width));svg.setAttribute('height',String(priceRef.current?.clientHeight||390));
+            if(shapesVisible)for(const mark of shapes.filter(m=>m.range).slice(-8)){
+              const box=mark.range!,x1=main.timeScale().timeToCoordinate(chartTime(box.from)),x2=main.timeScale().timeToCoordinate(chartTime(box.to)),y1=prices.priceToCoordinate(box.high),y2=prices.priceToCoordinate(box.low);
+              if(x1===null||x2===null||y1===null||y2===null||x2<0||x1>width)continue;
+              const rect=document.createElementNS(svg.namespaceURI,'rect');rect.setAttribute('x',String(Math.max(0,x1)));rect.setAttribute('y',String(Math.min(y1,y2)));rect.setAttribute('width',String(Math.max(0,Math.min(width,x2)-Math.max(0,x1))));rect.setAttribute('height',String(Math.abs(y2-y1)));rect.setAttribute('fill','rgba(130,155,180,.035)');rect.setAttribute('stroke','#829bb4');rect.setAttribute('stroke-dasharray','4 4');const title=document.createElementNS(svg.namespaceURI,'title');title.textContent=uiText(mark.label)+' · '+uiText('截至')+' '+mark.time;rect.appendChild(title);svg.appendChild(rect);
+            }
+          };
+          updateAnnotations(main.timeScale().getVisibleLogicalRange());
         }
       }
       panes.push({ chart: main, anchor: prices, values: new Map(candles.map(c => [c.time, c.close])) });
@@ -170,10 +190,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       const count = rangeSize(period, candles.length, unit);
       const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + 3 };
       for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(initial);
+      updateAnnotations(main.timeScale().getVisibleLogicalRange());
       for (const pane of panes) {
         const onRange = (range: LogicalRange | null) => {
           if (!range || syncingRange) return;
           visibleRef.current = range;
+          if(pane===panes[0])updateAnnotations(range);
           for (const target of panes) {
             if (target === pane) continue;
             const existing = target.chart.timeScale().getVisibleLogicalRange();
@@ -206,6 +228,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           for (const target of resizeTargets) target.chart.applyOptions({ width: target.element.clientWidth, height: paneHeight(target.element.clientWidth, target.height) });
           if (range) for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(range);
         } finally { syncingRange = false; }
+        updateAnnotations(range);
       });
       observer.observe(priceRef.current);
       observers.push(observer);
@@ -215,7 +238,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers]);
+  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
@@ -259,10 +282,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       <div className="terminal-ohlc" aria-live="off"><strong>{uiText(current?.time)}</strong>{uiText(current && <><span>{uiText("开")}<b>{uiText(number(current.open))}</b></span><span>{uiText("高")}<b className="terminal-up">{uiText(number(current.high))}</b></span><span>{uiText("低")}<b className="terminal-down">{uiText(number(current.low))}</b></span><span>{uiText("收")}<b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{uiText(number(current.close))}</b></span></>)}</div>
     </>)}
     {uiText(chartError && <div className="terminal-error" role="alert">{uiText("图表无法显示：")}{uiText(chartError)}</div>)}
+    {current&&shapes.some(m=>m.time===current.time)&&<div className="terminal-pattern-readout" aria-label={uiText('当前K线形态')}>{shapes.filter(m=>m.time===current.time).map(m=><span key={m.kind} title={uiText(m.detail)}>{uiText(m.label)}{m.provisional?' · '+uiText('待收盘'):''}</span>)}</div>}
     <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
     {uiText(!compact && chipsOpen && chipEligible && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
     {uiText(!compact && <>
-      <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ','RSI'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("交叉 / 展开标记")}</label></div>
+      <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ','RSI'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={shapesVisible} onChange={event=>setShapesVisible(event.target.checked)}/>{uiText("形态标注")}</label><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("买卖点")}</label><label><input type="checkbox" checked={crossMarkers} onChange={event=>setCrossMarkers(event.target.checked)}/>{uiText("MA交叉")}</label></div>
       {uiText(panels.VOL && <section className="terminal-indicator" aria-label={uiText("VOL 成交量副图")}>
         <div className="terminal-indicator-heading"><b>VOL <small>{uiText(volumeUnit ? '(' + volumeUnit + ')' : '')}</small></b><span>VOLUME <em>{uiText(volumeNumber(current?.volume))}</em></span><span style={{color:chartColor('#f1d55c',light)}}>MA5 <em>{uiText(volumeNumber(current && volume5.get(current.time)))}</em></span><span style={{color:chartColor('#d968e8',light)}}>MA20 <em>{uiText(volumeNumber(current && volume20.get(current.time)))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
       </section>)}

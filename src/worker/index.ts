@@ -1,4 +1,6 @@
 import {analyzeStrategy} from '../shared/strategy';
+import {loadTradeReview} from './trade-review';
+import {reviewedPatternMarks} from '../shared/pattern-marks';
 import {evaluateStrategyHistory} from '../shared/strategy-backtest';
 import {marketContext} from '../shared/market-context';
 import {scannerCall} from './full-market-scanner';
@@ -375,11 +377,14 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
   const key='mobile-analysis:'+symbol,cached=memory.get(key);let data:MarketPayload;
   if(cached&&cached.until>Date.now())data=cached.body as MarketPayload;else{data=await market(symbol,env);memory.set(key,{until:Date.now()+60000,body:data});}
+  const decision=url.searchParams.get('review')==='1'?await loadTradeReview(symbol,data):null;
+  if(decision)data=decision.market;
   const guide=analyzeGuide(data.candles),character=guide.asOf?stockCharacter(data.candles,guide.asOf):null;
   const candidate=screenCandidate({symbol,name:data.name,price:data.last,changePercent:data.changePercent,amount:null,turnover:null},guide,data.provider);if(candidate){candidate.character=character;candidate.risks=[...candidate.risks,...(character?.warnings||[])];}
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
-  const strategy=analyzeStrategy(data.candles,{symbol});
-  return json({available:true,strategy,strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
+  const strategy=decision?.strategy||analyzeStrategy(data.candles,{symbol});
+  const response=json({available:true,strategy,review:decision?.review,patternMarks:reviewedPatternMarks(data.candles,strategy),strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
+  response.headers.set('cache-control','no-store');return response;
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
   providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',

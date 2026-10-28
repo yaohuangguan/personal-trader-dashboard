@@ -24,12 +24,13 @@ class MarketChart extends StatefulWidget {
     this.volumeUnit = '手',
     this.events = const [],
     this.trades = const [],
+    this.patterns = const [],
     this.expanded = false,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
-  final List<Json> events, trades;
+  final List<Json> events, trades, patterns;
   final bool expanded;
   final bool terminal;
   final double? viewportHeight;
@@ -53,6 +54,7 @@ class _MarketChartState extends State<MarketChart> {
   bool rsi = false;
   int? hover;
   bool volume = true, macd = true, kdj = true, markers = true;
+  bool shapeMarkers = true, crossMarkers = false;
   final Map<int, Offset> pointers = {};
   double? pinchDistance;
 
@@ -381,6 +383,7 @@ class _MarketChartState extends State<MarketChart> {
           volumeUnit: widget.volumeUnit,
           events: widget.events,
           trades: widget.trades,
+          patterns: widget.patterns,
         ),
       ),
     );
@@ -446,10 +449,13 @@ class _MarketChartState extends State<MarketChart> {
                 ('MACD', macd),
                 ('KDJ', kdj),
                 ('RSI (14)', rsi),
+                ('形态标注', shapeMarkers),
+                ('买卖点', markers),
+                ('MA交叉', crossMarkers),
               ])
                 SwitchListTile(
                   dense: true,
-                  title: Text(item.$1),
+                  title: Text(tr(ctx, item.$1)),
                   value: item.$2,
                   onChanged: (v) {
                     setState(() {
@@ -460,6 +466,12 @@ class _MarketChartState extends State<MarketChart> {
                           macd = v;
                         case 'KDJ':
                           kdj = v;
+                        case '形态标注':
+                          shapeMarkers = v;
+                        case '买卖点':
+                          markers = v;
+                        case 'MA交叉':
+                          crossMarkers = v;
                         default:
                           rsi = v;
                       }
@@ -509,6 +521,14 @@ class _MarketChartState extends State<MarketChart> {
                 markers = !markers;
                 return;
               }
+              if (v == 'shapes') {
+                shapeMarkers = !shapeMarkers;
+                return;
+              }
+              if (v == 'crosses') {
+                crossMarkers = !crossMarkers;
+                return;
+              }
               volume = true;
               macd = v == 'all' || v == 'macd';
               kdj = v == 'all' || v == 'kdj';
@@ -521,7 +541,17 @@ class _MarketChartState extends State<MarketChart> {
               CheckedPopupMenuItem(
                 value: 'markers',
                 checked: markers,
-                child: Text(tr(context, '交叉 / 展开标记')),
+                child: Text(tr(context, '买卖点')),
+              ),
+              CheckedPopupMenuItem(
+                value: 'shapes',
+                checked: shapeMarkers,
+                child: Text(tr(context, '形态标注')),
+              ),
+              CheckedPopupMenuItem(
+                value: 'crosses',
+                checked: crossMarkers,
+                child: Text(tr(context, 'MA交叉')),
               ),
             ],
             icon: const Icon(Icons.view_stream_outlined, size: 17),
@@ -670,6 +700,11 @@ class _MarketChartState extends State<MarketChart> {
                     ],
                   ),
                 ),
+              ),
+              IconButton(
+                onPressed: indicatorSettings,
+                tooltip: tr(context, '图表指标'),
+                icon: const Icon(Icons.show_chart, size: 20),
               ),
               IconButton(
                 onPressed: settings,
@@ -973,13 +1008,16 @@ class _MarketChartState extends State<MarketChart> {
                       drawVolume,
                       drawMacd,
                       drawKdj,
-                      markers ? widget.events : [],
+                      shapeMarkers ? widget.events : [],
                       widget.volumeUnit,
                       math.max(14, context.watch<AtlasStore>().fontSize * .72),
                       markers,
                       overlay: overlay,
                       rsi: rsi,
                       trades: widget.trades,
+                      patterns: widget.patterns,
+                      showPatterns: shapeMarkers,
+                      showCrosses: crossMarkers,
                     ),
                   ),
                 ),
@@ -1007,7 +1045,7 @@ class _MarketChartState extends State<MarketChart> {
                 onSelected: (v) => setState(() => kdj = v),
               ),
               FilterChip(
-                label: Text(tr(context, '交叉 / 展开标记')),
+                label: Text(tr(context, '买卖点')),
                 selected: markers,
                 onSelected: (v) => setState(() => markers = v),
               ),
@@ -1092,11 +1130,12 @@ class FullscreenChart extends StatefulWidget {
     required this.volumeUnit,
     required this.events,
     this.trades = const [],
+    this.patterns = const [],
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
-  final List<Json> events, trades;
+  final List<Json> events, trades, patterns;
   @override
   State<FullscreenChart> createState() => _FullscreenChartState();
 }
@@ -1105,6 +1144,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
   late List<Bar> bars = widget.bars;
   late List<Json> events = widget.events;
   late List<Json> trades = widget.trades;
+  late List<Json> patterns = widget.patterns;
   Timer? timer;
   bool loading = false;
   @override
@@ -1138,7 +1178,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
       } else if (cnStock(widget.symbol)) {
         data = await api.get(
           '/api/analysis',
-          parameters: {'symbol': widget.symbol},
+          parameters: {'symbol': widget.symbol, 'review': '1'},
         );
       } else {
         data = await api.get(
@@ -1152,6 +1192,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
         bars = rows(source['candles']).map(Bar.fromJson).toList();
         if (data['guide'] != null) events = rows(obj(data['guide'])['events']);
         if (data['tradeMarkers'] != null) trades = rows(data['tradeMarkers']);
+        if (data['patternMarks'] != null) patterns = rows(data['patternMarks']);
       });
     } catch (_) {
       if (mounted) {
@@ -1189,6 +1230,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
             volumeUnit: widget.volumeUnit,
             events: events,
             trades: trades,
+            patterns: patterns,
             expanded: true,
             terminal: portrait,
             viewportHeight: c.maxHeight,
@@ -1216,15 +1258,18 @@ class ChartPainter extends CustomPainter {
     this.overlay = 'MA',
     this.rsi = false,
     this.trades = const [],
+    this.patterns = const [],
+    this.showPatterns = true,
+    this.showCrosses = false,
   });
   final IndicatorData data;
   final int start, end;
   final int? hover;
   final bool volume, macd, kdj;
-  final List<Json> events, trades;
+  final List<Json> events, trades, patterns;
   final String unit;
   final double font;
-  final bool showSignals, rsi;
+  final bool showSignals, rsi, showPatterns, showCrosses;
   final bool light = AtlasPalette.light;
   final String overlay;
   void label(
@@ -1404,7 +1449,7 @@ class ChartPainter extends CustomPainter {
         );
       }
     }
-    if (events.isNotEmpty || showSignals) {
+    if (showCrosses) {
       for (final signal in data.signals) {
         final index = signal['index'] as int;
         if (index < start || index >= end) continue;
@@ -1436,7 +1481,119 @@ class ChartPainter extends CustomPainter {
         }
       }
     }
-    for (final event in events) {
+    if (showPatterns && patterns.isNotEmpty) {
+      final dates = {
+        for (var i = 0; i < data.bars.length; i++) data.bars[i].time: i,
+      };
+      final visible =
+          patterns.where((m) {
+            final index = dates[str(m['time'])];
+            return index != null && index >= start && index < end;
+          }).toList()..sort(
+            (a, b) => (numOf(b['priority']) ?? 0).compareTo(
+              numOf(a['priority']) ?? 0,
+            ),
+          );
+      final occupied = <Rect>[];
+      for (final t in showSignals ? trades : <Json>[]) {
+        final index = dates[str(t['time'])];
+        if (index == null || index < start || index >= end) continue;
+        final top = t['side'] == 'buy'
+            ? y(data.bars[index].low) + 10
+            : y(data.bars[index].high) - 25;
+        occupied.add(Rect.fromLTWH(x(index) - 10, top, 45, 20));
+      }
+      for (final mark
+          in patterns
+              .where((m) => m['range'] is Map)
+              .toList()
+              .reversed
+              .take(3)) {
+        final range = obj(mark['range']),
+            from = dates[str(range['from'])],
+            to = dates[str(range['to'])],
+            high = numOf(range['high']),
+            low = numOf(range['low']);
+        if (from == null ||
+            to == null ||
+            high == null ||
+            low == null ||
+            to < start ||
+            from >= end) {
+          continue;
+        }
+        final box = Rect.fromLTRB(
+          x(math.max(start, from)) - step * .5,
+          y(high),
+          x(math.min(end - 1, to)) + step * .5,
+          y(low),
+        );
+        c.drawRect(
+          box,
+          Paint()..color = const Color(0xff829bb4).withValues(alpha: .04),
+        );
+        c.drawRect(
+          box,
+          Paint()
+            ..color = const Color(0xff829bb4).withValues(alpha: .6)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = .7,
+        );
+      }
+      final usedDates = <String>{};
+      var labels = 0;
+      for (final mark in visible) {
+        final date = str(mark['time']);
+        if (!usedDates.add(date)) continue;
+        final index = dates[date]!,
+            bar = data.bars[index],
+            px = x(index),
+            markFont = math.max(11.0, math.min(13.0, font - 1));
+        final title =
+                str(mark['label']) + (mark['provisional'] == true ? '?' : ''),
+            labelWidth = textWidth(title, size: markFont),
+            colour = mark['provisional'] == true
+                ? const Color(0xffb59760)
+                : const Color(0xff8faac4);
+        final above = mark['position'] == 'above',
+            dotY = above ? y(bar.high) - 4 : y(bar.low) + 5;
+        c.drawCircle(Offset(px, dotY), 2.2, Paint()..color = colour);
+        if (labels >= 8) continue;
+        final lx = (px - labelWidth / 2).clamp(
+              left,
+              size.width - right - labelWidth,
+            ),
+            candidates = [
+              above ? y(bar.high) - 21 : y(bar.low) + 10,
+              above ? y(bar.low) + 10 : y(bar.high) - 21,
+            ];
+        for (final ly in candidates) {
+          final rect = Rect.fromLTWH(
+            lx,
+            ly,
+            labelWidth,
+            markFont + 4,
+          ).inflate(3);
+          if (rect.top < 14 ||
+              rect.bottom > priceHeight ||
+              occupied.any((r) => r.overlaps(rect))) {
+            continue;
+          }
+          label(
+            c,
+            title,
+            Offset(lx, ly),
+            color: colour,
+            size: markFont,
+            background: true,
+          );
+          occupied.add(rect);
+          labels++;
+          break;
+        }
+      }
+    }
+    for (final event in showPatterns ? events : <Json>[]) {
       final index = data.bars.indexWhere((b) => b.time == event['date']);
       if (index >= start && index < end) {
         final px = x(index), py = y(data.bars[index].low) + 10;
@@ -1671,6 +1828,9 @@ class ChartPainter extends CustomPainter {
       events != old.events ||
       font != old.font ||
       showSignals != old.showSignals ||
+      showPatterns != old.showPatterns ||
+      showCrosses != old.showCrosses ||
+      patterns != old.patterns ||
       overlay != old.overlay ||
       rsi != old.rsi ||
       trades != old.trades;

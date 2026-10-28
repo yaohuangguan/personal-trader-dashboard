@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../widgets/common.dart';
 import 'guide.dart' show GuideEvidencePanel;
+import 'trade_review.dart';
 
 Color _direction(Json p) => p['direction'] == 'bullish'
     ? up
@@ -19,6 +20,9 @@ class GuideActionPanel extends StatelessWidget {
   final Json analysis;
   @override
   Widget build(BuildContext context) {
+    if (obj(obj(analysis['strategy'])['plan'])['flat'] is Map) {
+      return DecisionSummary(analysis);
+    }
     final strategy = obj(analysis['strategy']), p = obj(strategy['plan']);
     final color = _direction(p),
         score = numOf(obj(analysis['strength'])['score']);
@@ -178,6 +182,7 @@ class GuidePanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GuideActionPanel(analysis),
+        if (p['flat'] is Map) DecisionDetails(analysis),
         Panel(
           padding: const EdgeInsets.all(16),
           child: Column(

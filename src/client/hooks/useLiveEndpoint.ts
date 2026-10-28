@@ -17,7 +17,7 @@ export function useLiveEndpoint<T>(url: string | null, intervalMs = 0, enabled =
       running = true;
       controller = new AbortController();
       let timedOut = false;
-      const deadline = setTimeout(() => { timedOut = true; controller?.abort(); }, /history|chips|market-pools|dragon/.test(url) ? 30000 : 15000);
+      const deadline = setTimeout(() => { timedOut = true; controller?.abort(); }, /analysis|history|chips|market-pools|dragon/.test(url) ? 30000 : 15000);
       try {
         const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
         const body = await response.json();

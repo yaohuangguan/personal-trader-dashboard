@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:market_atlas/core/api.dart';
 import 'package:market_atlas/core/store.dart';
+import 'package:market_atlas/core/palette.dart';
 import 'package:market_atlas/core/indicators.dart';
 import 'package:market_atlas/widgets/market_chart.dart';
 
@@ -25,6 +26,7 @@ List<Bar> chartFixture([int n = 300]) => List.generate(n, (i) {
   );
 });
 Future<AtlasStore> chartStore() async {
+  AtlasPalette.light = false;
   SharedPreferences.setMockInitialValues({});
   return AtlasStore(
     AtlasApi(

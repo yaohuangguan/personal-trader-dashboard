@@ -1,6 +1,3 @@
-import {analyzeGuide} from '../shared/guide-analysis';
-import {guideScore} from '../shared/guide-score';
-import {stockCharacter} from '../shared/stock-character';
 import {analyzeStrategy} from '../shared/strategy';
 import {memo,history,quotes,intraday} from './desk-data';
 import {dailyTrend} from '../shared/daily-trend';
@@ -14,5 +11,5 @@ export async function watchInsight(symbol:string){
   const day=q.asOf.slice(0,10);bars=[...bars.filter(b=>b.time<day),{time:day,open:q.open,high:q.high,low:q.low,close:q.price,volume:q.volume*(q.volumeUnit==='手'?100:1)/(daily.volumeUnit==='手'?100:1)}];
  }
  const strategy=analyzeStrategy(bars,{symbol,amount:q?.amount});
- return {available:true,symbol,strategy,trend:{score:trend.score,label:trend.label,date:trend.date,asOf:trend.asOf,provisional:trend.provisional,current:trend.current,coveredWeight:trend.coveredWeight},operation:{action:strategy.plan.action,score:guideScore(analyzeGuide(bars),stockCharacter(bars,bars.at(-1)?.time||'')).score,asOf:strategy.plan.asOf,provisional:strategy.plan.provisional,reasons:strategy.plan.reasons},...marketContext(bars,trend.provisional)};
+ return {available:true,symbol,strategy,trend:{score:trend.score,label:trend.label,date:trend.date,asOf:trend.asOf,provisional:trend.provisional,current:trend.current,coveredWeight:trend.coveredWeight},operation:{action:strategy.plan.action,score:strategy.plan.score,scoreKind:'entry-timing',scope:'量价初判，综合联动在个股详情核验',asOf:strategy.plan.asOf,provisional:strategy.plan.provisional,reasons:strategy.plan.reasons},...marketContext(bars,trend.provisional)};
 }

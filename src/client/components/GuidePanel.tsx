@@ -3,6 +3,9 @@ import {marketContext} from '../../shared/market-context';
 import type {StockCharacter} from '../../shared/stock-character';
 import {guideScore} from '../../shared/guide-score';
 import {analyzeStrategy} from '../../shared/strategy';
+import type {StrategyAnalysis} from '../../shared/strategy';
+import type {TradeReview} from '../../shared/trade-review';
+import type {PatternMark} from '../../shared/pattern-marks';
 import StrategyPlan from './StrategyPlan';
 import {t as uiText} from '../preferences';
 import { Check, Circle, CircleHelp, BookOpen, ArrowRight, AlertTriangle } from 'lucide-react';
@@ -12,26 +15,27 @@ import { useReader } from './InAppReader';
 import './GuidePanel.css';
 
 const fmt = (v: number | null, suffix = '') => v === null ? '—' : v.toFixed(2) + suffix;
-export function GuideSummary({ data,character=null,candles=[], onOpen }: { data: GuideAnalysis;character?:StockCharacter|null;candles?:Candle[]; onOpen: () => void }) {
+export function GuideSummary({ data,candles=[],strategy,review,onOpen }: { data: GuideAnalysis;character?:StockCharacter|null;candles?:Candle[];strategy?:StrategyAnalysis|null;review?:TradeReview;onOpen: () => void }) {
+  const p=(strategy||analyzeStrategy(candles)).plan;
   return <button type="button" className="guide-summary" onClick={onOpen} aria-label={uiText("查看五线开花分析")}>
-    <div><span>{uiText("姚记五线开花")}</span><strong>{uiText(data.stage)}</strong><small className={'bias-'+marketContext(candles,data.provisional).structure.direction}>{uiText(marketContext(candles,data.provisional).structure.state)}</small></div>
-    <div><span>{uiText("五线总分")}</span><b>{guideScore(data,character).score??'—'} / 100 · {uiText(analyzeStrategy(candles).plan.action)}</b></div><div><span>{uiText("五线粘合系数")}</span><b>{uiText(fmt(data.adhesionPct, '%'))}</b></div>
+    <div><span>{uiText("五线量价研判")}</span><strong>{uiText(p.label)}</strong><small className={'bias-'+marketContext(candles,data.provisional).structure.direction}>{uiText('结构准备度')} {p.structureScore}/100 · {uiText(marketContext(candles,data.provisional).structure.state)}</small></div>
+    <div><span>{uiText("当前买点分")}</span><b>{review?review.entryScore??'—':p.score} / 100 · {uiText(review?.flat.action||p.flat.action)}</b></div><div><span>{uiText("五线粘合系数")}</span><b>{uiText(fmt(data.adhesionPct, '%'))}</b></div>
     <div><span>{uiText("当前 BIAS60")}</span><b>{uiText(fmt(data.bias60, '%'))}</b></div>
-    <div><span>{uiText(data.event ? '启动观察日' : '历史日线')}</span><b>{uiText(data.event?.date || data.asOf || '—')}</b></div>
+    <div><span>{uiText(p.setup ? '启动观察日' : '历史日线')}</span><b>{uiText(p.setup?.date || data.asOf || '—')}</b></div>
     <ArrowRight size={15} />
   </button>;
 }
 
-export default function GuidePanel({ data,character=null,candles=[], weekly, monthly, weekError, monthError, loading }: { data: GuideAnalysis;character?:StockCharacter|null;candles?:Candle[]; weekly?: Candle[]; monthly?: Candle[]; weekError?: string; monthError?: string; loading?: boolean }) {
+export default function GuidePanel({ data,character=null,candles=[],strategy,review,patternMarks:marks=[],reviewLoading,reviewError,weekly, monthly, weekError, monthError, loading }: { data: GuideAnalysis;character?:StockCharacter|null;candles?:Candle[];strategy?:StrategyAnalysis|null;review?:TradeReview;patternMarks?:PatternMark[];reviewLoading?:boolean;reviewError?:string;weekly?: Candle[]; monthly?: Candle[]; weekError?: string; monthError?: string; loading?: boolean }) {
   const { openNews } = useReader();
   const strength=guideScore(data,character);
   const resonance = analyzeGuideResonance(weekly || [], monthly || []);
   const steps = ['粘合蓄势', '放量穿线', '3–5日确认', '周月共振'];
   return <div className="guide-panel" data-testid="guide-panel">
     <header><div><span>YOUR RESEARCH PLAYBOOK</span><h2>{uiText(GUIDE_VERSION)}</h2><p>{uiText("先找形成过程，再核验强度与后续确认。当前日线")}{uiText(data.asOf || '—')}。</p></div><button type="button" onClick={() => openNews({ id: 'sam-five-line-guide', title: GUIDE_VERSION, source: '姚柏杨 · 原始指南', publishedAt: null, url: GUIDE_URL, category: 'all', summary: '规则依据：第02/03/04/05/08/09/14/23章。粘合 → 放量一阳穿线 → 3–5日回踩和排列确认 → 周月共振。下方计算口径区分指南给定阈值与具体化参数。', originalTitle: GUIDE_VERSION })}><BookOpen size={14} />{uiText("指南来源")}</button></header>
-    <StrategyPlan candles={candles} score={strength.score}/>
+    <StrategyPlan candles={candles} score={strength.score} strategy={strategy} review={review} marks={marks} loading={reviewLoading} error={reviewError}/>
     <MarketContext candles={candles} provisional={data.provisional}/><div className="guide-sequence">{uiText(steps.map((text, i) => <div key={text}><span>{uiText(i + 1)}</span><b>{uiText(text)}</b>{uiText(i < 3 && <ArrowRight size={14} />)}</div>))}</div>
-    <div className="guide-verdict"><div><span>{uiText("当前观察状态")}</span><strong>{uiText(data.stage)}</strong><p>{uiText(data.event ? `${data.event.date} 启动观察 · 已取得 ${data.event.observedBars} 根确认窗口日线` : data.ready ? '尚未检出满足完整启动条件的近期形态；多头排列单独出现不等同于开花。' : `有效样本 ${data.available} / ${data.required}，先补足日线。`)}</p></div><div><span>{uiText("结构背景")}</span><b>{uiText(data.adhesionLabel)}</b><small>{uiText("系数")}{uiText(fmt(data.adhesionPct, '%'))} · BIAS60 {uiText(fmt(data.bias60, '%'))}</small><small>{uiText("实体穿线")}{uiText(data.crossedLines)}{uiText("/5 · 长期七线")}{uiText(data.sevenLineCrosses === null ? '未齐备' : data.sevenLineCrosses + '/7')}</small></div></div>
+    <div className="guide-verdict"><div><span>{uiText("原始指南严格形态匹配")}</span><strong>{uiText(data.stage)}</strong><p>{uiText(data.event ? `${data.event.date} 启动观察 · 已取得 ${data.event.observedBars} 根确认窗口日线` : data.ready ? '未满足原始指南的全部严格开花条件；不否定上方独立量价路径，买点仍按当前承接与风险核验。' : `有效样本 ${data.available} / ${data.required}，先补足日线。`)}</p></div><div><span>{uiText("结构背景")}</span><b>{uiText(data.adhesionLabel)}</b><small>{uiText("系数")}{uiText(fmt(data.adhesionPct, '%'))} · BIAS60 {uiText(fmt(data.bias60, '%'))}</small><small>{uiText("实体穿线")}{uiText(data.crossedLines)}{uiText("/5 · 长期七线")}{uiText(data.sevenLineCrosses === null ? '未齐备' : data.sevenLineCrosses + '/7')}</small></div></div>
     <div className="guide-core-mas" aria-label={uiText("指南核心均线数值")}>{uiText([5,10,20,30,60].map(period => <div key={period}><span>MA{uiText(period)}</span><b>{uiText(fmt(data.ma[period]))}</b></div>))}</div>
     <div className="guide-dimensions">{uiText(data.dimensions.map(d=><article key={d.title}><span>{uiText(d.title)}</span><b>{uiText(d.value)}</b><p>{uiText(d.detail)}</p></article>))}</div>
     {uiText(data.provisional && <p className="guide-notice">{uiText("当前日线尚未收盘，盘中满足条件仍只是候选。")}</p>)}
