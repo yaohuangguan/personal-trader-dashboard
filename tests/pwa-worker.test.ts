@@ -2,12 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
-function worker(fail=false){
+function worker(fail=false,redirected=false){
  const stores=new Map<string,Map<string,Response>>(),events=new Map<string,Function>(),messages:Record<string,unknown>[]=[],origin='https://atlas.test';let fetches=0,claimed=false;
  const caches={keys:async()=>[...stores.keys()],delete:async(k:string)=>stores.delete(k),open:async(k:string)=>{if(!stores.has(k))stores.set(k,new Map());const map=stores.get(k)!;return {match:async(url:string|Request)=>map.get(typeof url==='string'?url:url.url),put:async(url:string,response:Response)=>{map.set(url,response);}};}};
  const self={location:new URL(origin+'/sw.js'),clients:{matchAll:async()=>[{postMessage:(data:Record<string,unknown>)=>messages.push({...data})}],claim:async()=>{claimed=true;}},addEventListener:(event:string,fn:Function)=>events.set(event,fn),skipWaiting:async()=>{},registration:{showNotification:async()=>{}}};
  const source=readFileSync(new URL('../src/pwa/sw.js',import.meta.url),'utf8').replace('__APP_BUILD__','"test-build"').replace('self.__WB_MANIFEST',JSON.stringify(['index.html','assets/main.js']));
- runInNewContext(source,{self,caches,URL,Request,Response,AbortController,setTimeout,clearTimeout,fetch:async(request:Request)=>{fetches++;return new Response(request.url.endsWith('.js')?'export {}':'<main>app</main>',{status:fail&&request.url.endsWith('.js')?503:200,headers:{'content-type':request.url.endsWith('.js')?'application/javascript':'text/html'}});}});
+ runInNewContext(source,{self,caches,URL,Request,Response,Headers,AbortController,setTimeout,clearTimeout,fetch:async(request:Request)=>{fetches++;const r=new Response(request.url.endsWith('.js')?'export {}':'<main>app</main>',{status:fail&&request.url.endsWith('.js')?503:200,headers:{'content-type':request.url.endsWith('.js')?'application/javascript':'text/html'}});if(redirected&&!request.url.endsWith('.js'))Object.defineProperty(r,'redirected',{value:true});return r;}});
  const dispatch=async(type:string,extra:object={})=>{const pending:Promise<unknown>[]=[];events.get(type)!({waitUntil:(p:Promise<unknown>)=>pending.push(p),...extra});await Promise.all(pending);};
  return {stores,caches,events,messages,dispatch,get fetches(){return fetches;},get claimed(){return claimed;}};
 }
@@ -19,4 +19,7 @@ test('shell update reports real completed assets, activates only a complete cach
 test('a failed new download leaves the old app cache and user-independent caches intact',async()=>{
  const w=worker(true);await(await w.caches.open('guanlan-shell-old')).put('https://atlas.test/index.html',new Response('old'));await w.caches.open('unrelated-cache');
  await assert.rejects(w.dispatch('install'));assert.equal(w.messages.at(-1)?.phase,'error');assert.equal(w.claimed,false);assert.equal(await w.stores.get('guanlan-shell-old')!.get('https://atlas.test/index.html')!.text(),'old');assert.ok(w.stores.has('unrelated-cache'));
+});
+test('a canonicalized index response is copied before caching so manual-redirect navigation can consume it',async()=>{
+ const w=worker(false,true);await w.dispatch('install');const page=w.stores.get('guanlan-shell-test-build')!.get('https://atlas.test/index.html')!;assert.equal(page.redirected,false);assert.equal(await page.text(),'<main>app</main>');
 });

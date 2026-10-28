@@ -20,7 +20,11 @@ self.addEventListener('install',event=>{
    await Promise.all(Array.from({length:Math.min(4,pending.length)},async()=>{
     while(cursor<pending.length){const url=pending[cursor++];let response;
      for(let attempt=0;attempt<2;attempt++){try{response=await fetch(new Request(url,{cache:'reload',credentials:'same-origin',signal:controller.signal}));if(response.ok)break;}catch(e){if(controller.signal.aborted)throw e;}if(attempt===1)throw new Error('资源下载失败');}
-     if(!response?.ok)throw new Error('资源下载失败');const contentType=response.headers.get('content-type')||'';if(url.endsWith('.js')&&!/javascript/.test(contentType)||url.endsWith('.css')&&!/text\/css/.test(contentType))throw new Error('资源类型不匹配');await cache.put(url,response);state.completed++;await broadcast();
+     if(!response?.ok)throw new Error('资源下载失败');const contentType=response.headers.get('content-type')||'';if(url.endsWith('.js')&&!/javascript/.test(contentType)||url.endsWith('.css')&&!/text\/css/.test(contentType))throw new Error('资源类型不匹配');
+     // Cloudflare canonicalizes /index.html to /. Navigations use redirect=manual
+     // and cannot consume a cached redirected Response; store a clean copy.
+     if(response.redirected){const headers=new Headers(response.headers);headers.delete('content-encoding');headers.delete('content-length');response=new Response(response.body,{status:response.status,statusText:response.statusText,headers});}
+     await cache.put(url,response);state.completed++;await broadcast();
     }
    }));
    state={...state,phase:'ready',completed:urls.length};await broadcast();
