@@ -533,6 +533,10 @@ export default {
    }
    if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET'){if(!env.MARKET_SCANNER)return json({report:null});return json(await scannerCall(env.MARKET_SCANNER,'results'));}
    if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||request.headers.get('Authorization')!=='Bearer '+env.SCREEN_JOB_TOKEN)return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);return json(await scannerCall(env.MARKET_SCANNER,action!,JSON.parse(raw)));}
+   if(['/api/desk/insight','/api/desk/trend'].includes(incoming.pathname)&&request.method==='GET'){
+    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({available:false,reason:'Invalid A-share symbol'},400);
+    return computeCache(request,'desk-view-v1:'+incoming.pathname+':'+studySession()+':'+symbol,15,async()=>await deskRoute(request)||json({error:'Not found'},404));
+   }
    const desk=await deskRoute(request);if(desk)return desk;
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
