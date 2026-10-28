@@ -98,6 +98,7 @@ export default function App(){
  const [view,setView]=useState<View>(()=>(['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(new URLSearchParams(window.location.search).get('view')||'')?new URLSearchParams(window.location.search).get('view') as View:'research');
  const [mobileNav,setMobileNav]=useState(false);const [workspaceNav,setWorkspaceNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
+ useEffect(()=>{const load=()=>setWatchlist(readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));window.addEventListener('atlas:watch-cloud',load);return()=>window.removeEventListener('atlas:watch-cloud',load);},[]);
  const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[]));
  const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):readStored('atlas.last-symbol.v1','300545.SZ');});
  const [markets,setMarkets]=useState<Record<string,MarketPayload>>({});
@@ -118,7 +119,7 @@ export default function App(){
  const activeWatch=useMemo(()=>Array.from(new Set([selected,...watchlist])).slice(0,14),[selected,watchlist]);
  const analysis=useMemo(()=>selectedData?analyzeGuide(selectedData.candles):null,[selectedData]);
  const watchAnalyses=useMemo<Record<string,ReturnType<typeof analyzeGuide>>>(()=>view==='markets'?Object.fromEntries(watchlist.filter(symbol=>markets[symbol]).map(symbol=>[symbol,analyzeGuide(markets[symbol].candles)])):{},[view,watchlist,markets]);
- useEffect(()=>{localStorage.setItem('atlas.watchlist.v1',JSON.stringify(watchlist));},[watchlist]);
+ useEffect(()=>{localStorage.setItem('atlas.watchlist.v1',JSON.stringify(watchlist));window.dispatchEvent(new Event('atlas:watch-local'));},[watchlist]);
  useEffect(()=>{localStorage.setItem('atlas.bookmarks.v1',JSON.stringify(saved));},[saved]);
  useEffect(()=>{const t=setInterval(()=>setClock(new Date()),60000);return ()=>clearInterval(t);},[]);
  useEffect(()=>{

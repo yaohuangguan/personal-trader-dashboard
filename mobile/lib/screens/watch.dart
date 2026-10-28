@@ -1,3 +1,5 @@
+import '../widgets/cloud_sync.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -560,6 +562,7 @@ class SettingsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         children: [
+          const CloudSyncPanel(),
           Panel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -623,7 +626,7 @@ class SettingsPage extends StatelessWidget {
                   icon: const Icon(Icons.download),
                   label: Text(s.t('导入自选 JSON')),
                 ),
-                Notice(s.t('自选、字号、语言、收藏、扫描进度和提醒保存在当前设备。网页与 App 不会自动同步。')),
+                Notice(s.t('连接云同步后，自选与分组跨设备同步；显示设置、收藏和提醒仍保存在当前设备。')),
               ],
             ),
           ),

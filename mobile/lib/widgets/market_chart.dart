@@ -53,6 +53,9 @@ class _MarketChartState extends State<MarketChart> {
   String paneMode = 'macd', overlay = 'MA';
   bool rsi = false;
   int? hover;
+  List<Json> studyTrades = [], studyPatterns = [], studyIndicators = [];
+  int studyRequest = 0;
+  String studyKey = '', studyStatus = '标注依据当前MA · 核验中';
   bool volume = true, macd = true, kdj = true, markers = true;
   bool shapeMarkers = true, crossMarkers = false;
   final Map<int, Offset> pointers = {};
@@ -75,6 +78,7 @@ class _MarketChartState extends State<MarketChart> {
     } catch (_) {}
     indicators = IndicatorData(widget.bars, mas);
     viewport.length = widget.bars.length;
+    WidgetsBinding.instance.addPostFrameCallback((_) => refreshStudy());
   }
 
   @override
@@ -248,6 +252,24 @@ class _MarketChartState extends State<MarketChart> {
                     style: Theme.of(ctx).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final spec in [
+                        ('经典', [5, 13, 20, 30, 60, 120, 144, 250]),
+                        ('斐波那契', [5, 13, 21, 34, 55, 89, 144, 233]),
+                      ])
+                        TextButton(
+                          onPressed: () => update(() {
+                            for (var k = 0; k < 8; k++) {
+                              periods[k].text = '${spec.$2[k]}';
+                              enabled[k] = true;
+                            }
+                          }),
+                          child: Text(spec.$1),
+                        ),
+                    ],
+                  ),
                   ...List.generate(
                     8,
                     (i) => Row(
@@ -342,6 +364,7 @@ class _MarketChartState extends State<MarketChart> {
                             'ma',
                             jsonEncode(mas.map((m) => m.toJson()).toList()),
                           );
+                          context.read<AtlasStore>().chartRevision.value++;
                           Navigator.pop(ctx);
                         },
                         child: Text(tr(ctx, '应用参数')),
@@ -401,6 +424,56 @@ class _MarketChartState extends State<MarketChart> {
     }
   }
 
+  Future<void> refreshStudy() async {
+    if (!mounted || widget.bars.isEmpty) return;
+    final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
+    final key =
+        '${widget.symbol}:${widget.unit}:$periods:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
+    if (studyKey == key) return;
+    studyKey = key;
+    final request = ++studyRequest;
+    setState(() {
+      studyTrades = [];
+      studyPatterns = [];
+      studyIndicators = [];
+      studyStatus = '标注依据当前MA · 核验中';
+    });
+    try {
+      final result = await context.read<AtlasStore>().api.post(
+        '/api/chart-study',
+        {
+          'symbol': widget.symbol,
+          'name': widget.name,
+          'unit': widget.unit,
+          'ma': periods,
+          'candles': widget.bars
+              .map(
+                (b) => {
+                  'time': b.time,
+                  'open': b.open,
+                  'high': b.high,
+                  'low': b.low,
+                  'close': b.close,
+                  'volume': b.volume,
+                },
+              )
+              .toList(),
+        },
+      );
+      if (!mounted || request != studyRequest) return;
+      setState(() {
+        studyTrades = rows(result['tradeMarkers']);
+        studyPatterns = rows(result['patternMarks']);
+        studyIndicators = rows(result['indicatorMarks']);
+        studyStatus = '当前 MA${periods.join('/')} · 形态量价 v4';
+      });
+    } catch (_) {
+      if (mounted && request == studyRequest) {
+        setState(() => studyStatus = '标注更新失败 · 点此重试');
+      }
+    }
+  }
+
   Widget _smallIcon(IconData icon, String title, VoidCallback action) =>
       SizedBox(
         width: 36,
@@ -444,6 +517,13 @@ class _MarketChartState extends State<MarketChart> {
                     setState(() => overlay = v);
                     update(() {});
                   },
+                ),
+                TextButton(
+                  onPressed: () {
+                    studyKey = '';
+                    refreshStudy();
+                  },
+                  child: Text(studyStatus, maxLines: 2),
                 ),
                 for (final item in [
                   ('VOL', volume),
@@ -573,6 +653,9 @@ class _MarketChartState extends State<MarketChart> {
   );
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) refreshStudy();
+    });
     if (widget.bars.isEmpty) {
       return const SizedBox(
         height: 200,
@@ -991,7 +1074,7 @@ class _MarketChartState extends State<MarketChart> {
               child: Semantics(
                 label:
                     '${widget.symbol} ${c.time} ${tr(context, '开')} ${fixed(c.open)} ${tr(context, '高')} ${fixed(c.high)} ${tr(context, '低')} ${fixed(c.low)} ${tr(context, '收')} ${fixed(c.close)}',
-                hint: tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
+                hint: '${tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标')} · $studyStatus',
                 onIncrease: () => setState(
                   () => hover = ((hover ?? end - 1) + 1).clamp(start, end - 1),
                 ),
@@ -1016,8 +1099,9 @@ class _MarketChartState extends State<MarketChart> {
                       markers,
                       overlay: overlay,
                       rsi: rsi,
-                      trades: widget.trades,
-                      patterns: widget.patterns,
+                      trades: studyTrades,
+                      patterns: studyPatterns,
+                      indicatorMarks: studyIndicators,
                       showPatterns: shapeMarkers,
                       showCrosses: crossMarkers,
                     ),
@@ -1261,6 +1345,7 @@ class ChartPainter extends CustomPainter {
     this.rsi = false,
     this.trades = const [],
     this.patterns = const [],
+    this.indicatorMarks = const [],
     this.showPatterns = true,
     this.showCrosses = false,
   });
@@ -1269,6 +1354,7 @@ class ChartPainter extends CustomPainter {
   final int? hover;
   final bool volume, macd, kdj;
   final List<Json> events, trades, patterns;
+  final List<Json> indicatorMarks;
   final String unit;
   final double font;
   final bool showSignals, rsi, showPatterns, showCrosses;
@@ -1739,6 +1825,51 @@ class ChartPainter extends CustomPainter {
           }
         }
       }
+      final annotations =
+          indicatorMarks
+              .where((m) => str(m['pane']) == title.split(' ').first)
+              .toList()
+            ..sort(
+              (a, b) =>
+                  ((str(b['kind']).contains('divergence') ? 100000 : 0) +
+                          data.bars.indexWhere((v) => v.time == b['time']))
+                      .compareTo(
+                        (str(a['kind']).contains('divergence') ? 100000 : 0) +
+                            data.bars.indexWhere((v) => v.time == a['time']),
+                      ),
+            );
+      final occupied = <Rect>[];
+      for (final mark in annotations) {
+        final index = data.bars.indexWhere((b) => b.time == mark['time']),
+            value = numOf(mark['value']);
+        if (index < start ||
+            index >= end ||
+            value == null ||
+            occupied.length >= 3) {
+          continue;
+        }
+        final text =
+                '${str(mark['label'])}${mark['provisional'] == true ? '·预警' : ''}',
+            w = textWidth(text, size: 11) + 6;
+        final lx = (x(index) - w / 2).clamp(left, size.width - right - w),
+            ly = (py(value) + (mark['bullish'] == true ? 5 : -19)).clamp(
+              top + 22,
+              top + h - 16,
+            ),
+            rect = Rect.fromLTWH(lx, ly, w, 16);
+        if (occupied.any((r) => r.inflate(5).overlaps(rect))) continue;
+        occupied.add(rect);
+        label(
+          c,
+          text,
+          Offset(lx, ly),
+          size: 11,
+          color: mark['bullish'] == true
+              ? const Color(0xffb88086)
+              : const Color(0xff6eaaa2),
+          background: true,
+        );
+      }
       top += small;
     }
 
@@ -1834,6 +1965,7 @@ class ChartPainter extends CustomPainter {
       showPatterns != old.showPatterns ||
       showCrosses != old.showCrosses ||
       patterns != old.patterns ||
+      indicatorMarks != old.indicatorMarks ||
       overlay != old.overlay ||
       rsi != old.rsi ||
       trades != old.trades;

@@ -39,10 +39,17 @@ class _StockPageState extends State<StockPage> {
   String tab = 'chart', timeframe = 'day', newsTab = 'news';
   bool auto = true, loading = false;
   Timer? timer;
-  int tick = 0;
+  late ValueNotifier<int> chartMARevision;
+  int tick = 0, analysisGeneration = 0;
+  void maChanged() {
+    refreshAnalysis(force: true);
+  }
+
   @override
   void initState() {
     super.initState();
+    chartMARevision = context.read<AtlasStore>().chartRevision;
+    chartMARevision.addListener(maChanged);
     refreshQuote();
     refreshAnalysis();
     refreshTrend();
@@ -63,6 +70,7 @@ class _StockPageState extends State<StockPage> {
   @override
   void dispose() {
     timer?.cancel();
+    chartMARevision.removeListener(maChanged);
     super.dispose();
   }
 
@@ -84,15 +92,20 @@ class _StockPageState extends State<StockPage> {
     }
   }
 
-  Future<void> refreshAnalysis() async {
-    if (loading) return;
+  Future<void> refreshAnalysis({bool force = false}) async {
+    if (loading && !force) return;
+    final generation = ++analysisGeneration;
     loading = true;
     try {
       final api = context.read<AtlasStore>().api;
       final r = cnStock(widget.symbol)
           ? await api.get(
               '/api/analysis',
-              parameters: {'symbol': widget.symbol, 'review': '1'},
+              parameters: {
+                'symbol': widget.symbol,
+                'review': '1',
+                ...context.read<AtlasStore>().chartMAParameters,
+              },
             )
           : {
               'market': await api.get(
@@ -100,7 +113,7 @@ class _StockPageState extends State<StockPage> {
                 parameters: {'symbol': widget.symbol},
               ),
             };
-      if (mounted) {
+      if (mounted && generation == analysisGeneration) {
         setState(() {
           if (obj(r['strategy']).isNotEmpty) {
             r['tradeMarkers'] = obj(r['strategy'])['signals'];
@@ -110,9 +123,11 @@ class _StockPageState extends State<StockPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => analysisError = e.toString());
+      if (mounted && generation == analysisGeneration) {
+        setState(() => analysisError = e.toString());
+      }
     } finally {
-      loading = false;
+      if (generation == analysisGeneration) loading = false;
     }
   }
 

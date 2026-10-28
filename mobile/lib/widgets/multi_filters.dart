@@ -21,6 +21,16 @@ class MultiLineFilters extends StatelessWidget {
       title: Text(tr(context, '一阳多线判定条件')),
       children: [
         for (final spec in [
+          (
+            'multiSystem',
+            '均线体系',
+            {
+              'either': '任一套有效',
+              'classic': '经典',
+              'fibonacci': '斐波那契',
+              'both': '两套同时有效',
+            },
+          ),
           ('multiLines', '实体至少穿过', {'4': '4条核心均线', '5': '5条核心均线'}),
           ('multiDense', '线束离散上限', {'10': '10%', '5': '5%', '2': '2%'}),
           (
@@ -53,7 +63,7 @@ class MultiLineFilters extends StatelessWidget {
             ),
           ),
         for (final spec in [
-          ('multi60', '穿线必须包含MA60'),
+          ('multi60', '穿线必须包含MA60或55'),
           ('multiMiddle', '密集线束位于实体中轴'),
         ])
           SwitchListTile(
@@ -68,10 +78,7 @@ class MultiLineFilters extends StatelessWidget {
                 : (v) => onChanged({...f, spec.$1: v ? '1' : '0'}),
           ),
         Text(
-          tr(
-            context,
-            '核心线固定为5/10/20/30/60；普通至少穿四线。强力模式另外固定要求含60线、密集居中、大阳倍量及收近高点，不能用自定义条件放宽。',
-          ),
+          tr(context, '经典与斐波那契两套分别计数。普通至少实体穿四线；强力另需55或60线、密集居中、大阳倍量及收近高点。'),
           style: const TextStyle(fontSize: 12, height: 1.7),
         ),
       ],

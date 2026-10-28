@@ -17,7 +17,8 @@ function Mini({symbol}:{symbol:string}){
 }
 export default function WatchSidebar({watchlist,markets,selected,onStock,onSearch,onRemove,onWorkspace,onClose}:{watchlist:string[];markets:Record<string,MarketPayload>;selected:string;onStock:(s:string)=>void;onSearch:()=>void;onRemove:(s:string)=>void;onWorkspace:()=>void;onClose:()=>void}){
  const [filter,setFilter]=useState(''),[groups,setGroups]=useState<Group[]>(loadGroups),[group,setGroup]=useState(''),[editing,setEditing]=useState(false),[name,setName]=useState(''),[error,setError]=useState('');
- useEffect(()=>localStorage.setItem(key,JSON.stringify(groups)),[groups]);
+ useEffect(()=>{localStorage.setItem(key,JSON.stringify(groups));window.dispatchEvent(new Event('atlas:watch-local'));},[groups]);
+ useEffect(()=>{const load=()=>setGroups(loadGroups());window.addEventListener('atlas:watch-cloud',load);return()=>window.removeEventListener('atlas:watch-cloud',load);},[]);
  const cn=watchlist.filter(s=>/^\d{6}\.(SH|SZ|BJ)$/.test(s)),feed=useLiveEndpoint<QuotesPayload>(cn.length?'/api/desk/quotes?symbols='+cn.join(','):null,5000),current=groups.find(g=>g.id===group);
  function save(renaming=false){const value=name.trim();if(!value||value.length>24){setError('分组名称需要1–24个字');return;}if(groups.some(g=>g.name===value&&(!renaming||g.id!==group))){setError('分组名称已存在');return;}if(renaming&&current)setGroups(old=>old.map(g=>g.id===group?{...g,name:value}:g));else if(groups.length<20){const id=crypto.randomUUID();setGroups(old=>[...old,{id,name:value,symbols:[]}]);setGroup(id);}else{setError('最多创建20个分组');return;}setEditing(false);setError('');setName('');}
  return <><div className="watch-sidebar-heading"><h2><Star size={18}/>{t('我的自选')} <small>{watchlist.length}</small></h2><button className="icon-button" onClick={onSearch} aria-label={t('搜索并添加自选')}><Plus size={20}/></button><button className="icon-button mobile-close" onClick={onClose} aria-label={t('关闭导航')}><X size={20}/></button></div>

@@ -169,6 +169,34 @@ class _DecisionDetailsState extends State<DecisionDetails> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (rows(p['patternEvidence'])
+            .where((m) => m['chartVisible'] != false)
+            .isNotEmpty)
+          Panel(
+            child: OpenSection(
+              title: Text(tr(context, '当前形态与操作依据')),
+              children: [
+                Text(tr(context, str(obj(p['flat'])['reason']))),
+                for (final mark in rows(
+                  p['patternEvidence'],
+                ).where((m) => m['chartVisible'] != false).take(4))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          str(mark['label']),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(str(mark['detail'])),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
         if (rows(a['patternCoverage']).isNotEmpty)
           Panel(
             child: OpenSection(

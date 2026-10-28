@@ -18,11 +18,11 @@ test('controlled upper-wick probes need an early rising context and later confir
 test('three crossed lines are not a multi-line candle; strong requires centered density and real volume expansion',()=>{
  const bars=trend().map(b=>({...b,open:10,close:10,high:10.2,low:9.8}));add(bars,{open:10.15,close:10.6,high:10.61,low:10.1,volume:25000});
  const ma=(p:number)=>({5:10,10:10.1,20:10.2,30:10.4,60:10.5}[p]??10);
- assert.ok(classicShapes(bars,80,ma,.4,2.5).every(m=>m.kind!=='multi'));
- bars[80].open=10.05;const strong=classicShapes(bars,80,ma,.4,2.5).find(m=>m.kind==='multi');assert.equal(strong?.label,'强力一阳多线');
- bars[80].volume=13000;assert.notEqual(classicShapes(bars,80,ma,.4,1.3).find(m=>m.kind==='multi')?.label,'强力一阳多线');
+ assert.ok(classicShapes(bars,80,ma,.4,2.5,[5,10,20,30,60]).every(m=>m.kind!=='multi'));
+ bars[80].open=10.05;const strong=classicShapes(bars,80,ma,.4,2.5,[5,10,20,30,60]).find(m=>m.kind==='multi');assert.equal(strong?.label,'强力一阳多线');
+ bars[80].volume=13000;assert.notEqual(classicShapes(bars,80,ma,.4,1.3,[5,10,20,30,60]).find(m=>m.kind==='multi')?.label,'强力一阳多线');
  assert.throws(()=>parseScreenOptions(new URLSearchParams('multiLines=3')));assert.throws(()=>parseScreenOptions(new URLSearchParams('multiVolume=0')));
- const raw=trend().map(b=>({...b,open:10,close:10,high:10.2,low:9.8}));add(raw,{open:9.5,close:10.8,high:10.81,low:9.49,volume:30000});const e=multiLineEvidence(raw);assert.ok(e?.normal);assert.ok(passesMulti(e,'multi'));assert.equal(passesMulti(undefined,'multi'),false);assert.equal(passesMulti({...e!,includes60:false,strong:false},'strongmulti'),false);
+ const raw=trend().map(b=>({...b,open:10,close:10,high:10.2,low:9.8}));add(raw,{open:9.5,close:10.8,high:10.81,low:9.49,volume:30000});const e=multiLineEvidence(raw);assert.ok(e?.normal);assert.ok(passesMulti(e,'multi'));assert.equal(passesMulti(undefined,'multi'),false);assert.equal(passesMulti({...e!,includes60:false,strong:false,systems:undefined},'strongmulti'),false);
 });
 test('bottom-fractal and W-bottom annotations wait for the right-hand evidence',()=>{
  const bars=trend(false),last=bars.at(-1)!;add(bars,{open:last.close-.1,close:last.close-.4,high:last.close,low:last.close-.8,volume:10000});const before=patternMarks(bars,now);assert.ok(before.every(m=>m.kind!=='bottom-fractal'||m.time!==date(80)));

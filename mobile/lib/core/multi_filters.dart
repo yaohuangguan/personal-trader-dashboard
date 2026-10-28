@@ -1,6 +1,7 @@
 import 'api.dart';
 
 const multiDefaults = <String, dynamic>{
+  'multiSystem': 'either',
   'multiLines': '4',
   'multi60': '0',
   'multiMiddle': '0',
@@ -11,7 +12,25 @@ const multiDefaults = <String, dynamic>{
   'multiClose': '0.7',
 };
 bool passesMultiEvidence(Json e, String mode, Json options) {
-  if (e['version'] != 2 ||
+  if (e['systems'] is List) {
+    final entries = rows(e['systems']);
+    final system = str(options['multiSystem'], 'either');
+    if (system == 'both') {
+      return ['classic', 'fibonacci'].every(
+        (s) => entries.any(
+          (v) =>
+              v['system'] == s &&
+              passesMultiEvidence({...v, 'systems': null}, mode, options),
+        ),
+      );
+    }
+    return entries.any(
+      (v) =>
+          (system == 'either' || v['system'] == system) &&
+          passesMultiEvidence({...v, 'systems': null}, mode, options),
+    );
+  }
+  if (e['version'] != 3 ||
       e['normal'] != true ||
       mode == 'strongmulti' && e['strong'] != true) {
     return false;

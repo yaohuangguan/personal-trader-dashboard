@@ -1,4 +1,5 @@
 import {ResearchScreen} from './research-screen';
+import {watchVault} from './watch-sync';
 import {afterClose,beijingParts} from '../shared/monitor';
 import type {FullMarketStatus} from '../shared/full-market';
 import type {CloseManifest} from '../shared/close-report';
@@ -14,6 +15,7 @@ export class CloseCoordinator{
  constructor(private state:State,private env:Env){}
  private async leases(){const raw=await this.state.storage.get<Record<string,number|Lease>>('leases')||{};return Object.fromEntries(Object.entries(raw).map(([id,v])=>[id,typeof v==='number'?{until:v}:v]).filter(([,v])=>(v as Lease).until>Date.now())) as Record<string,Lease>;}
  async fetch(req:Request){const action=new URL(req.url).pathname.slice(1),s=this.state.storage;
+  if(action==='cloud-watch')return this.state.blockConcurrencyWhile(()=>watchVault(req,s));
   if(action==='research-status'){const job=await s.get<import('./research-screen').ResearchJob>('research:v1:job'),url=new URL(req.url),same=job&&url.searchParams.get('id')===job.id&&Number(url.searchParams.get('count')??-1)===job.candidateCount;return json(await new ResearchScreen(s).read(!same));}
   if(action==='research-start'&&req.method==='POST'){const body=await req.json() as {retry?:boolean};return this.state.blockConcurrencyWhile(async()=>json(await new ResearchScreen(s).start(body.retry===true)));}
   if(action==='status'){const m=await s.get<CloseManifest>('close:latest');return json({phase:m?'complete':'closed',registered:m?.total||0,total:m?.total||0,pages:0,universeComplete:!!m?.complete,countMatches:!!m?.complete,shards:0,ready:m?.checked||0,checked:m?.checked||0,freshShards:0,lastRun:m?.generatedAt||null,lastQuoteAt:m?.date||null,failures:m?.failed||0,failureSample:m?.failureSample||[],events:[],source:m?.source||'共享收盘任务',notice:'每个交易日15:20北京时间启动一次收盘筛选，完成后合并推送。盘中不轮询行情；非交易日以来源日期跳过。',active:Object.keys(await this.leases()).length>0,date:m?.date,report:m} satisfies FullMarketStatus);}

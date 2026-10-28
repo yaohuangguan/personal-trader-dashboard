@@ -1,19 +1,26 @@
+import {CLASSIC_MA,FIBONACCI_MA,maPeriods,maRole,maSystem,maSystemName,type MASystem} from './ma-system';
 import type {Candle} from './types';
 export type ClassicShape={kind:'multi'|'spider'|'cannon'|'beauty'|'pointer';label:string;detail:string;priority:number;position:'above'|'below';anchorTime?:string};
-export type MultiLineEvidence={version:2;date:string;lines:number;periods:number[];includes60:boolean;dispersion:number;middleOffset:number;volume20:number;volume5:number;recentVolume:number;gain:number;closeLocation:number;normal:boolean;strong:boolean};
-export function multiLineEvidence(bars:Candle[]):MultiLineEvidence|null{
- const i=bars.length-1;if(i<64)return null;const b=bars[i],p=bars[i-1],ma=(n:number,k=i)=>bars.slice(k-n+1,k+1).reduce((s,c)=>s+c.close,0)/n;
- const periods=[5,10,20,30,60].filter(n=>b.open<=ma(n)&&b.close>ma(n)),prices=periods.map(n=>ma(n)),body=b.close-b.open;
- const base=bars.slice(i-20,i).reduce((s,c)=>s+c.volume,0)/20,previous5=bars.slice(i-5,i).reduce((s,c)=>s+c.volume,0)/5,recent=Math.max(...bars.slice(i-3,i).map(c=>c.volume)),atr=bars.slice(i-20,i).reduce((s,c,k)=>s+Math.max(c.high-c.low,Math.abs(c.high-bars[i-21+k].close),Math.abs(c.low-bars[i-21+k].close)),0)/20;
+export type MultiLineEvidence={version:3;system:MASystem;configured:number[];date:string;lines:number;periods:number[];includes60:boolean;decisionPeriod:number;dispersion:number;middleOffset:number;volume20:number;volume5:number;recentVolume:number;gain:number;closeLocation:number;normal:boolean;strong:boolean;systems?:MultiLineEvidence[]};
+export function multiLineAt(bars:Candle[],i:number,ma:(p:number,i:number)=>number,atr:number,ratio:number,configured=CLASSIC_MA):MultiLineEvidence{
+ const b=bars[i],p=bars[i-1],available=maPeriods(configured),periods=available.filter(n=>Number.isFinite(ma(n,i))&&b.open<=ma(n,i)&&b.close>ma(n,i)),prices=periods.map(n=>ma(n,i)),body=b.close-b.open;
+ const previous5=bars.slice(i-5,i).reduce((s,c)=>s+c.volume,0)/5,recent=Math.max(...bars.slice(i-3,i).map(c=>c.volume));
  const dispersion=prices.length?(Math.max(...prices)/Math.min(...prices)-1)*100:100,middleOffset=body>0&&prices.length?Math.abs((Math.min(...prices)+Math.max(...prices))/2-(b.open+b.close)/2)/body:1;
- const volume20=base>0?b.volume/base:0,volume5=previous5>0?b.volume/previous5:0,recentVolume=recent>0?b.volume/recent:0,gain=(b.close/p.close-1)*100,closeLocation=b.high>b.low?(b.close-b.low)/(b.high-b.low):0;
- const before=[5,10,20,30,60].map(n=>ma(n,i-1)),compression=(Math.max(...before)/Math.min(...before)-1)*100;
- const normal=body>=.6*atr&&gain>=3&&volume20>=1.2&&closeLocation>=.7&&periods.length>=4&&compression<10&&b.close>Math.max(ma(5),ma(10),ma(20))&&b.close/ma(20)<1.16;
- const strong=normal&&gain>5&&closeLocation>=.9&&volume20>=2&&volume5>=1.5&&recentVolume>=1.1&&periods.includes(60)&&dispersion<5&&middleOffset<=.25;
- return {version:2,date:b.time,lines:periods.length,periods,includes60:periods.includes(60),dispersion,middleOffset,volume20,volume5,recentVolume,gain,closeLocation,normal,strong};
+ const volume20=ratio,volume5=previous5>0?b.volume/previous5:0,recentVolume=recent>0?b.volume/recent:0,gain=(b.close/p.close-1)*100,closeLocation=b.high>b.low?(b.close-b.low)/(b.high-b.low):0;
+ const fast=available.slice(0,3),decisionPeriod=available.includes(60)?60:available.includes(55)?55:maRole(available,60);
+ const normal=body>=.6*atr&&gain>=3&&volume20>=1.2&&closeLocation>=.7&&periods.length>=4&&dispersion<10&&fast.every(n=>b.close>ma(n,i))&&b.close/ma(maRole(available,20),i)<1.16;
+ const includes60=periods.includes(60)||periods.includes(55),strong=normal&&gain>5&&closeLocation>=.9&&volume20>=2&&volume5>=1.5&&recentVolume>=1.1&&includes60&&dispersion<5&&middleOffset<=.25;
+ return {version:3,system:maSystem(available),configured:available,date:b.time,lines:periods.length,periods,decisionPeriod,includes60,dispersion,middleOffset,volume20,volume5,recentVolume,gain,closeLocation,normal,strong};
+}
+export function multiLineEvidence(bars:Candle[],configured?:number[]):MultiLineEvidence|null{
+ const i=bars.length-1;if(i<64)return null;
+ const sum=[0];bars.forEach((b,j)=>sum.push(sum[j]+b.close));const ma=(n:number,k=i)=>k+1>=n?(sum[k+1]-sum[k-n+1])/n:NaN;
+ const base=bars.slice(i-20,i).reduce((s,c)=>s+c.volume,0)/20,atr=bars.slice(i-20,i).reduce((s,c,k)=>s+Math.max(c.high-c.low,Math.abs(c.high-bars[i-21+k].close),Math.abs(c.low-bars[i-21+k].close)),0)/20;
+ const systems=(configured?[configured]:[CLASSIC_MA,FIBONACCI_MA]).map(p=>multiLineAt(bars,i,ma,atr,base>0?bars[i].volume/base:0,p));
+ const best=[...systems].sort((a,b)=>Number(b.strong)-Number(a.strong)||Number(b.normal)-Number(a.normal)||b.lines-a.lines)[0];return {...best,systems};
 }
 /** Operational thresholds, not a statistical probability or a claim about order flow. */
-export function classicShapes(bars:Candle[],i:number,ma:(period:number,index:number)=>number,atr:number,ratio:number):ClassicShape[]{
+export function classicShapes(bars:Candle[],i:number,ma:(period:number,index:number)=>number,atr:number,ratio:number,configured?:number[]):ClassicShape[]{
  if(i<64||!(atr>0))return [];
  const b=bars[i],p=bars[i-1],out:ClassicShape[]=[],gain=(b.close/p.close-1)*100,body=b.close-b.open,range=b.high-b.low,location=range?(b.close-b.low)/range:0;
  const m5=ma(5,i),m10=ma(10,i),m20=ma(20,i),m60=ma(60,i),bias20=(b.close/m20-1)*100;
@@ -21,12 +28,8 @@ export function classicShapes(bars:Candle[],i:number,ma:(period:number,index:num
  const crossed=core.filter(n=>b.open<=ma(n,i)&&b.close>ma(n,i));
  const solid=body>=.6*atr&&location>=.7,participation=ratio>=1.5,nearBase=bias20<16;
  const add=(kind:ClassicShape['kind'],label:string,detail:string,priority:number,position:ClassicShape['position']='below',anchorTime?:string)=>out.push({kind,label,detail,priority,position,anchorTime});
- if(solid&&gain>=3&&ratio>=1.2&&crossed.length>=4&&compression<10&&b.close>Math.max(m5,m10,m20)&&nearBase){
-  const prices=crossed.map(n=>ma(n,i)),middle=Math.abs((Math.min(...prices)+Math.max(...prices))/2-(b.open+b.close)/2)/body,spread=(Math.max(...prices)/Math.min(...prices)-1)*100;
-  const previous5=bars.slice(i-5,i).reduce((n,c)=>n+c.volume,0)/5,previous3=Math.max(...bars.slice(i-3,i).map(c=>c.volume));
-  const strong=gain>5&&location>=.9&&ratio>=2&&b.volume>=previous5*1.5&&b.volume>=previous3*1.1&&crossed.includes(60)&&spread<5&&middle<=.25;
-  add('multi',strong?'强力一阳多线':'一阳多线 · '+crossed.length+'线',`实体实际穿过MA${crossed.join('/')}；${crossed.includes(60)?'包含':'未穿过'}MA60。线束离散${spread.toFixed(2)}%，中轴偏移${(middle*100).toFixed(1)}%实体；20日相对量${ratio.toFixed(2)}倍，5日相对量${(b.volume/previous5).toFixed(2)}倍，收于振幅${Math.round(location*100)}%。${strong?'当日强度条件成立，后续3–5根排列与半位支撑仍须另行核验。':'未满足全部强力条件；不以穿过两三条线冒充一阳多线。'}`,strong?99:91);
- }
+ const systems=(configured?[configured]:[CLASSIC_MA,FIBONACCI_MA]).map(p=>multiLineAt(bars,i,ma,atr,ratio,p)),hits=systems.filter(e=>e.normal),best=[...hits].sort((a,b)=>Number(b.strong)-Number(a.strong)||b.lines-a.lines)[0];
+ if(best){const name=best.strong?'强力一阳多线':'一阳多线 · '+best.lines+'线';add('multi',name,systems.map(e=>`${maSystemName(e.system)}实体穿MA${e.periods.join('/')}；${e.normal?'有效':'条件未齐'}，线束离散${e.dispersion.toFixed(2)}%，中轴偏移${(e.middleOffset*100).toFixed(1)}%实体。`).join(' ')+`20日相对量${ratio.toFixed(2)}倍；普通不要求中轴居中，强力另需居中及55/60线等全部条件。`,best.strong?99:91);}
  const recentCross=(x:number,y:number)=>Array.from({length:5},(_,k)=>i-k).some(j=>ma(x,j-1)<=ma(y,j-1)&&ma(x,j)>ma(y,j));
  const cluster=Math.min(...Array.from({length:5},(_,k)=>{const v=[5,10,20].map(n=>ma(n,i-k-1));return (Math.max(...v)/Math.min(...v)-1)*100;}));
  if(solid&&gain>=2&&participation&&m5>m10&&m10>m20&&[5,10,20].every(n=>ma(n,i)>ma(n,i-3))&&cluster<2&&recentCross(5,10)&&recentCross(5,20)&&recentCross(10,20)&&b.open<=Math.min(m5,m10,m20)&&b.close>Math.max(m5,m10,m20)&&nearBase)

@@ -1,3 +1,4 @@
+import {FIBONACCI_MA,maPeriods,maRole} from './ma-system';
 import type {Candle} from './types';
 import type {PatternMark} from './pattern-marks';
 import {sma,macd,kdj,bollinger,rsi,parabolicSar} from './chart-indicators';
@@ -15,12 +16,12 @@ export const GUIDE_PATTERN_COVERAGE=[
 type Pivot={i:number;value:number};
 const mean=(a:number[])=>a.reduce((s,v)=>s+v,0)/a.length;
 /** Guide observations use a completed prefix. Chart density is a separate rendering concern. */
-export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week'|'month'='day'):PatternMark[]{
+export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week'|'month'='day',selectedPeriods?:number[]):PatternMark[]{
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(now),minute=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',hour12:false}).format(now))*60+Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',minute:'2-digit'}).format(now));
  const bars=unit==='day'?input.filter(b=>b.time<=day):closedPeriodCandles(input,unit,now),out:PatternMark[]=[];
  if(bars.some((b,i)=>![b.open,b.high,b.low,b.close,b.volume].every(Number.isFinite)||b.low<=0||b.volume<0||b.high<Math.max(b.open,b.close)||b.low>Math.min(b.open,b.close)||i>0&&b.time<=bars[i-1].time))return [];
- const periods=[3,5,6,10,12,13,20,24,30,60,120,250],mas=new Map(periods.map(n=>[n,new Map(sma(bars,n).map(p=>[p.time,p.value]))]));
- const ma=(p:number,i:number)=>mas.get(p)?.get(bars[i]?.time)??NaN,md=new Map(macd(bars).map(p=>[p.time,p])),kd=new Map(kdj(bars).map(p=>[p.time,p])),bb=new Map(bollinger(bars).map(p=>[p.time,p])),rs=new Map(rsi(bars).map(p=>[p.time,p.value])),sar=new Map(parabolicSar(bars).map(p=>[p.time,p.value]));
+ const selected=maPeriods(selectedPeriods),periods=[...new Set([3,5,6,10,12,13,20,24,30,60,120,250,...selected,...FIBONACCI_MA])],mas=new Map(periods.map(n=>[n,new Map(sma(bars,n).map(p=>[p.time,p.value]))]));
+ const ma=(p:number,i:number)=>mas.get(selectedPeriods&&[5,10,13,20,30,60,120,250].includes(p)?maRole(selected,p):p)?.get(bars[i]?.time)??NaN,md=new Map(macd(bars).map(p=>[p.time,p])),kd=new Map(kdj(bars).map(p=>[p.time,p])),bb=new Map(bollinger(bars).map(p=>[p.time,p])),rs=new Map(rsi(bars).map(p=>[p.time,p.value])),sar=new Map(parabolicSar(bars).map(p=>[p.time,p.value]));
  const highs:Pivot[]=[],lows:Pivot[]=[],last=new Map<string,number>(),vsum=[0];bars.forEach((b,i)=>vsum.push(vsum[i]+b.volume));
  let launch:{i:number;low:number}|null=null,shoulder:{launch:string;seen:number;high:number;low:number}|null=null;
  const extreme=(from:number,to:number,key:'low'|'high')=>{let j=from;for(let k=from+1;k<to;k++)if(key==='low'?bars[k].low<bars[j].low:bars[k].high>bars[j].high)j=k;return {i:j,value:bars[j][key]};};
@@ -78,7 +79,7 @@ export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week
    if(launch&&[13,21,34].includes(i-launch.i)&&impulse&&b.close>priorHigh+.1*atr)emit('space-time','时空窗口突破 · D'+(i-launch.i),`距已知启动${i-launch.i}根，当前才放量突破前20根高点；时间窗口本身不预测涨跌。`,true,82,8,bars[launch.i].time);
    if(shoulder&&i-shoulder.seen<=8&&b.low>=shoulder.low-.2*atr&&b.close>shoulder.high+.1*atr&&p.close<=shoulder.high&&b.close>m20&&impulse){emit('beauty-breakout','美人肩 · 放量突破',`${shoulder.launch}启动后的窄幅缩量肩部已形成，当前才放量突破肩部高点。`,true,94,12,shoulder.launch);if(!provisional)shoulder=null;}
    if(shoulder&&(b.close<shoulder.low-.2*atr||i-shoulder.seen>8))shoulder=null;
-   for(const hit of classicShapes(bars,i,ma,atr,ratio)){
+   for(const hit of classicShapes(bars,i,(p,j)=>mas.get(p)?.get(bars[j]?.time)??NaN,atr,ratio,selectedPeriods)){
     if(hit.kind==='multi'&&!provisional)launch={i,low:b.low};
     if(hit.kind==='beauty'&&!provisional){const from=bars.findIndex(c=>c.time===hit.anchorTime)+1,recent=bars.slice(from,i+1);shoulder={launch:hit.anchorTime!,seen:i,high:Math.max(...recent.map(c=>c.high)),low:Math.min(...recent.map(c=>c.low))};}
    }
@@ -126,5 +127,5 @@ export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week
   if(unit==='week'&&i>=64&&ma(5,i)>ma(10,i)&&ma(5,i-1)<=ma(10,i-1)&&Math.abs(ma(30,i)/ma(60,i)-1)<.02&&ma(30,i)/ma(30,i-5)>=.999&&ma(60,i)/ma(60,i-5)>=.999)emit('weekly-dragon','周线屠龙刀','已收盘周线5/10金叉，30/60粘合小于2%且接近走平；只在周K标注。',true,99,5);
   if(unit==='month'&&i>=31){if(p.close<=ma(30,i-1)&&b.close>ma(30,i)&&b.volume>p.volume&&body>0)emit('monthly-launch','月线放量突破30月线','已收盘月线放量收复30月线；后续回踩需独立核验。',true,98,3);if(a.close<=ma(30,i-2)&&p.close>ma(30,i-1)&&p.volume>a.volume&&b.low>=ma(30,i)&&b.close>=ma(30,i)&&b.volume<p.volume)emit('monthly-retest','月线缩量回踩30月线','前月放量上破30月线，本月已收盘且缩量回踩不破。',true,99,3);}
  }
- return out;
+ return selectedPeriods?out.map(m=>({...m,detail:`当前图表MA${selected.join('/')}；`+m.detail})):out;
 }

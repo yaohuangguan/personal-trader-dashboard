@@ -12,7 +12,7 @@ void main() {
   test('missing and three-line cached records cannot pass the four-line or strong mode', () {
     expect(passesMultiEvidence({}, 'multi', {}), false);
     final e = <String, dynamic>{
-      'version': 2,
+      'version': 3,
       'normal': true,
       'strong': false,
       'lines': 4,
@@ -64,8 +64,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('穿线必须包含MA60'));
-    await tester.tap(find.text('穿线必须包含MA60'));
+    await tester.ensureVisible(find.text('穿线必须包含MA60或55'));
+    await tester.tap(find.text('穿线必须包含MA60或55'));
     await tester.pumpAndSettle();
     expect(filters['multi60'], '1');
     await tester.ensureVisible(find.text('密集线束位于实体中轴'));

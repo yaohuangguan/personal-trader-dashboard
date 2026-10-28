@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+part 'watch_cloud.dart';
 
 class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   AtlasStore(this.api, this.prefs, this.english) {
@@ -42,7 +43,11 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   DateTime? quoteReadAt;
   bool foreground = true;
   Timer? _timer;
-  bool _running = false;
+  final chartRevision = ValueNotifier<int>(0);
+  bool _running = false, syncBusy = false;
+  String syncStatus = '未连接云同步', _lastWatchState = '';
+  DateTime _lastSyncAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _syncDebounce;
   final StreamController<String> messages = StreamController.broadcast();
   static dynamic _decode(String? s) {
     try {
@@ -70,6 +75,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
 
   void start() {
     refreshQuotes();
+    syncCloud();
     api
         .get('/api/catalog')
         .then((data) {
@@ -78,7 +84,10 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
         })
         .catchError((Object _) {});
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (foreground) refreshQuotes();
+      if (foreground) {
+        refreshQuotes();
+        if (DateTime.now().difference(_lastSyncAt).inSeconds >= 30) syncCloud();
+      }
     });
   }
 
@@ -197,6 +206,22 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Map<String, String> get chartMAParameters {
+    try {
+      final lines = rows(_decode(prefs.getString('ma')));
+      return lines.isEmpty
+          ? {}
+          : {
+              'ma': lines
+                  .where((m) => m['enabled'] != false)
+                  .map((m) => '${m['period']}')
+                  .join(','),
+            };
+    } catch (_) {
+      return {};
+    }
+  }
+
   Future<void> setTheme(String value) async {
     themeMode = value == 'light' ? 'light' : 'dark';
     await prefs.setString('themeMode', themeMode);
@@ -266,20 +291,35 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
-    if (foreground) refreshQuotes();
+    if (foreground) {
+      refreshQuotes();
+      if (DateTime.now().difference(_lastSyncAt).inSeconds >= 30) syncCloud();
+    }
   }
 
   bool _disposed = false;
   @override
   void notifyListeners() {
-    if (!_disposed) super.notifyListeners();
+    if (!_disposed) {
+      final state = jsonEncode({'watchlist': watchlist, 'groups': groups});
+      if (state != _lastWatchState) {
+        _lastWatchState = state;
+        if (syncKey.isNotEmpty) {
+          _syncDebounce?.cancel();
+          _syncDebounce = Timer(const Duration(milliseconds: 900), syncCloud);
+        }
+      }
+      super.notifyListeners();
+    }
   }
 
   @override
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _syncDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    chartRevision.dispose();
     messages.close();
     api.dispose();
     super.dispose();

@@ -1,4 +1,5 @@
 import {classicShapes,multiLineEvidence,type MultiLineEvidence} from './shape-rules';
+import {CLASSIC_MA,FIBONACCI_MA} from './ma-system';
 import {analyzeStrategy} from './strategy';
 import type {Candle} from './types';
 import type {Snapshot} from './desk-types';
@@ -10,11 +11,15 @@ import {chipDistribution,type ChipBar} from './market-models';
 export const SCREEN_MODES={bloom:'五线开花',bullish:'多头排列',multi:'一阳多线',strongmulti:'强力一阳多线',beauty:'美人肩',spider:'金蜘蛛',cannon:'多方炮',limitup:'近10日涨停'} as const;
 export type ScreenMode=keyof typeof SCREEN_MODES;
 export type PatternMatch={mode:ScreenMode|'setup';label:string;reasons:string[]};
-export type MultiFilters={lines:4|5;require60:boolean;middle:boolean;dispersion:number;volume20:number;volume5:number;gain:number;closeLocation:number};
-export const DEFAULT_MULTI:MultiFilters={lines:4,require60:false,middle:false,dispersion:10,volume20:1.2,volume5:0,gain:3,closeLocation:.7};
+export type MultiFilters={system?:'either'|'classic'|'fibonacci'|'both';lines:4|5;require60:boolean;middle:boolean;dispersion:number;volume20:number;volume5:number;gain:number;closeLocation:number};
+export const DEFAULT_MULTI:MultiFilters={system:'either',lines:4,require60:false,middle:false,dispersion:10,volume20:1.2,volume5:0,gain:3,closeLocation:.7};
 export type ScreenOptions={modes:ScreenMode[];concentration:number;recentLimitUp:boolean;maxMarketCap:number|null;activity:boolean;auto?:boolean;multi?:MultiFilters};
-export function passesMulti(e:MultiLineEvidence|undefined|null,mode:string,filters:MultiFilters=DEFAULT_MULTI){return !!e&&e.version===2&&e.normal&&(mode!=='strongmulti'||e.strong)&&e.lines>=filters.lines&&(!filters.require60||e.includes60)&&(!filters.middle||e.middleOffset<=.25)&&e.dispersion<filters.dispersion&&e.volume20>=filters.volume20&&e.volume5>=filters.volume5&&e.gain>=filters.gain&&e.closeLocation>=filters.closeLocation;}
-export function multiParams(filters?:MultiFilters):Record<string,string>{return filters?{multiLines:String(filters.lines),multi60:filters.require60?'1':'0',multiMiddle:filters.middle?'1':'0',multiDense:String(filters.dispersion),multiVolume:String(filters.volume20),multiVolume5:String(filters.volume5),multiGain:String(filters.gain),multiClose:String(filters.closeLocation)}:{};}
+export function passesMulti(e:MultiLineEvidence|undefined|null,mode:string,filters:MultiFilters=DEFAULT_MULTI){
+ if(!e||e.version!==3)return false;
+ const pass=(v:MultiLineEvidence)=>v.normal&&(mode!=='strongmulti'||v.strong)&&v.lines>=filters.lines&&(!filters.require60||v.includes60)&&(!filters.middle||v.middleOffset<=.25)&&v.dispersion<filters.dispersion&&v.volume20>=filters.volume20&&v.volume5>=filters.volume5&&v.gain>=filters.gain&&v.closeLocation>=filters.closeLocation;
+ const systems=e.systems||[e];return filters.system==='both'?['classic','fibonacci'].every(s=>systems.some(v=>v.system===s&&pass(v))):systems.some(v=>(!filters.system||filters.system==='either'||v.system===filters.system)&&pass(v));
+}
+export function multiParams(filters?:MultiFilters):Record<string,string>{return filters?{multiSystem:filters.system||'either',multiLines:String(filters.lines),multi60:filters.require60?'1':'0',multiMiddle:filters.middle?'1':'0',multiDense:String(filters.dispersion),multiVolume:String(filters.volume20),multiVolume5:String(filters.volume5),multiGain:String(filters.gain),multiClose:String(filters.closeLocation)}:{};}
 export const DEFAULT_SCREEN:ScreenOptions={modes:['bloom'],concentration:20,recentLimitUp:false,maxMarketCap:1000e8,activity:true};
 export type CandidateRanking={score:number;label:string;parts:{label:string;score:number;max:number;reason:string}[];warnings:string[];notice:string};
 export function rankCandidate(bars:Candle[],guide:GuideAnalysis,character:StockCharacter|null,matches:PatternMatch[],concentration:number):CandidateRanking{
@@ -38,13 +43,14 @@ export function parseScreenOptions(params:URLSearchParams):ScreenOptions{
  if(cap!==''&&(!Number.isFinite(Number(cap))||Number(cap)<1||Number(cap)>100000))throw new Error('无效市值上限');
  const value=(key:string,def:number,min:number,max:number)=>{const n=Number(params.get(key)??def);if(!Number.isFinite(n)||n<min||n>max)throw new Error('无效一阳多线筛选参数：'+key);return n;};
  const lines=value('multiLines',4,4,5);if(!Number.isInteger(lines))throw new Error('穿线数量仅支持4或5');
- const multi:MultiFilters={lines:lines as 4|5,require60:params.get('multi60')==='1',middle:params.get('multiMiddle')==='1',dispersion:value('multiDense',10,1,10),volume20:value('multiVolume',1.2,1.2,10),volume5:value('multiVolume5',0,0,10),gain:value('multiGain',3,3,20),closeLocation:value('multiClose',.7,.7,1)};
+ const system=params.get('multiSystem')||'either';if(!['either','classic','fibonacci','both'].includes(system))throw new Error('无效均线体系');
+ const multi:MultiFilters={system:system as MultiFilters['system'],lines:lines as 4|5,require60:params.get('multi60')==='1',middle:params.get('multiMiddle')==='1',dispersion:value('multiDense',10,1,10),volume20:value('multiVolume',1.2,1.2,10),volume5:value('multiVolume5',0,0,10),gain:value('multiGain',3,3,20),closeLocation:value('multiClose',.7,.7,1)};
  return {modes:modes as ScreenMode[],concentration,recentLimitUp:params.get('recentLimitUp')==='1',maxMarketCap:cap===''?null:Number(cap)*1e8,activity:params.get('activity')!=='0',auto:params.get('strategy')==='auto',multi};
 }
 const average=(rows:Candle[])=>rows.length?rows.reduce((s,c)=>s+c.volume,0)/rows.length:0;
 export function patternMatches(bars:Candle[],now=new Date(),analysis?:GuideAnalysis):PatternMatch[]{
  if(bars.length<65)return [];const last=bars.at(-1)!,prev=bars.at(-2)!,n=bars.length,out:PatternMatch[]=[];
- const map=Object.fromEntries([5,10,20,30,60].map(p=>[p,new Map(sma(bars,p).map(v=>[v.time,v.value]))])),ma=(p:number,i=n-1)=>map[p].get(bars[i]?.time)||0;
+ const map=Object.fromEntries([...new Set([5,10,20,30,60,...CLASSIC_MA,...FIBONACCI_MA])].map(p=>[p,new Map(sma(bars,p).map(v=>[v.time,v.value]))])),ma=(p:number,i=n-1)=>map[p]?.get(bars[i]?.time)??NaN;
  const volume=average(bars.slice(-21,-1)),ratio=volume>0?last.volume/volume:0,gain=(last.close/prev.close-1)*100;
  const add=(mode:ScreenMode,reasons:string[])=>out.push({mode,label:SCREEN_MODES[mode],reasons});
  const g=analysis||analyzeGuide(bars,{now});if(g.currentLaunch||['确认观察','开花确认'].includes(g.stage))add('bloom',[g.stage,`粘合 ${g.adhesionPct?.toFixed(2)}%；放量穿线与后续确认按指南固定五线核验`]);

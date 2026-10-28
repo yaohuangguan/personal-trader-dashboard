@@ -1,3 +1,7 @@
+import {chartStudy} from '../shared/chart-study';
+import {parseMAPeriods} from '../shared/ma-system';
+import {watchSyncRoute} from './watch-sync';
+import {indicatorMarks} from '../shared/indicator-marks';
 import {analyzeStrategy} from '../shared/strategy';
 import {loadTradeReview} from './trade-review';
 import {reviewedPatternMarks} from '../shared/pattern-marks';
@@ -7,6 +11,7 @@ import {marketContext} from '../shared/market-context';
 import {scannerCall} from './full-market-scanner';
 import {level2,type Level2Env} from './level2';
 import {shareRoute,type ShareStore} from './shares';
+import {clientMigrationRoute} from './client-migration';
 import {guideAction} from '../shared/guide-action';
 import {guideScore} from '../shared/guide-score';
 import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
@@ -378,13 +383,14 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
   const key='mobile-analysis:'+symbol,cached=memory.get(key);let data:MarketPayload;
   if(cached&&cached.until>Date.now())data=cached.body as MarketPayload;else{data=await market(symbol,env);memory.set(key,{until:Date.now()+60000,body:data});}
-  const decision=url.searchParams.get('review')==='1'?await loadTradeReview(symbol,data):null;
+  const selectedMA=parseMAPeriods(url.searchParams.get('ma'));
+  const decision=url.searchParams.get('review')==='1'?await loadTradeReview(symbol,data,selectedMA):null;
   if(decision)data=decision.market;
   const guide=analyzeGuide(data.candles),character=guide.asOf?stockCharacter(data.candles,guide.asOf):null;
   const candidate=screenCandidate({symbol,name:data.name,price:data.last,changePercent:data.changePercent,amount:null,turnover:null},guide,data.provider);if(candidate){candidate.character=character;candidate.risks=[...candidate.risks,...(character?.warnings||[])];}
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
-  const strategy=decision?.strategy||analyzeStrategy(data.candles,{symbol});
-  const response=json({available:true,strategy,review:decision?.review,patternMarks:reviewedPatternMarks(data.candles,strategy,new Date(),{symbol,name:data.name}),patternCoverage:GUIDE_PATTERN_COVERAGE,strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
+  const strategy=decision?.strategy||analyzeStrategy(data.candles,{symbol,name:data.name,maPeriods:selectedMA});
+  const response=json({available:true,strategy,review:decision?.review,patternMarks:reviewedPatternMarks(data.candles,strategy,new Date(),{symbol,name:data.name,maPeriods:selectedMA}),indicatorMarks:indicatorMarks(data.candles),maPeriods:strategy.plan.maPeriods,patternCoverage:GUIDE_PATTERN_COVERAGE,strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
   response.headers.set('cache-control','no-store');return response;
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
@@ -499,6 +505,15 @@ export default {
  async fetch(request:Request,env:Env):Promise<Response>{
   try {
    const incoming=new URL(request.url);
+   const migration=await clientMigrationRoute(request,env.SHARES);if(migration)return migration;
+   const synced=await watchSyncRoute(request,env.MARKET_SCANNER);if(synced)return synced;
+   if(new URL(request.url).pathname==='/api/chart-study'){
+    if(request.method!=='POST')return json({error:'Method not allowed'},405);
+    const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string};
+    if(!Array.isArray(body.candles)||body.candles.length>1500||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
+    const ma=parseMAPeriods(body.ma.join(','));return json(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit}));
+   }
+
    if(env.PUBLIC_ORIGIN&&incoming.hostname==='personal-market-atlas.nzs.workers.dev'&&request.method==='GET'&&!incoming.pathname.startsWith('/api/'))return new Response(null,{status:308,headers:{location:env.PUBLIC_ORIGIN+incoming.pathname+incoming.search,'cache-control':'public, max-age=300'}});
    if(env.LEGACY_STATE&&incoming.pathname.startsWith('/api/close-report/'))return env.LEGACY_STATE.fetch(request);
    const share=await shareRoute(request,env.SHARES,env.PUBLIC_ORIGIN);if(share)return share;

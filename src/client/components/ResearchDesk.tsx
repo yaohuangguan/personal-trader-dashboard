@@ -1,3 +1,4 @@
+import {migrateMAPreferences} from '../../shared/chart-indicators';
 import ResizeRail,{usePanelWidth} from './ResizeRail';
 import type {CSSProperties} from 'react';
 import StockSnapshot from './StockSnapshot';
@@ -89,7 +90,9 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   const [externalSector, setExternalSector] = useState<Sector | null>(null);
   const [rules, setRules] = useState<WatchRule[]>(readRules), [alertOpen, setAlertOpen] = useState(false), [alertDirection, setAlertDirection] = useState<'above' | 'below'>('above'), [alertValue, setAlertValue] = useState(''), [alertMessage, setAlertMessage] = useState('');
   const chinese = /^\d{6}\.(SH|SZ|BJ)$/.test(symbol);
-  const decision=useLiveEndpoint<DecisionPayload>(chinese?'/api/analysis?symbol='+symbol+'&review=1':null,60000,auto);
+  const readMA=()=>{try{return migrateMAPreferences(JSON.parse(localStorage.getItem('atlas.chart.ma.v2')||'null')).filter(p=>p.enabled).map(p=>p.period).join(',');}catch{return '5,13,20,30,60,120,144,250';}};
+  const [maKey,setMaKey]=useState(readMA);useEffect(()=>{const read=()=>setMaKey(readMA());window.addEventListener('atlas:ma-changed',read);return()=>window.removeEventListener('atlas:ma-changed',read);},[]);
+  const decision=useLiveEndpoint<DecisionPayload>(chinese?'/api/analysis?symbol='+symbol+'&review=1&ma='+maKey:null,60000,auto);
   const market=decision.data?.market||baseMarket;
   const symbols = useMemo(() => [...new Set([symbol, ...INDEXES, ...watchlist, ...rules.filter(r => !r.firedAt).map(r => r.symbol)].filter(s => /^\d{6}\.(SH|SZ|BJ)$/.test(s)))].slice(0, 60).sort().join(','), [symbol, watchlist, rules]);
   const quotes = useLiveEndpoint<QuotesPayload>('/api/desk/quotes?symbols=' + symbols, 5000, auto);

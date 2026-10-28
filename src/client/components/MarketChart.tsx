@@ -1,3 +1,6 @@
+import {chartStudy} from '../../shared/chart-study';
+import {indicatorOverlay} from './chart-indicator-overlay';
+import {CLASSIC_MA,FIBONACCI_MA} from '../../shared/ma-system';
 import {chartPatternOverlay} from './chart-pattern-overlay';
 import {guidePatternMarks} from '../../shared/guide-patterns';
 import type {TradeMarker} from '../../shared/guide-action';
@@ -35,7 +38,7 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: string) => range === 'ALL' ? length : (unit==='week'?[4,13,26,52]:unit==='month'?[1,3,6,12]:[22,66,132,264])[['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, tradeMarkers=NO_TRADES,patternMarkers,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+export default function MarketChart({ candles, compact = false, symbol, volumeUnit, guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
   const display=usePreferences(),light=display.theme==='light';
   const chipEligible=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&!(/^(?:000\d{3}\.SH|399\d{3}\.SZ)$/.test(symbol));
   const [chipsOpen,setChipsOpen]=useState(false);
@@ -51,7 +54,10 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const extra=useMemo(()=>({boll:bollinger(candles),rsi:rsi(candles),sar:parabolicSar(candles)}),[candles]);
   const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
   const [shapesVisible,setShapesVisible]=useState(true),[crossMarkers,setCrossMarkers]=useState(false);
-  const shapes=useMemo(()=>patternMarkers||(unit==='day'?patternMarks(candles):unit==='week'||unit==='month'?guidePatternMarks(candles,new Date(),unit):[]),[patternMarkers,candles,unit]);
+  const study=useMemo(()=>chartStudy(candles,{symbol,unit,maPeriods:preferences.filter(p=>p.enabled).map(p=>p.period)}),[candles,symbol,unit,preferences]);
+  const shapes=study.patternMarks,tradeMarkers=unit==='day'?study.tradeMarkers:providedTrades;
+  const [indicatorLabels,setIndicatorLabels]=useState(true);
+
   const [hoverTime, setHoverTime] = useState<string | null>(null), [chartError, setChartError] = useState('');
   const indicators = useMemo(() => chartIndicators(candles, preferences), [candles, preferences]);
   const candleByTime = useMemo(() => new Map(candles.map(c => [c.time, c])), [candles]);
@@ -65,7 +71,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const activePeriods = preferences.filter(p => p.enabled).map(p => p.period).sort((a, b) => a - b);
   const maxPeriod = Math.max(0, ...activePeriods);
 
-  useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(preferences)); } catch { /* storage can be disabled */ } }, [preferences]);
+  useEffect(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(preferences));window.dispatchEvent(new Event('atlas:ma-changed')); } catch { /* storage can be disabled */ } }, [preferences]);
   useEffect(() => { visibleRef.current = null; setHoverTime(null); }, [symbol, candles]);
   useEffect(() => {
     if (!expanded) return;
@@ -148,6 +154,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         const bars = chart.addHistogramSeries({ priceScaleId: 'left', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
         bars.setData(candles.map(c => ({ time: chartTime(c.time), value: c.volume, color: c.close >= c.open ? UP : DOWN })));
         addLine(chart, indicators.volume5, '#f1d55c'); addLine(chart, indicators.volume20, '#d968e8');
+        if(indicatorLabels)removers.push(indicatorOverlay(volumeRef.current,chart,bars,study.indicatorMarks.filter(m=>m.pane==='VOL'),chartTime));
         panes.push({ chart, anchor: bars, values: new Map(candles.map(c => [c.time, c.volume])) });
       }
       if (!compact && panels.MACD && macdRef.current) {
@@ -161,6 +168,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         bars.createPriceLine({ price: 0, color: '#505256', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         const line = addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dif })), '#ebedf1');
         addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dea })), '#f1d55c');
+        if(indicatorLabels)removers.push(indicatorOverlay(macdRef.current,chart,line,study.indicatorMarks.filter(m=>m.pane==='MACD'),chartTime));
         panes.push({ chart, anchor: line, values: new Map(indicators.macd.map(p => [p.time, p.dif])) });
       }
       if (!compact && panels.KDJ && kdjRef.current) {
@@ -173,6 +181,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           } });
           return line;
         });
+        if(indicatorLabels)removers.push(indicatorOverlay(kdjRef.current,chart,lines[0],study.indicatorMarks.filter(m=>m.pane==='KDJ'),chartTime));
         for (const level of [20, 80]) lines[0].createPriceLine({ price: level, color: '#35373b', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         panes.push({ chart, anchor: lines[0], values: new Map(indicators.kdj.map(p => [p.time, p.k])) });
       }
@@ -229,7 +238,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers]);
+  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers,indicatorLabels,study]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
@@ -259,7 +268,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         setPreferences(next); setSettingsOpen(false);
       }}>
         <div className="terminal-settings-heading"><b>{uiText("自定义均线")}</b><span>{uiText("按交易日计算 · 参数保存在本机")}</span></div>
-        <div className="terminal-settings-grid">{uiText(draft.map((line, i) => <div className="terminal-ma-setting" key={i}>
+        <div className="terminal-settings-actions">{[['经典',CLASSIC_MA],['斐波那契',FIBONACCI_MA]].map(([label,periods])=><button type="button" key={String(label)} onClick={()=>setDraft(old=>old.map((p,i)=>({...p,period:String((periods as number[])[i]),enabled:true})))}>{String(label)}</button>)}</div><div className="terminal-settings-grid">{uiText(draft.map((line, i) => <div className="terminal-ma-setting" key={i}>
           <input type="checkbox" aria-label={uiText('启用第' + (i + 1) + '条均线')} checked={line.enabled} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, enabled: event.target.checked } : p))} />
           <label htmlFor={'ma-period-' + i}>MA</label><input id={'ma-period-' + i} aria-label={uiText('第' + (i + 1) + '条均线周期')} type="number" min="1" max="500" step="1" required value={line.period} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, period: event.target.value } : p))} />
           <input type="color" aria-label={uiText('第' + (i + 1) + '条均线颜色')} value={line.color} onChange={event => setDraft(old => old.map((p, n) => n === i ? { ...p, color: event.target.value } : p))} />
@@ -277,7 +286,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
     {uiText(!compact && chipsOpen && chipEligible && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
     {uiText(!compact && <>
-      <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ','RSI'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={shapesVisible} onChange={event=>setShapesVisible(event.target.checked)}/>{uiText("形态标注")}</label><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("买卖点")}</label><label><input type="checkbox" checked={crossMarkers} onChange={event=>setCrossMarkers(event.target.checked)}/>{uiText("MA交叉")}</label></div>
+      <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ','RSI'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={shapesVisible} onChange={event=>setShapesVisible(event.target.checked)}/>{uiText("形态标注")}</label><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("买卖点")}</label><label><input type="checkbox" checked={crossMarkers} onChange={event=>setCrossMarkers(event.target.checked)}/>{uiText("MA交叉")}</label><label><input type="checkbox" checked={indicatorLabels} onChange={e=>setIndicatorLabels(e.target.checked)}/>指标标注</label></div>
       {uiText(panels.VOL && <section className="terminal-indicator" aria-label={uiText("VOL 成交量副图")}>
         <div className="terminal-indicator-heading"><b>VOL <small>{uiText(volumeUnit ? '(' + volumeUnit + ')' : '')}</small></b><span>VOLUME <em>{uiText(volumeNumber(current?.volume))}</em></span><span style={{color:chartColor('#f1d55c',light)}}>MA5 <em>{uiText(volumeNumber(current && volume5.get(current.time)))}</em></span><span style={{color:chartColor('#d968e8',light)}}>MA20 <em>{uiText(volumeNumber(current && volume20.get(current.time)))}</em></span></div><div ref={volumeRef} data-testid="vol-pane" />
       </section>)}
@@ -288,7 +297,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         <div className="terminal-indicator-heading"><b>KDJ <small>(9,3,3)</small></b><span style={{color:chartColor('#ebedf1',light)}}>K <em>{uiText(number(currentKDJ?.k))}</em></span><span style={{color:chartColor('#f1d55c',light)}}>D <em>{uiText(number(currentKDJ?.d))}</em></span><span style={{color:chartColor('#d968e8',light)}}>J <em>{uiText(number(currentKDJ?.j))}</em></span></div><div ref={kdjRef} data-testid="kdj-pane" />
       </section>)}
       {panels.RSI&&<section className="terminal-indicator" aria-label="RSI"><div className="terminal-indicator-heading"><b>RSI (14)</b><span>{number(extra.rsi.find(p=>p.time===current?.time)?.value)}</span></div><div ref={rsiRef} data-testid="rsi-pane"/></section>}
-      <div className="terminal-status"><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{uiText(activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中')}</span><span>{uiText(candles.length)} {uiText("根K线 · 拖动平移 / 滚轮缩放")}</span></div>
+      <div className="terminal-status" title={study.method}><span>形态与买卖点依据当前 MA{activePeriods.join('/')} · MACD/KDJ固定参数</span><span className={indicators.expanded ? 'terminal-bloom' : ''}><i />{uiText(activePeriods.length < 2 ? '启用至少两条均线以观察展开' : candles.length < maxPeriod + 5 ? '长均线预热中 · 展开观察需 ' + (maxPeriod + 5) + ' 根K线' : indicators.expanded ? '均线多头展开' : '均线结构观察中')}</span><span>{uiText(candles.length)} {uiText("根K线 · 拖动平移 / 滚轮缩放")}</span></div>
       <details className="terminal-method"><summary>{uiText("交叉和展开标记的口径")}</summary><p>{uiText("金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；“指南启动 / 开花确认”标记另按姚记指南固定MA5/10/20/30/60、粘合、放量穿线及后续3–5根确认计算，不随图表参数改变。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。")}</p></details>
     </>)}
   </div>;

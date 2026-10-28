@@ -1,14 +1,12 @@
 import type {SessionReview} from './session-review';
-import {analyzeGuide} from './guide-analysis';
-import {stockCharacter} from './stock-character';
-import {guideAction} from './guide-action';
+import {analyzeStrategy,type StrategyPlan} from './strategy';
 import type {Candle} from './types';
 import type {Snapshot,IntradayPayload} from './desk-types';
 import {beijingParts} from './monitor';
 import {marketSession} from './desk-types';
 
 export type TrendDimension={key:string;weight:number;score:number|null;value:number|null;unit:string};
-export type DailyTrend={sessionReview?:SessionReview;operation:ReturnType<typeof guideAction>|null;available:boolean;date:string|null;asOf:string|null;current:boolean;provisional:boolean;score:number|null;label:string;coveredWeight:number;dimensions:TrendDimension[];observations:string[];observationsEn:string[];risks:string[];risksEn:string[];levels:{support:number|null;resistance:number|null;vwap:number|null};volumeRatio:number|null;source:string;method:string};
+export type DailyTrend={sessionReview?:SessionReview;operation:(StrategyPlan&{notice:string})|null;available:boolean;date:string|null;asOf:string|null;current:boolean;provisional:boolean;score:number|null;label:string;coveredWeight:number;dimensions:TrendDimension[];observations:string[];observationsEn:string[];risks:string[];risksEn:string[];levels:{support:number|null;resistance:number|null;vwap:number|null};volumeRatio:number|null;source:string;method:string};
 const clamp=(n:number)=>Math.max(0,Math.min(100,n));
 const valid=(c:Candle)=>/^\d{4}-\d{2}-\d{2}$/.test(c.time)&&[c.open,c.high,c.low,c.close,c.volume].every(Number.isFinite)&&c.low>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&c.volume>=0;
 const pct=(n:number)=>`${n>=0?'+':''}${n.toFixed(2)}%`;
@@ -58,7 +56,7 @@ export function dailyTrend(input:Candle[],options:{symbol:string;quote?:Snapshot
  if(move<0&&(result.volumeRatio??0)>=1.5)result.risks.push('下跌且累计量已超过前20日均量1.5倍');
  if(last.high===last.low)result.risks.push('一字价格不能说明交易流动性');
  if(result.provisional)result.risks.push('盘中评分随行情变化，等待收盘复核');
- const actionBars=[...prior,last];result.operation=guideAction(analyzeGuide(actionBars,{now}),stockCharacter(actionBars,last.time));
+ const actionBars=[...prior,last];const strategy=analyzeStrategy(actionBars,{now,symbol:options.symbol,amount:q?.amount??null});result.operation={...strategy.plan,notice:strategy.method};
  return finishTrend(result);
 }
 

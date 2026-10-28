@@ -1,0 +1,9 @@
+import type {IChartApi,ISeriesApi,Time} from 'lightweight-charts';
+import type {IndicatorMark} from '../../shared/indicator-marks';
+/** DOM labels cannot change the series price range or pane height. */
+export function indicatorOverlay(el:HTMLElement,chart:IChartApi,series:ISeriesApi<'Line'>|ISeriesApi<'Histogram'>,marks:IndicatorMark[],time:(v:string)=>Time){
+ const layer=document.createElement('div');layer.style.cssText='position:absolute;inset:0;pointer-events:none;overflow:hidden';el.style.position='relative';el.appendChild(layer);
+ const update=()=>{layer.replaceChildren();const candidates=marks.map(m=>({m,x:chart.timeScale().timeToCoordinate(time(m.time)),y:series.priceToCoordinate(m.value)})).filter(v=>v.x!==null&&v.y!==null&&v.x>55&&v.x<el.clientWidth-12&&v.y>5&&v.y<el.clientHeight-15).sort((a,b)=>Number(b.m.kind.includes('divergence'))-Number(a.m.kind.includes('divergence'))||b.x!-a.x!);const used:{x:number;y:number}[]=[];
+  for(const v of candidates){if(used.length>=4)break;const y=Math.max(3,Math.min(el.clientHeight-22,v.y!+(v.m.bullish?8:-21))),x=Math.max(57,Math.min(el.clientWidth-95,v.x!-30));if(used.some(p=>Math.abs(p.x-x)<92&&Math.abs(p.y-y)<23))continue;used.push({x,y});const label=document.createElement('span');label.textContent=v.m.label+(v.m.provisional?'·预警':'');label.title=v.m.detail;label.style.cssText=`position:absolute;left:${x}px;top:${y}px;white-space:nowrap;font:11px system-ui;color:${v.m.bullish?'#c48488':'#6eaaa2'};background:var(--panel-bg,#141416);padding:1px 3px;pointer-events:auto`;layer.appendChild(label);}
+ };chart.timeScale().subscribeVisibleLogicalRangeChange(update);const observer=new ResizeObserver(update);observer.observe(el);update();return()=>{observer.disconnect();chart.timeScale().unsubscribeVisibleLogicalRangeChange(update);layer.remove();};
+}

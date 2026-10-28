@@ -1,5 +1,5 @@
 import {shareArticle} from '../shared/share';
-export interface ShareStore {get(key:string):Promise<string|null>;put(key:string,value:string):Promise<void>}
+export interface ShareStore {get(key:string):Promise<string|null>;put(key:string,value:string,options?:{expirationTtl?:number}):Promise<void>}
 const requests=new Map<string,{at:number;count:number}>();
 export async function shareRoute(request:Request,store?:ShareStore,canonicalOrigin?:string):Promise<Response|null>{
  const u=new URL(request.url),read=/^\/api\/shares\/([A-Za-z0-9_-]{16})$/.exec(u.pathname),create=u.pathname==='/api/shares';
