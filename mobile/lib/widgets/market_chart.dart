@@ -63,14 +63,27 @@ class _MarketChartState extends State<MarketChart> {
   int studyRequest = 0;
   String studyKey = '', studyStatus = '标注依据当前MA · 核验中';
   bool volume = true, macd = true, kdj = true, markers = true;
-  bool shapeMarkers = true, crossMarkers = false;
+  bool shapeMarkers = true, crossMarkers = false, indicatorLabels = true;
+  Timer? studyRetry;
+  int studyRetries = 0;
+  bool studyBusy = false;
   final Map<int, Offset> pointers = {};
   double? pinchDistance;
 
   @override
   void initState() {
     super.initState();
-    final raw = context.read<AtlasStore>().prefs.getString('ma');
+    final prefs = context.read<AtlasStore>().prefs;
+    try {
+      final a = obj(
+        jsonDecode(prefs.getString('chart.annotations.v1') ?? '{}'),
+      );
+      markers = a['trades'] != false;
+      shapeMarkers = a['shapes'] != false;
+      indicatorLabels = a['indicators'] != false;
+      crossMarkers = a['crosses'] == true;
+    } catch (_) {}
+    final raw = prefs.getString('ma');
     try {
       if (raw != null) {
         final saved = rows(jsonDecode(raw)).map(MaLine.fromJson).toList();
@@ -142,6 +155,12 @@ class _MarketChartState extends State<MarketChart> {
       }
       offset = offset.clamp(0, math.max(0, widget.bars.length - 1));
     }
+  }
+
+  @override
+  void dispose() {
+    studyRetry?.cancel();
+    super.dispose();
   }
 
   int get end => viewport.end;
@@ -256,6 +275,11 @@ class _MarketChartState extends State<MarketChart> {
                   Text(
                     tr(ctx, '均线参数'),
                     style: Theme.of(ctx).textTheme.titleLarge,
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: annotationSettings,
+                    icon: const Icon(Icons.sell_outlined, size: 16),
+                    label: Text(tr(ctx, '标注设置')),
                   ),
                   const SizedBox(height: 16),
                   Wrap(
@@ -417,7 +441,17 @@ class _MarketChartState extends State<MarketChart> {
       ),
     );
     if (!mounted) return;
-    final raw = context.read<AtlasStore>().prefs.getString('ma');
+    final prefs = context.read<AtlasStore>().prefs;
+    try {
+      final a = obj(
+        jsonDecode(prefs.getString('chart.annotations.v1') ?? '{}'),
+      );
+      markers = a['trades'] != false;
+      shapeMarkers = a['shapes'] != false;
+      indicatorLabels = a['indicators'] != false;
+      crossMarkers = a['crosses'] == true;
+    } catch (_) {}
+    final raw = prefs.getString('ma');
     if (raw != null) {
       final saved = rows(jsonDecode(raw)).map(MaLine.fromJson).toList();
       if (saved.length == 8 &&
@@ -430,12 +464,21 @@ class _MarketChartState extends State<MarketChart> {
     }
   }
 
-  Future<void> refreshStudy() async {
+  String get currentStudyKey {
+    final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
+    return '${widget.symbol}:${widget.unit}:$periods:${widget.amount}:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
+  }
+
+  Future<void> refreshStudy({bool retry = false}) async {
     if (!mounted || widget.bars.isEmpty) return;
     final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
-    final key =
-        '${widget.symbol}:${widget.unit}:$periods:${widget.amount}:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
-    if (studyKey == key) return;
+    final key = currentStudyKey;
+    if (studyBusy || studyKey == key && !retry) return;
+    if (studyKey != key) {
+      studyRetries = 0;
+      studyRetry?.cancel();
+    }
+    studyBusy = true;
     final sameParameters =
         studyKey.split(':').take(3).join(':') ==
         key.split(':').take(3).join(':');
@@ -484,7 +527,7 @@ class _MarketChartState extends State<MarketChart> {
               .toList(),
         },
       );
-      if (!mounted || request != studyRequest) return;
+      if (!mounted || request != studyRequest || key != currentStudyKey) return;
       setState(() {
         studyTrades = rows(result['tradeMarkers']);
         studyPatterns = rows(result['patternMarks']);
@@ -492,8 +535,22 @@ class _MarketChartState extends State<MarketChart> {
         studyStatus = '当前 MA${periods.join('/')} · 形态量价 v4';
       });
     } catch (_) {
-      if (mounted && request == studyRequest) {
-        setState(() => studyStatus = '标注更新失败 · 点此重试');
+      if (mounted && request == studyRequest && key == currentStudyKey) {
+        setState(() => studyStatus = '标注更新失败 · 保留历史标注，可点此重试');
+        if (studyRetries < 2) {
+          studyRetries++;
+          studyRetry?.cancel();
+          studyRetry = Timer(Duration(seconds: studyRetries == 1 ? 5 : 20), () {
+            if (mounted) refreshStudy(retry: true);
+          });
+        }
+      }
+    } finally {
+      studyBusy = false;
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) refreshStudy();
+        });
       }
     }
   }
@@ -566,6 +623,85 @@ class _MarketChartState extends State<MarketChart> {
           icon: Icon(icon, size: 17),
         ),
       );
+  void saveAnnotations() {
+    context.read<AtlasStore>().prefs.setString(
+      'chart.annotations.v1',
+      jsonEncode({
+        'trades': markers,
+        'shapes': shapeMarkers,
+        'indicators': indicatorLabels,
+        'crosses': crossMarkers,
+      }),
+    );
+  }
+
+  Future<void> annotationSettings() => showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, update) => SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                tr(ctx, '标注设置'),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              for (final item in [
+                ('形态标注', shapeMarkers),
+                ('买卖点', markers),
+                ('指标标注', indicatorLabels),
+                ('MA交叉', crossMarkers),
+              ])
+                SwitchListTile(
+                  title: Text(tr(ctx, item.$1)),
+                  subtitle: item.$1 == '指标标注'
+                      ? Text(tr(ctx, 'MACD／KDJ 金叉死叉、顶底背离与 VOL 量能标注'))
+                      : null,
+                  value: item.$2,
+                  onChanged: (value) {
+                    setState(() {
+                      switch (item.$1) {
+                        case '形态标注':
+                          shapeMarkers = value;
+                        case '买卖点':
+                          markers = value;
+                        case '指标标注':
+                          indicatorLabels = value;
+                        default:
+                          crossMarkers = value;
+                      }
+                    });
+                    saveAnnotations();
+                    update(() {});
+                  },
+                ),
+              Text(
+                tr(ctx, '开关只控制图表显示，设置保存在本设备；无信号不等于开关关闭。'),
+                style: TextStyle(color: muted, fontSize: 13),
+              ),
+              TextButton(
+                onPressed: () {
+                  studyKey = '';
+                  studyRetries = 0;
+                  studyRetry?.cancel();
+                  refreshStudy();
+                },
+                child: Text(studyStatus),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
   Future<void> indicatorSettings() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -613,6 +749,7 @@ class _MarketChartState extends State<MarketChart> {
                   ('形态标注', shapeMarkers),
                   ('买卖点', markers),
                   ('MA交叉', crossMarkers),
+                  ('指标标注', indicatorLabels),
                 ])
                   SwitchListTile(
                     dense: true,
@@ -633,10 +770,13 @@ class _MarketChartState extends State<MarketChart> {
                             markers = v;
                           case 'MA交叉':
                             crossMarkers = v;
+                          case '指标标注':
+                            indicatorLabels = v;
                           default:
                             rsi = v;
                         }
                       });
+                      saveAnnotations();
                       update(() {});
                     },
                   ),
@@ -804,6 +944,7 @@ class _MarketChartState extends State<MarketChart> {
                   _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
                 _smallIcon(Icons.show_chart, '图表指标', indicatorSettings),
                 _smallIcon(Icons.tune, '均线参数', settings),
+                _smallIcon(Icons.sell_outlined, '标注设置', annotationSettings),
                 _smallIcon(Icons.info_outline, '标注依据', annotationDetails),
                 if (!widget.expanded)
                   _smallIcon(Icons.fullscreen, '展开图表', expand),
@@ -1182,7 +1323,9 @@ class _MarketChartState extends State<MarketChart> {
                       rsi: rsi,
                       trades: studyTrades,
                       patterns: studyPatterns,
-                      indicatorMarks: studyIndicators,
+                      indicatorMarks: indicatorLabels
+                          ? studyIndicators
+                          : const [],
                       showPatterns: shapeMarkers,
                       showCrosses: crossMarkers,
                     ),

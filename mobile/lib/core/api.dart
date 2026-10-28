@@ -66,7 +66,7 @@ class AtlasApi {
           },
         )
         .timeout(timeout);
-    final data = obj(jsonDecode(utf8.decode(response.bodyBytes)));
+    final data = decodeResponse(response);
     if (response.statusCode >= 400 ||
         data['available'] == false ||
         data['error'] != null) {
@@ -89,11 +89,28 @@ class AtlasApi {
           body: jsonEncode(body),
         )
         .timeout(const Duration(seconds: 40));
-    final data = obj(jsonDecode(utf8.decode(response.bodyBytes)));
+    final data = decodeResponse(response);
     if (response.statusCode >= 400 || data['error'] != null) {
       throw ApiException(str(data['error']), response.statusCode);
     }
     return data;
+  }
+
+  Json decodeResponse(http.Response response) {
+    final text = utf8.decode(response.bodyBytes, allowMalformed: true);
+    try {
+      return obj(jsonDecode(text));
+    } catch (_) {
+      final limit =
+          text.contains('Worker exceeded resource limits') ||
+          text.contains('Error 1102');
+      throw ApiException(
+        limit
+            ? 'Cloudflare 分析计算资源达到上限，K线与其他数据可独立查看；可稍后重试。'
+            : '数据服务暂未返回有效响应（HTTP ${response.statusCode}），请稍后重试。',
+        response.statusCode,
+      );
+    }
   }
 
   void dispose() => client.close();

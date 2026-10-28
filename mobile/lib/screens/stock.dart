@@ -35,10 +35,10 @@ class StockPage extends StatefulWidget {
 class _StockPageState extends State<StockPage> {
   final snapshotKey = GlobalKey();
   bool snapshotBusy = false;
-  Json? quote, analysis, trend;
+  Json? quote, analysis, trend, historyMarket;
   String? trendError;
   bool trendLoading = false;
-  String? quoteError, analysisError;
+  String? quoteError, analysisError, historyError;
   String tab = 'chart', timeframe = 'day', newsTab = 'news';
   bool auto = true, loading = false;
   Timer? timer;
@@ -54,6 +54,7 @@ class _StockPageState extends State<StockPage> {
     chartMARevision = context.read<AtlasStore>().chartRevision;
     chartMARevision.addListener(maChanged);
     refreshQuote();
+    refreshHistory();
     refreshAnalysis();
     refreshTrend();
     timer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -77,6 +78,27 @@ class _StockPageState extends State<StockPage> {
     super.dispose();
   }
 
+  Future<void> refreshHistory() async {
+    if (!cnStock(widget.symbol)) return;
+    try {
+      final data = await context.read<AtlasStore>().api.get(
+        '/api/market',
+        parameters: {'symbol': widget.symbol},
+      );
+      if (mounted) {
+        setState(() {
+          historyMarket = data;
+          historyError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => historyError = e.toString());
+    }
+  }
+
+  Json get chartMarket => rows(obj(analysis?['market'])['candles']).isNotEmpty
+      ? obj(analysis?['market'])
+      : historyMarket ?? {};
   Future<void> refreshQuote() async {
     if (!cnStock(widget.symbol)) return;
     try {
@@ -169,18 +191,18 @@ class _StockPageState extends State<StockPage> {
   Json get q =>
       quote ??
       {
-        'name': obj(analysis?['market'])['name'],
-        'price': obj(analysis?['market'])['last'],
-        'changePercent': obj(analysis?['market'])['changePercent'],
-        'asOf': obj(analysis?['market'])['asOf'],
+        'name': chartMarket['name'],
+        'price': chartMarket['last'],
+        'changePercent': chartMarket['changePercent'],
+        'asOf': chartMarket['asOf'],
       };
   String get volumeUnit =>
-      str(obj(analysis?['market'])['provider'], '').startsWith('新浪') ||
+      str(chartMarket['provider'], '').startsWith('新浪') ||
           RegExp(r'^68[89]').hasMatch(widget.symbol)
       ? '股'
       : '手';
   List<Bar> get bars => patchDailyQuote(
-    rows(obj(analysis?['market'])['candles']).map(Bar.fromJson).toList(),
+    rows(chartMarket['candles']).map(Bar.fromJson).toList(),
     q,
     volumeUnit,
   );
@@ -787,7 +809,7 @@ class _StockPageState extends State<StockPage> {
   );
   Widget _chart(double height, String name) {
     if (timeframe == 'day') {
-      if (analysis == null) return _waiting();
+      if (bars.isEmpty) return _waiting();
       return MarketChart(
         key: ValueKey('${widget.symbol}-day'),
         bars: bars,

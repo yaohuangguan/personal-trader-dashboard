@@ -1,4 +1,5 @@
 import {patternMarks,type PatternMark} from './pattern-marks';
+import {withStrategyEvidence} from './strategy-evidence';
 import {indicatorMarks} from './indicator-marks';
 import {CLASSIC_MA,maPeriods,maRole} from './ma-system';
 import type {Candle} from './types';
@@ -32,8 +33,9 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
  rows.forEach((c,i)=>{sums.push(sums[i]+c.close);volumes.push(volumes[i]+c.volume);ranges.push(ranges[i]+Math.max(c.high-c.low,Math.abs(c.high-(rows[i-1]?.close??c.open)),Math.abs(c.low-(rows[i-1]?.close??c.open))));});
  const selected=maPeriods(options.maPeriods),decisionPeriod=maRole(selected,60),trendPeriod=maRole(selected,20),rawMA=(p:number,i:number)=>i+1>=p?(sums[i+1]-sums[i+1-p])/p:NaN,ma=(p:number,i:number)=>rawMA(maRole(selected,p),i);
  const shapeMap=new Map<string,PatternMark[]>(),indicatorMap=new Map<string,ReturnType<typeof indicatorMarks>>();
- for(const mark of patternMarks(rows,now,{symbol:options.symbol,name:options.name,maPeriods:selected}))shapeMap.set(mark.time,[...(shapeMap.get(mark.time)||[]),mark]);
- for(const mark of indicatorMarks(rows,now))indicatorMap.set(mark.time,[...(indicatorMap.get(mark.time)||[]),mark]);
+ const shapes=patternMarks(rows,now,{symbol:options.symbol,name:options.name,maPeriods:selected}),oscillatorMarks=indicatorMarks(rows,now);
+ for(const mark of shapes)shapeMap.set(mark.time,[...(shapeMap.get(mark.time)||[]),mark]);
+ for(const mark of oscillatorMarks)indicatorMap.set(mark.time,[...(indicatorMap.get(mark.time)||[]),mark]);
  const entryShapes=new Set(['multi','spider','cannon','pointer-confirmed','double-bottom','head-shoulders-bottom','rounding-bottom','old-duck','bear-trap-reclaim','morning-star','bull-engulf','breakout','reclaim','island-bottom','beauty-breakout']);
  const riskShapes=new Set(['bear-engulf','dark-cloud','evening-star','three-crows','double-top','head-shoulders-top','island-top','death-bloom','high-volume-bear','ma20-loss','vp-stall','high-volume-rejection']);
  const hist=new Map(macd(rows).map(p=>[p.time,p.histogram]));
@@ -157,5 +159,5 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
   }
   if(!localProvisional&&phase!==lastPhase){timeline.push({date:c.time,phase,label,reason:flat.reason});lastPhase=phase;}
  }
- return {version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes:episodes.slice(-6),method};
+ return withStrategyEvidence({version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes:episodes.slice(-6),method},shapes,oscillatorMarks,{symbol:options.symbol,name:options.name,maPeriods:selected},now);
 }

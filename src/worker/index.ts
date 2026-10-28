@@ -1,4 +1,5 @@
 import {chartStudy} from '../shared/chart-study';
+import {computeCache,studySession} from './compute-cache';
 import {parseMAPeriods} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
 import {indicatorMarks} from '../shared/indicator-marks';
@@ -512,7 +513,7 @@ export default {
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
     const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
     if(!Array.isArray(body.candles)||body.candles.length>1500||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
-    const ma=parseMAPeriods(body.ma.join(','));return json(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}));
+    const ma=parseMAPeriods(body.ma.join(','));return computeCache(request,'chart-study-v2:'+studySession()+':'+raw,300,()=>json(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null})));
    }
 
    // Old installed PWAs must download their same-origin shell before the new
@@ -533,6 +534,12 @@ export default {
    if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET'){if(!env.MARKET_SCANNER)return json({report:null});return json(await scannerCall(env.MARKET_SCANNER,'results'));}
    if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||request.headers.get('Authorization')!=='Bearer '+env.SCREEN_JOB_TOKEN)return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);return json(await scannerCall(env.MARKET_SCANNER,action!,JSON.parse(raw)));}
    const desk=await deskRoute(request);if(desk)return desk;
+   if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
+    const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    const periods=parseMAPeriods(p.get('ma'));
+    return computeCache(request,'analysis-v2:'+studySession()+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,()=>handle(request,env));
+   }
+   if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v1:'+studySession()+':'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env));
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
   }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details))return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:new Date(new Date().setUTCHours(24,0,0,0)).toISOString()},503);return json({error:'Unexpected server error',details},500);}

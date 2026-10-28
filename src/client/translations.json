@@ -1476,5 +1476,9 @@
   "可直接查看机器人、创新药等概念成分；不同来源分类分别标识。": "Explore robotics, innovative drugs and other concepts. Each source keeps its own classification.",
   "重试原板块": "Retry original sector",
   "· 相关分类参考": "· Related classification",
-  "K线": "Chart"
+  "K线": "Chart",
+  "标注设置": "Annotation settings",
+  "指标标注": "Indicator annotations",
+  "MACD／KDJ 金叉死叉、顶底背离与 VOL 量能标注": "MACD / KDJ crosses and divergences, plus volume annotations",
+  "开关只控制图表显示，设置保存在本设备；无信号不等于开关关闭。": "These switches only control chart display and are saved on this device. No signal does not mean annotations are disabled."
 }

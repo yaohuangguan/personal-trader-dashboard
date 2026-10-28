@@ -20,7 +20,8 @@ export function useLiveEndpoint<T>(url: string | null, intervalMs = 0, enabled =
       const deadline = setTimeout(() => { timedOut = true; controller?.abort(); }, /analysis|trend|history|chips|market-pools|dragon/.test(url) ? 30000 : 15000);
       try {
         const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-        const body = await response.json();
+        const raw=await response.text();let body;
+        try{body=JSON.parse(raw);}catch{throw new Error(/Worker exceeded resource limits|Error 1102/.test(raw)?'Cloudflare 分析计算资源达到上限，K线可独立查看，请稍后重试。':'数据源返回异常响应（HTTP '+response.status+'），请稍后重试。');}
         if (!response.ok || body.available === false) throw new Error(body.reason || body.error || '数据暂不可用');
         if (!disposed) setState({ data: body as T, loading: false, error: '', updatedAt: Date.now() });
         if (intervalMs > 0 && intervalMs <= 5000 && Array.isArray(body.items) && body.items.length && body.items.every((q: { session?: string }) => q.session === 'closed')) nextInterval = 30000;
