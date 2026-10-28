@@ -4,6 +4,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/chart_harness.dart';
 
 void main() {
+  testWidgets(
+    'landscape indicator settings scroll to independent pattern and trade controls',
+    (tester) async {
+      tester.view.physicalSize = const Size(844, 390);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = await chartStore(), prices = ValueNotifier(chartFixture());
+      await tester.pumpWidget(chartHarness(store, prices));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('图表指标'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('MA交叉'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('MA交叉'));
+      await tester.pumpAndSettle();
+      expect(painter(tester).showCrosses, isTrue);
+      expect(painter(tester).showSignals, isTrue);
+      expect(painter(tester).showPatterns, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      store.dispose();
+      prices.dispose();
+    },
+  );
   testWidgets('MA editor survives negative iOS keyboard insets in landscape', (
     tester,
   ) async {

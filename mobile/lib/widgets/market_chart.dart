@@ -418,72 +418,74 @@ class _MarketChartState extends State<MarketChart> {
       context: context,
       useSafeArea: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                tr(ctx, '图表指标'),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
+        builder: (ctx, update) => SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  tr(ctx, '图表指标'),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Chips(
-                values: const {
-                  'MA': 'MA',
-                  'BOLL': 'BOLL (20,2)',
-                  'SAR': 'SAR (0.02,0.2)',
-                },
-                selected: overlay,
-                onSelected: (v) {
-                  setState(() => overlay = v);
-                  update(() {});
-                },
-              ),
-              for (final item in [
-                ('VOL', volume),
-                ('MACD', macd),
-                ('KDJ', kdj),
-                ('RSI (14)', rsi),
-                ('形态标注', shapeMarkers),
-                ('买卖点', markers),
-                ('MA交叉', crossMarkers),
-              ])
-                SwitchListTile(
-                  dense: true,
-                  title: Text(tr(ctx, item.$1)),
-                  value: item.$2,
-                  onChanged: (v) {
-                    setState(() {
-                      switch (item.$1) {
-                        case 'VOL':
-                          volume = v;
-                        case 'MACD':
-                          macd = v;
-                        case 'KDJ':
-                          kdj = v;
-                        case '形态标注':
-                          shapeMarkers = v;
-                        case '买卖点':
-                          markers = v;
-                        case 'MA交叉':
-                          crossMarkers = v;
-                        default:
-                          rsi = v;
-                      }
-                    });
+                const SizedBox(height: 12),
+                Chips(
+                  values: const {
+                    'MA': 'MA',
+                    'BOLL': 'BOLL (20,2)',
+                    'SAR': 'SAR (0.02,0.2)',
+                  },
+                  selected: overlay,
+                  onSelected: (v) {
+                    setState(() => overlay = v);
                     update(() {});
                   },
                 ),
-              Text(
-                tr(ctx, '指标按当前周期计算，历史不足时留空。'),
-                style: TextStyle(color: muted, fontSize: 13),
-              ),
-            ],
+                for (final item in [
+                  ('VOL', volume),
+                  ('MACD', macd),
+                  ('KDJ', kdj),
+                  ('RSI (14)', rsi),
+                  ('形态标注', shapeMarkers),
+                  ('买卖点', markers),
+                  ('MA交叉', crossMarkers),
+                ])
+                  SwitchListTile(
+                    dense: true,
+                    title: Text(tr(ctx, item.$1)),
+                    value: item.$2,
+                    onChanged: (v) {
+                      setState(() {
+                        switch (item.$1) {
+                          case 'VOL':
+                            volume = v;
+                          case 'MACD':
+                            macd = v;
+                          case 'KDJ':
+                            kdj = v;
+                          case '形态标注':
+                            shapeMarkers = v;
+                          case '买卖点':
+                            markers = v;
+                          case 'MA交叉':
+                            crossMarkers = v;
+                          default:
+                            rsi = v;
+                        }
+                      });
+                      update(() {});
+                    },
+                  ),
+                Text(
+                  tr(ctx, '指标按当前周期计算，历史不足时留空。'),
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+              ],
+            ),
           ),
         ),
       ),
