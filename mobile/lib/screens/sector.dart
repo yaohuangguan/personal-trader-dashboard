@@ -95,11 +95,12 @@ class _StockSectorsState extends State<StockSectors> {
                     final b = rows(r['items'])
                         .where((b) => b['code'] == value)
                         .firstOrNull;
-                    if (b != null)
+                    if (b != null) {
                       setState(() {
                         selected = value;
                         name = str(b['name']);
                       });
+                    }
                   },
                 ),
                 Notice(s.t('可直接查看机器人、创新药等概念成分；不同来源分类分别标识。')),
