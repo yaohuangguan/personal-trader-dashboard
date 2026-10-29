@@ -238,6 +238,12 @@ void main() {
       }
       await s.setTheme('dark');
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('行情推演').first);
+      await tester.pumpAndSettle();
+      expect(painter(tester).forecast!.bars.length, candles.length + 15);
+      Navigator.of(tester.element(find.text('行情推演').last)).pop();
+      await tester.pumpAndSettle();
+      await binding.takeScreenshot('ios-projected-candles-ma');
       await tester.tap(find.text('分时').first);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('intraday-canvas')), findsOneWidget);

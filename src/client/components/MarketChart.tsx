@@ -52,8 +52,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsError, setSettingsError] = useState('');
   const [panels, setPanels] = useState<Record<Panel, boolean>>({ VOL: true, MACD: true, KDJ: true,RSI:false });
   const [overlay,setOverlay]=useState('MA');
-  const [projectionOn,setProjectionOn]=useState(false),[projectionHorizon,setProjectionHorizon]=useState(15);
-  const projection=useMemo(()=>projectionOn&&unit==='day'?projectMarket(candles,{horizon:projectionHorizon,maPeriods:preferences.filter(p=>p.enabled).map(p=>p.period)}):null,[projectionOn,projectionHorizon,candles,preferences,unit]);
+  const [projectionOn,setProjectionOn]=useState(false),[projectionHorizon,setProjectionHorizon]=useState(15),[projectionScenario,setProjectionScenario]=useState('base');
+  const projection=useMemo(()=>projectionOn?projectMarket(candles,{unit,horizon:projectionHorizon,maPeriods:preferences.filter(p=>p.enabled).map(p=>p.period)}):null,[projectionOn,projectionHorizon,candles,preferences,unit]);
+  const futureCandles=useMemo(()=>projection?.available?projection.scenarios.find(s=>s.id===projectionScenario)?.candles||[]:[],[projection,projectionScenario]);
+  const projectedIndicators=useMemo(()=>chartIndicators([...candles,...futureCandles],preferences),[candles,futureCandles,preferences]);
+  const projectedExtra=useMemo(()=>{const all=[...candles,...futureCandles];return {boll:bollinger(all),rsi:rsi(all),sar:parabolicSar(all)};},[candles,futureCandles]);
   const extra=useMemo(()=>({boll:bollinger(candles),rsi:rsi(candles),sar:parabolicSar(candles)}),[candles]);
   const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
   const [shapesVisible,setShapesVisible]=useState(true),[crossMarkers,setCrossMarkers]=useState(false);
@@ -63,12 +66,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
 
   const [hoverTime, setHoverTime] = useState<string | null>(null), [chartError, setChartError] = useState('');
   const indicators = useMemo(() => chartIndicators(candles, preferences), [candles, preferences]);
-  const candleByTime = useMemo(() => new Map(candles.map(c => [c.time, c])), [candles]);
-  const maMaps = useMemo(() => Object.fromEntries(Object.entries(indicators.ma).map(([p, values]) => [p, new Map(values.map(v => [v.time, v.value]))])) as Record<number, Map<string, number>>, [indicators]);
-  const macdByTime = useMemo(() => new Map(indicators.macd.map(p => [p.time, p])), [indicators]);
-  const kdjByTime = useMemo(() => new Map(indicators.kdj.map(p => [p.time, p])), [indicators]);
-  const volume5 = useMemo(() => new Map(indicators.volume5.map(p => [p.time, p.value])), [indicators]);
-  const volume20 = useMemo(() => new Map(indicators.volume20.map(p => [p.time, p.value])), [indicators]);
+  const candleByTime = useMemo(() => new Map([...candles,...futureCandles].map(c => [c.time, c])), [candles,futureCandles]);
+  const maMaps = useMemo(() => Object.fromEntries(Object.entries(projectedIndicators.ma).map(([p, values]) => [p, new Map(values.map(v => [v.time, v.value]))])) as Record<number, Map<string, number>>, [indicators]);
+  const macdByTime = useMemo(() => new Map(projectedIndicators.macd.map(p => [p.time, p])), [projectedIndicators]);
+  const kdjByTime = useMemo(() => new Map(projectedIndicators.kdj.map(p => [p.time, p])), [projectedIndicators]);
+  const volume5 = useMemo(() => new Map(projectedIndicators.volume5.map(p => [p.time, p.value])), [projectedIndicators]);
+  const volume20 = useMemo(() => new Map(projectedIndicators.volume20.map(p => [p.time, p.value])), [projectedIndicators]);
   const current = (hoverTime && candleByTime.get(hoverTime)) || candles.at(-1);
   const currentMACD = current && macdByTime.get(current.time), currentKDJ = current && kdjByTime.get(current.time);
   const activePeriods = preferences.filter(p => p.enabled).map(p => p.period).sort((a, b) => a - b);
@@ -125,11 +128,19 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       const main = makeChart(priceRef.current, compact ? 210 : expanded ? 480 : 390, !lastPanel);
       const prices = main.addCandlestickSeries({ priceScaleId: 'left', upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, priceLineVisible: false, lastValueVisible: false });
       prices.setData(candles.map(c => ({ time: chartTime(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
-      if(projection?.available){
-        for(const [branch,color] of [['base','#d5ae58'],['bull',UP],['bear',DOWN]] as const){
-          const line=main.addLineSeries({priceScaleId:'left',color,lineWidth:1,lineStyle:LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'推演 · 非实盘'});
-          line.setData([{time:chartTime(candles.at(-1)!.time),value:candles.at(-1)!.close},...projection.points.map(p=>({time:chartTime(p.time),value:p[branch]}))]);
-        }
+      if(futureCandles.length){
+        const simulated=main.addCandlestickSeries({priceScaleId:'left',upColor:'#f04a5540',downColor:'#28cdb640',borderUpColor:'#f04a55aa',borderDownColor:'#28cdb6aa',wickUpColor:'#f04a55aa',wickDownColor:'#28cdb6aa',priceLineVisible:false,lastValueVisible:false});
+        simulated.setData(futureCandles.map(c=>({time:chartTime(c.time),open:c.open,high:c.high,low:c.low,close:c.close})));
+      }
+      const addFuture=(chart:IChartApi,points:Point[],color:string,dots=false)=>{
+        if(!futureCandles.length)return;
+        const line=chart.addLineSeries({priceScaleId:'left',color:chartColor(color,light),lineWidth:1,lineStyle:LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,lineVisible:!dots,pointMarkersVisible:dots,pointMarkersRadius:2});
+        line.setData(points.filter(p=>p.time>=candles.at(-1)!.time).map(p=>({time:chartTime(p.time),value:p.value})));
+      };
+      if(futureCandles.length){
+        if(overlay==='MA')for(const ma of preferences.filter(p=>p.enabled))addFuture(main,projectedIndicators.ma[ma.period]||[],ma.color);
+        if(overlay==='BOLL')for(const [key,color] of [['mid','#eeeeee'],['upper','#f7cf65'],['lower','#ed89bf']] as const)addFuture(main,projectedExtra.boll.map(p=>({time:p.time,value:p[key]})),color);
+        if(overlay==='SAR')addFuture(main,projectedExtra.sar,'#f7cf65',true);
       }
       if (!compact) {
         for (const line of preferences.filter(p => p.enabled && overlay==='MA')) addLine(main, indicators.ma[line.period] || [], line.color);
@@ -162,6 +173,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         chart.priceScale('left').applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } });
         const bars = chart.addHistogramSeries({ priceScaleId: 'left', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
         bars.setData(candles.map(c => ({ time: chartTime(c.time), value: c.volume, color: c.close >= c.open ? UP : DOWN })));
+        if(futureCandles.length){const projected=chart.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false});projected.setData(futureCandles.map(c=>({time:chartTime(c.time),value:c.volume,color:c.close>=c.open?'#f04a5550':'#28cdb650'})));addFuture(chart,projectedIndicators.volume5,'#f1d55c');addFuture(chart,projectedIndicators.volume20,'#d968e8');}
         addLine(chart, indicators.volume5, '#f1d55c'); addLine(chart, indicators.volume20, '#d968e8');
         if(indicatorLabels)removers.push(indicatorOverlay(volumeRef.current,chart,bars,study.indicatorMarks.filter(m=>m.pane==='VOL'),chartTime));
         panes.push({ chart, anchor: bars, values: new Map(candles.map(c => [c.time, c.volume])) });
@@ -169,11 +181,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       if (!compact && panels.MACD && macdRef.current) {
         const chart = makeChart(macdRef.current, 122, lastPanel === 'MACD');
         const bars = chart.addHistogramSeries({ priceScaleId: 'left', priceLineVisible: false, lastValueVisible: false });
-        const lookup = new Map(indicators.macd.map(p => [p.time, p]));
+        const lookup = new Map(projectedIndicators.macd.map(p => [p.time, p]));
         bars.setData(candles.map(c => {
           const p = lookup.get(c.time);
           return p ? { time: chartTime(c.time), value: p.histogram, color: p.histogram >= 0 ? UP : DOWN } : { time: chartTime(c.time) };
         }));
+        if(futureCandles.length){const projected=chart.addHistogramSeries({priceScaleId:'left',priceLineVisible:false,lastValueVisible:false});projected.setData(projectedIndicators.macd.filter(p=>p.time>candles.at(-1)!.time).map(p=>({time:chartTime(p.time),value:p.histogram,color:p.histogram>=0?'#f04a5550':'#28cdb650'})));for(const [key,color] of [['dif','#ebedf1'],['dea','#f1d55c']] as const)addFuture(chart,projectedIndicators.macd.map(p=>({time:p.time,value:p[key]})),color);}
         bars.createPriceLine({ price: 0, color: '#505256', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         const line = addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dif })), '#ebedf1');
         addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dea })), '#f1d55c');
@@ -190,11 +203,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           } });
           return line;
         });
+        if(futureCandles.length)for(const [key,color] of [['k','#ebedf1'],['d','#f1d55c'],['j','#d968e8']] as const)addFuture(chart,projectedIndicators.kdj.map(p=>({time:p.time,value:p[key]})),color);
         if(indicatorLabels)removers.push(indicatorOverlay(kdjRef.current,chart,lines[0],study.indicatorMarks.filter(m=>m.pane==='KDJ'),chartTime));
         for (const level of [20, 80]) lines[0].createPriceLine({ price: level, color: '#35373b', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         panes.push({ chart, anchor: lines[0], values: new Map(indicators.kdj.map(p => [p.time, p.k])) });
       }
-      if(!compact&&panels.RSI&&rsiRef.current){const chart=makeChart(rsiRef.current,130,lastPanel==='RSI'),line=addLine(chart,extra.rsi,'#f7cf65');for(const level of [30,70])line.createPriceLine({price:level,color:'#35373b',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:false});panes.push({chart,anchor:line,values:new Map(extra.rsi.map(p=>[p.time,p.value]))});}
+      if(!compact&&panels.RSI&&rsiRef.current){const chart=makeChart(rsiRef.current,130,lastPanel==='RSI'),line=addLine(chart,extra.rsi,'#f7cf65');addFuture(chart,projectedExtra.rsi,'#f7cf65');for(const level of [30,70])line.createPriceLine({price:level,color:'#35373b',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:false});panes.push({chart,anchor:line,values:new Map(extra.rsi.map(p=>[p.time,p.value]))});}
       const count = rangeSize(period, candles.length, unit);
       const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + (projection?.available?projection.points.length:0) + 3 };
       for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(initial);
@@ -247,7 +261,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers,indicatorLabels,study,projection]);
+  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers,indicatorLabels,study,projection,futureCandles,projectedIndicators,projectedExtra]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
@@ -267,7 +281,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         <div className="terminal-tools"><select aria-label={uiText("主图指标")} value={overlay} onChange={e=>setOverlay(e.target.value)}>{['MA','BOLL','SAR'].map(v=><option key={v}>{v}</option>)}</select><span className="terminal-frequency">{uiText(unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : unit.startsWith('m')?unit.slice(1)+'分钟':'日 K')}{uiText(symbol ? ' · ' + symbol : '')}</span>
           <button type="button" aria-pressed={chipsOpen} onClick={()=>setChipsOpen(v=>!v)} disabled={unit!=='day'||!chipEligible}>{uiText("筹码峰")}</button><button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />{uiText("均线参数")}</button>
           <button type="button" onClick={resetView} aria-label={uiText("重置缩放")}><RotateCcw size={14} /></button>
-          {unit==='day'&&<button type="button" aria-pressed={projectionOn} onClick={()=>{visibleRef.current=null;setProjectionOn(v=>!v);}}>{uiText('行情推演')}</button>}
+          {!compact&&<button type="button" aria-pressed={projectionOn} onClick={()=>{visibleRef.current=null;setProjectionOn(v=>!v);}}>{uiText('行情推演')}</button>}
           <button type="button" onClick={() => setExpanded(value => !value)} aria-label={uiText(expanded ? '收起图表' : '展开图表')}>{uiText(expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />)}</button>
         </div>
       </div>
@@ -289,11 +303,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         const next = old.map((p, n) => n === i ? { ...p, enabled: !p.enabled } : p);
         return validMAPreferences(next) ? next : old;
       })}><i style={{ background: line.color }} /><span>MA{uiText(line.period)}</span><b>{uiText(line.enabled && current ? number(maMaps[line.period]?.get(current.time)) : '—')}</b></button>))}</div>
-      <div className="terminal-ohlc" aria-live="off"><strong>{uiText(current?.time)}</strong>{uiText(current && <><span>{uiText("开")}<b>{uiText(number(current.open))}</b></span><span>{uiText("高")}<b className="terminal-up">{uiText(number(current.high))}</b></span><span>{uiText("低")}<b className="terminal-down">{uiText(number(current.low))}</b></span><span>{uiText("收")}<b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{uiText(number(current.close))}</b></span></>)}</div>
+      <div className="terminal-ohlc" aria-live="off"><strong>{current&&current.time>candles.at(-1)!.time?'推演 · ':''}{uiText(current?.time)}</strong>{uiText(current && <><span>{uiText("开")}<b>{uiText(number(current.open))}</b></span><span>{uiText("高")}<b className="terminal-up">{uiText(number(current.high))}</b></span><span>{uiText("低")}<b className="terminal-down">{uiText(number(current.low))}</b></span><span>{uiText("收")}<b className={current.close >= current.open ? 'terminal-up' : 'terminal-down'}>{uiText(number(current.close))}</b></span></>)}</div>
     </>)}
     {uiText(chartError && <div className="terminal-error" role="alert">{uiText("图表无法显示：")}{uiText(chartError)}</div>)}
     {!compact&&<div className="terminal-pattern-readout" aria-label={uiText('当前K线形态')} aria-live="off"><small>{uiText('形态')}</small>{tradeMarkers.filter(m=>m.time===current?.time).map(m=><span key={'trade-'+m.side} title={m.reason}>{m.label}</span>)}{current&&shapes.some(m=>m.time===current.time)?shapes.filter(m=>m.time===current.time).map(m=><span key={m.kind} style={{color:m.direction==='bullish'?UP:m.direction==='bearish'?DOWN:undefined}} title={uiText(m.detail)}>{uiText(m.label)}{m.provisional?' · '+uiText('待收盘'):''}</span>):<span className="pattern-empty">—</span>}</div>}
-    <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")} />
+    <div className="terminal-price-pane" data-testid="price-pane" ref={priceRef} aria-label={uiText("K线与可调整均线主图")}>{futureCandles.length>0&&<span className="terminal-projection-badge">推演K线 · {projection?.scenarios.find(s=>s.id===projectionScenario)?.label} · 指标为假设延伸</span>}</div>
     {uiText(!compact && chipsOpen && chipEligible && symbol && unit==='day' && <ChipProfile candles={candles} symbol={symbol} volumeUnit={volumeUnit} floatShares={chipFloatShares} asOf={current?.time}/>)}
     {uiText(!compact && <>
       <div className="terminal-panel-controls"><div>{uiText((['VOL', 'MACD', 'KDJ','RSI'] as const).map(panel => <button type="button" key={panel} aria-label={uiText('显示 ' + panel)} aria-pressed={panels[panel]} className={panels[panel] ? 'active' : ''} onClick={() => setPanels(old => ({ ...old, [panel]: !old[panel] }))}>{uiText(panel)}</button>))}</div><label><input type="checkbox" checked={shapesVisible} onChange={event=>setShapesVisible(event.target.checked)}/>{uiText("形态标注")}</label><label><input type="checkbox" checked={markers} onChange={event => setMarkers(event.target.checked)} />{uiText("买卖点")}</label><label><input type="checkbox" checked={crossMarkers} onChange={event=>setCrossMarkers(event.target.checked)}/>{uiText("MA交叉")}</label><label><input type="checkbox" checked={indicatorLabels} onChange={e=>setIndicatorLabels(e.target.checked)}/>指标标注</label></div>
@@ -308,7 +322,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       </section>)}
       {panels.RSI&&<section className="terminal-indicator" aria-label="RSI"><div className="terminal-indicator-heading"><b>RSI (14)</b><span>{number(extra.rsi.find(p=>p.time===current?.time)?.value)}</span></div><div ref={rsiRef} data-testid="rsi-pane"/></section>}
       <div className="terminal-status" title={study.method}><span>形态与买卖点依据当前 MA{activePeriods.join('/')} · MACD/KDJ固定参数</span>{study.trendRegimes.map(r=><span key={r.scale} title={r.detail} style={{color:r.direction==='up'?UP:r.direction==='down'?DOWN:undefined}}>{uiText('最新')} · {uiText(r.label)}{uiText(r.direction==='up'?'上涨':r.direction==='down'?'下跌':r.direction==='range'?'震荡':'待确认')}{r.provisional?' · '+uiText('盘中'):''}</span>)}<span>{uiText(candles.length)} {uiText("根K线 · 拖动平移 / 滚轮缩放")}</span></div>
-      {projectionOn&&unit==='day'&&<div className="terminal-projection-details"><label>推演范围 <select aria-label="推演范围" value={projectionHorizon} onChange={e=>{visibleRef.current=null;setProjectionHorizon(Number(e.target.value));}}>{[5,10,15].map(n=><option key={n} value={n}>约{n/5}周</option>)}</select></label><b>虚线 · 条件情景 · 非实盘</b><small>{projection?.model==='analogs'?`同股历史相似窗口 ${projection.sampleCount} 段`:'相似样本不足，使用波动规则情景'}</small>{projection?.conditions.map(c=><p key={c.side} style={{color:c.side==='bull'?UP:c.side==='bear'?DOWN:undefined}}>{c.text}</p>)}<small>{projection?.notice||projection?.reason}</small></div>}
+      {projectionOn&&<div className="terminal-projection-details"><label>情景 <select aria-label="推演情景" value={projectionScenario} onChange={e=>setProjectionScenario(e.target.value)}><option value="base">基准</option><option value="bull">偏强</option><option value="bear">偏弱</option></select></label><label>推演范围 <select aria-label="推演范围" value={projectionHorizon} onChange={e=>{visibleRef.current=null;setProjectionHorizon(Number(e.target.value));}}>{[5,10,15].map(n=><option key={n} value={n}>{unit==='day'?`约${n/5}周`:`${n}根${unit==='week'?'周':unit==='month'?'月':unit}K`}</option>)}</select></label><b>半透明K线＋虚线指标 · 推演区 · 非实盘</b><small>{projection?.model==='analogs'?`同股历史相似窗口 ${projection.sampleCount} 段`:'相似样本不足，使用波动规则情景'}</small>{projection?.conditions.map(c=><p key={c.side} style={{color:c.side==='bull'?UP:c.side==='bear'?DOWN:undefined}}>{c.text}</p>)}<small>{projection?.notice||projection?.reason}</small></div>}
       <details className="terminal-method"><summary>{uiText("交叉和展开标记的口径")}</summary><p>{uiText("金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；“指南启动 / 开花确认”标记另按姚记指南固定MA5/10/20/30/60、粘合、放量穿线及后续3–5根确认计算，不随图表参数改变。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。")}</p></details>
     </>)}
   </div>;

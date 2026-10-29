@@ -19,7 +19,7 @@ export function computeJSON(raw:string){
  if(!Array.isArray(input.candles)||input.candles.length>1500||!Array.isArray(input.ma)||input.ma.some(p=>!Number.isInteger(p)||p<1||p>500))throw Error('无效图表样本');
  const now=input.now?new Date(input.now):new Date();
  if(!Number.isFinite(now.getTime()))throw Error('无效分析时间');
- if(input.task==='projection')return JSON.stringify({projection:projectMarket(input.candles,{horizon:input.horizon,maPeriods:input.ma,now})});
+ if(input.task==='projection')return JSON.stringify({projection:projectMarket(input.candles,{horizon:input.horizon,maPeriods:input.ma,now,unit:input.unit})});
  const reviewQuote=input.context?input.context.quote:input.quote;
  if(input.market&&input.context?.quote){
   const quote=input.context.quote,unit:'股'|'手'=input.market.provider.includes('新浪')||/^68[89]/.test(input.symbol)?'股':'手',updated=patchSession({candles:input.candles,provider:input.market.provider},quote,unit);

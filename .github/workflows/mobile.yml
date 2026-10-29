@@ -68,6 +68,7 @@ jobs:
       - name: Validate chart gestures on native iOS
         timeout-minutes: 15
         run: |
+          set -o pipefail
           mkdir -p build
           flutter drive --verbose --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d "$ATLAS_SIMULATOR_ID" 2>&1 | tee build/native-chart-drive.log
       - uses: actions/upload-artifact@v4

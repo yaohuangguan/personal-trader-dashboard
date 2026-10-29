@@ -66,7 +66,7 @@ class _MarketChartState extends State<MarketChart> {
       MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
   String paneMode = 'macd', overlay = 'MA';
   bool rsi = false;
-  int? hover;
+  int? hover, forecastHover;
   List<Json> studyTrades = [],
       studyPatterns = [],
       studyIndicators = [],
@@ -75,14 +75,29 @@ class _MarketChartState extends State<MarketChart> {
   String studyKey = '', studyStatus = '标注依据当前MA · 核验中';
   bool projectionOn = false, projectionBusy = false;
   int projectionHorizon = 15, projectionRequest = 0;
-  String projectionKey = '';
+  String projectionKey = '', projectionScenario = 'base', forecastKey = '';
+  IndicatorData? forecastCache;
+  IndicatorData? get forecastData {
+    if (!drawProjection) return null;
+    final key =
+        '$projectionKey:$projectionScenario:${jsonEncode(mas.map((m) => m.toJson()).toList())}';
+    if (forecastKey != key) {
+      final branch = rows(projection?['scenarios'])
+          .where((r) => r['id'] == projectionScenario)
+          .firstOrNull;
+      final bars = rows(branch?['candles']).map(Bar.fromJson).toList();
+      forecastCache = bars.isEmpty
+          ? null
+          : IndicatorData([...widget.bars, ...bars], mas);
+      forecastKey = key;
+    }
+    return forecastCache;
+  }
+
   Json? projection;
   String? projectionError;
   bool get drawProjection =>
-      projectionOn &&
-      projection?['available'] == true &&
-      offset == 0 &&
-      widget.unit == 'day';
+      projectionOn && projection?['available'] == true && offset == 0;
   Future<void> refreshProjection() async {
     if (!mounted || !projectionOn || widget.bars.isEmpty) return;
     final key = '$currentStudyKey:$projectionHorizon';
@@ -92,6 +107,7 @@ class _MarketChartState extends State<MarketChart> {
     try {
       final result = await context.read<AtlasStore>().chartStudies.compute({
         'task': 'projection',
+        'unit': widget.unit,
         'symbol': widget.symbol,
         'ma': mas.where((m) => m.enabled).map((m) => m.period).toList(),
         'horizon': projectionHorizon,
@@ -170,11 +186,33 @@ class _MarketChartState extends State<MarketChart> {
                   children: [
                     for (final n in [5, 10, 15])
                       ChoiceChip(
-                        label: Text('$n ${tr(ctx, '个交易步')}'),
+                        label: Text(
+                          widget.unit == 'day'
+                              ? '约${n ~/ 5}周'
+                              : '$n 根${widget.unit}K',
+                        ),
                         selected: projectionHorizon == n,
                         onSelected: (_) async {
                           setState(() => projectionHorizon = n);
                           await refreshProjection();
+                          update(() {});
+                        },
+                      ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final entry in [
+                      ('base', '基准'),
+                      ('bull', '偏强'),
+                      ('bear', '偏弱'),
+                    ])
+                      ChoiceChip(
+                        label: Text(entry.$2),
+                        selected: projectionScenario == entry.$1,
+                        onSelected: (_) {
+                          setState(() => projectionScenario = entry.$1);
                           update(() {});
                         },
                       ),
@@ -253,6 +291,7 @@ class _MarketChartState extends State<MarketChart> {
     } catch (_) {}
     indicators = IndicatorData(widget.bars, mas);
     projection = widget.initialProjection;
+    projectionScenario = str(projection?['selectedScenario'], 'base');
     projectionOn = projection != null;
     projectionHorizon = (numOf(projection?['horizon']) ?? 15).toInt();
     viewport.length = widget.bars.length;
@@ -326,12 +365,19 @@ class _MarketChartState extends State<MarketChart> {
 
   int get end => viewport.end;
   int get start => viewport.start;
-  Bar? get current => widget.bars.isEmpty
+  Bar? get current =>
+      drawProjection &&
+          forecastHover != null &&
+          forecastData != null &&
+          forecastHover! < forecastData!.bars.length
+      ? forecastData!.bars[forecastHover!]
+      : widget.bars.isEmpty
       ? null
       : widget.bars[(hover ?? (end - 1)).clamp(0, widget.bars.length - 1)];
   void range(int days) => setState(() {
     viewport.reset(days);
     hover = null;
+    forecastHover = null;
   });
   Future<Color?> customColor(BuildContext context, Color initial) async {
     final controller = TextEditingController(
@@ -577,6 +623,14 @@ class _MarketChartState extends State<MarketChart> {
 
   void selectAt(Offset p, double width) {
     final future = drawProjection ? rows(projection!['points']).length : 0;
+    final virtual =
+        start +
+        (ChartPlot.fraction(p.dx, width) * (end - start + future)).floor();
+    if (future > 0 && virtual >= end) {
+      setState(() => forecastHover = virtual.clamp(end, end + future - 1));
+      return;
+    }
+    forecastHover = null;
     final i = viewport.select(
       ChartPlot.fraction(p.dx, width) *
           (end - start + future) /
@@ -603,7 +657,9 @@ class _MarketChartState extends State<MarketChart> {
           events: widget.events,
           trades: widget.trades,
           patterns: widget.patterns,
-          initialProjection: drawProjection ? projection : null,
+          initialProjection: drawProjection
+              ? {...projection!, 'selectedScenario': projectionScenario}
+              : null,
           initialStudy: studyReady
               ? {
                   'tradeMarkers': studyTrades,
@@ -785,6 +841,10 @@ class _MarketChartState extends State<MarketChart> {
   }
 
   Future<void> annotationDetails() async {
+    if (forecastHover != null && drawProjection) {
+      await projectionSettings();
+      return;
+    }
     if (widget.bars.isEmpty) return;
     final index = (hover ?? (widget.bars.length - offset - 1)).clamp(
           0,
@@ -1142,7 +1202,11 @@ class _MarketChartState extends State<MarketChart> {
         child: Center(child: Text('No valid price history')),
       );
     }
-    final c = current!, idx = hover ?? end - 1;
+    final c = current!,
+        idx = (drawProjection ? forecastHover : null) ?? hover ?? end - 1;
+    final readout = drawProjection && forecastHover != null
+        ? forecastData!
+        : indicators;
     final drawVolume = compact ? true : volume,
         drawMacd = compact ? paneMode == 'all' || paneMode == 'macd' : macd,
         drawKdj = compact ? paneMode == 'all' || paneMode == 'kdj' : kdj;
@@ -1278,16 +1342,15 @@ class _MarketChartState extends State<MarketChart> {
                 tooltip: tr(context, '均线参数'),
                 icon: const Icon(Icons.tune, size: 20),
               ),
-              if (widget.unit == 'day')
-                IconButton(
-                  onPressed: projectionSettings,
-                  tooltip: tr(context, '行情推演'),
-                  icon: Icon(
-                    Icons.auto_graph,
-                    size: 20,
-                    color: projectionOn ? const Color(0xffd5ae58) : muted,
-                  ),
+              IconButton(
+                onPressed: projectionSettings,
+                tooltip: tr(context, '行情推演'),
+                icon: Icon(
+                  Icons.auto_graph,
+                  size: 20,
+                  color: projectionOn ? const Color(0xffd5ae58) : muted,
                 ),
+              ),
               if (offset > 0)
                 IconButton(
                   onPressed: () => range(count),
@@ -1353,18 +1416,18 @@ class _MarketChartState extends State<MarketChart> {
                           style: TextStyle(color: ink, fontSize: 12),
                         ),
                         Text(
-                          'MID ${fixed(indicators.bollMid[idx])}',
+                          'MID ${fixed(readout.bollMid[idx])}',
                           style: TextStyle(color: ink, fontSize: 12),
                         ),
                         Text(
-                          'UP ${fixed(indicators.bollUpper[idx])}',
+                          'UP ${fixed(readout.bollUpper[idx])}',
                           style: const TextStyle(
                             color: Colors.amber,
                             fontSize: 12,
                           ),
                         ),
                         Text(
-                          'LOW ${fixed(indicators.bollLower[idx])}',
+                          'LOW ${fixed(readout.bollLower[idx])}',
                           style: TextStyle(
                             color: atlasColor(0xffed89bf),
                             fontSize: 12,
@@ -1380,7 +1443,7 @@ class _MarketChartState extends State<MarketChart> {
                           ),
                         ),
                         Text(
-                          fixed(indicators.sar[idx]),
+                          fixed(readout.sar[idx]),
                           style: const TextStyle(
                             color: Colors.amber,
                             fontSize: 12,
@@ -1407,7 +1470,7 @@ class _MarketChartState extends State<MarketChart> {
                           );
                         },
                         child: Text(
-                          'MA${ma.period} ${ma.enabled ? fixed(indicators.averages[ma.period]?[idx]) : '—'}',
+                          'MA${ma.period} ${ma.enabled ? fixed(readout.averages[ma.period]?[idx]) : '—'}',
                           style: TextStyle(
                             color: ma.enabled ? chartColor(ma.color) : muted,
                             fontSize: widget.terminal ? 12 : 13,
@@ -1433,7 +1496,7 @@ class _MarketChartState extends State<MarketChart> {
               child: Row(
                 children: [
                   Text(
-                    c.time,
+                    '${drawProjection && forecastHover != null ? '推演 · ' : ''}${c.time}',
                     style: TextStyle(fontSize: 11, height: 1, color: muted),
                   ),
                   const SizedBox(width: 8),
@@ -1584,7 +1647,7 @@ class _MarketChartState extends State<MarketChart> {
                             indicators,
                             start,
                             end,
-                            hover,
+                            (drawProjection ? forecastHover : null) ?? hover,
                             drawVolume,
                             drawMacd,
                             drawKdj,
@@ -1605,6 +1668,7 @@ class _MarketChartState extends State<MarketChart> {
                             showPatterns: shapeMarkers,
                             showCrosses: crossMarkers,
                             projection: drawProjection ? projection : null,
+                            forecast: forecastData,
                           )
                         : null,
                     child:
@@ -1944,6 +2008,7 @@ class ChartPainter extends CustomPainter {
     this.showPatterns = true,
     this.showCrosses = false,
     this.projection,
+    this.forecast,
   });
   final IndicatorData data;
   final int start, end;
@@ -1952,6 +2017,7 @@ class ChartPainter extends CustomPainter {
   final List<Json> events, trades, patterns;
   final List<Json> indicatorMarks;
   final Json? projection;
+  final IndicatorData? forecast;
   final String unit;
   final double font;
   final bool showSignals, rsi, showPatterns, showCrosses;
@@ -1999,7 +2065,9 @@ class ChartPainter extends CustomPainter {
     const left = ChartPlot.inset, right = ChartPlot.inset;
     final width = ChartPlot.width(size.width),
         n = end - start,
-        future = rows(projection?['points']),
+        drawData = forecast ?? data,
+        future = forecast?.bars.sublist(end) ?? <Bar>[],
+        drawEnd = end + future.length,
         step = width / math.max(1, n + future.length),
         parts =
             1 +
@@ -2026,10 +2094,20 @@ class ChartPainter extends CustomPainter {
     final visible = data.bars.sublist(start, end);
     var lo = visible.map((b) => b.low).reduce(math.min),
         hi = visible.map((b) => b.high).reduce(math.max);
-    for (final p in future) {
-      for (final key in ['base', 'bull', 'bear']) {
-        final v = numOf(p[key]);
-        if (v != null) {
+    for (final b in future) {
+      lo = math.min(lo, b.low);
+      hi = math.max(hi, b.high);
+    }
+    if (future.isNotEmpty) {
+      final series = overlay == 'MA'
+          ? drawData.mas
+                .where((m) => m.enabled)
+                .map((m) => drawData.averages[m.period]!)
+          : overlay == 'BOLL'
+          ? [drawData.bollUpper, drawData.bollLower]
+          : [drawData.sar];
+      for (final values in series) {
+        for (final v in values.sublist(end, drawEnd).whereType<double>()) {
           lo = math.min(lo, v);
           hi = math.max(hi, v);
         }
@@ -2348,47 +2426,86 @@ class ChartPainter extends CustomPainter {
         background: true,
       );
     }
+    void dash(Offset from, Offset to, Color color) {
+      final delta = to - from, length = delta.distance;
+      for (var d = 0.0; d < length; d += 7) {
+        c.drawLine(
+          from + delta * (d / math.max(1, length)),
+          from + delta * (math.min(length, d + 4) / math.max(1, length)),
+          Paint()
+            ..color = color.withValues(alpha: .7)
+            ..strokeWidth = 1.1,
+        );
+      }
+    }
+
     if (future.isNotEmpty) {
-      final boundary = x(end - 1) + step * .5,
-          anchor = data.bars[end - 1].close;
+      final boundary = x(end - 1) + step * .5;
       c.save();
       c.clipRect(Rect.fromLTRB(left, 14, size.width - right, priceHeight));
       c.drawRect(
         Rect.fromLTRB(boundary, 14, size.width - right, priceHeight),
-        Paint()..color = const Color(0xffd5ae58).withValues(alpha: .065),
+        Paint()..color = const Color(0xffd5ae58).withValues(alpha: .06),
       );
       c.drawLine(
         Offset(boundary, 14),
         Offset(boundary, priceHeight),
-        Paint()..color = const Color(0xffd5ae58).withValues(alpha: .4),
+        Paint()..color = const Color(0xffd5ae58).withValues(alpha: .5),
       );
-      for (final branch in [
-        ('base', const Color(0xffd5ae58)),
-        ('bull', up),
-        ('bear', down),
-      ]) {
-        var from = Offset(x(end - 1), y(anchor));
-        for (var i = 0; i < future.length; i++) {
-          final value = numOf(future[i][branch.$1]);
-          if (value == null) continue;
-          final to = Offset(x(end + i), y(value)),
-              delta = to - from,
-              length = delta.distance;
-          for (var d = 0.0; d < length; d += 7) {
-            c.drawLine(
-              from + delta * (d / math.max(1, length)),
-              from + delta * (math.min(length, d + 4) / math.max(1, length)),
-              Paint()
-                ..color = branch.$2.withValues(alpha: .8)
-                ..strokeWidth = 1.2,
+      for (var j = 0; j < future.length; j++) {
+        final bar = future[j],
+            cx = x(end + j),
+            color = bar.close >= bar.open ? up : down;
+        c.drawLine(
+          Offset(cx, y(bar.high)),
+          Offset(cx, y(bar.low)),
+          Paint()..color = color.withValues(alpha: .7),
+        );
+        final rect = Rect.fromLTRB(
+          cx - step * .32,
+          math.min(y(bar.open), y(bar.close)),
+          cx + step * .32,
+          math.max(y(bar.open), y(bar.close)) + 1,
+        );
+        c.drawRect(rect, Paint()..color = color.withValues(alpha: .18));
+        c.drawRect(
+          rect,
+          Paint()
+            ..color = color.withValues(alpha: .7)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = .8,
+        );
+      }
+      final lines = <({List<double?> values, Color color})>[
+        if (overlay == 'MA')
+          for (final m in drawData.mas.where((m) => m.enabled))
+            (values: drawData.averages[m.period]!, color: chartColor(m.color)),
+        if (overlay == 'BOLL')
+          ...(<({List<double?> values, Color color})>[
+            (values: drawData.bollMid, color: ink),
+            (values: drawData.bollUpper, color: Colors.amber),
+            (values: drawData.bollLower, color: const Color(0xffed89bf)),
+          ]),
+        if (overlay == 'SAR') (values: drawData.sar, color: Colors.amber),
+      ];
+      for (final line in lines) {
+        for (var i = end; i < drawEnd; i++) {
+          final v = line.values[i], p = line.values[i - 1];
+          if (v == null) continue;
+          if (overlay == 'SAR') {
+            c.drawCircle(
+              Offset(x(i), y(v)),
+              1.8,
+              Paint()..color = line.color.withValues(alpha: .7),
             );
+          } else if (p != null) {
+            dash(Offset(x(i - 1), y(p)), Offset(x(i), y(v)), line.color);
           }
-          from = to;
         }
       }
       label(
         c,
-        '推演 · 非实盘',
+        '推演K线 · 假设指标',
         Offset(boundary + 3, 17),
         color: const Color(0xffd5ae58),
         size: 10,
@@ -2406,7 +2523,7 @@ class ChartPainter extends CustomPainter {
       final h = small - 4;
       label(c, title, Offset(left, top), color: ink);
       final all = values
-          .expand((r) => r.sublist(start, end).whereType<double>())
+          .expand((r) => r.sublist(start, drawEnd).whereType<double>())
           .toList();
       if (all.isEmpty) {
         top += small;
@@ -2432,12 +2549,12 @@ class ChartPainter extends CustomPainter {
       for (var k = 0; k < values.length; k++) {
         final path = Path();
         var first = true;
-        for (var i = start; i < end; i++) {
+        for (var i = start; i < drawEnd; i++) {
           final v = values[k][i];
           if (v == null) continue;
           if (k == 0 && (histogram || volumeBars)) {
             final color = volumeBars
-                ? (data.bars[i].close >= data.bars[i].open ? up : down)
+                ? (drawData.bars[i].close >= drawData.bars[i].open ? up : down)
                 : v >= 0
                 ? up
                 : down;
@@ -2448,8 +2565,17 @@ class ChartPainter extends CustomPainter {
                 x(i) + step * .3,
                 math.max(py(v), py(0)) + 1,
               ),
-              Paint()..color = color,
+              Paint()..color = i >= end ? color.withValues(alpha: .3) : color,
             );
+          } else if (i >= end) {
+            final previous = values[k][i - 1];
+            if (previous != null) {
+              dash(
+                Offset(x(i - 1), py(previous)),
+                Offset(x(i), py(v)),
+                colors[k],
+              );
+            }
           } else {
             if (first) {
               path.moveTo(x(i), py(v));
@@ -2562,9 +2688,9 @@ class ChartPainter extends CustomPainter {
       pane(
         'VOL ($unit)',
         [
-          data.bars.map<double?>((b) => b.volume).toList(),
-          data.vol5,
-          data.vol20,
+          drawData.bars.map<double?>((b) => b.volume).toList(),
+          drawData.vol5,
+          drawData.vol20,
         ],
         [ink, atlasColor(0xfff7cf65), atlasColor(0xffed89bf)],
         volumeBars: true,
@@ -2573,7 +2699,7 @@ class ChartPainter extends CustomPainter {
     if (macd) {
       pane(
         'MACD',
-        [data.hist, data.dif, data.dea],
+        [drawData.hist, drawData.dif, drawData.dea],
         [up, ink, atlasColor(0xfff7cf65)],
         histogram: true,
       );
@@ -2581,23 +2707,28 @@ class ChartPainter extends CustomPainter {
     if (kdj) {
       pane(
         'KDJ',
-        [data.kdjK, data.kdjD, data.kdjJ],
+        [drawData.kdjK, drawData.kdjD, drawData.kdjJ],
         [ink, atlasColor(0xfff7cf65), atlasColor(0xffd968e8)],
       );
     }
-    if (rsi) pane('RSI (14)', [data.rsi14], [Colors.amber]);
-    for (final index in [start, (start + end) ~/ 2, end - 1]) {
+    if (rsi) pane('RSI (14)', [drawData.rsi14], [Colors.amber]);
+    for (final index in [
+      start,
+      (start + end) ~/ 2,
+      end - 1,
+      if (future.isNotEmpty) drawEnd - 1,
+    ]) {
       label(
         c,
-        (data.bars[index].time.length > 10
-            ? data.bars[index].time.substring(11)
-            : data.bars[index].time.substring(5)),
+        (drawData.bars[index].time.length > 10
+            ? drawData.bars[index].time.substring(11)
+            : drawData.bars[index].time.substring(5)),
         Offset(
           (x(index) -
                   textWidth(
-                        (data.bars[index].time.length > 10
-                            ? data.bars[index].time.substring(11)
-                            : data.bars[index].time.substring(5)),
+                        (drawData.bars[index].time.length > 10
+                            ? drawData.bars[index].time.substring(11)
+                            : drawData.bars[index].time.substring(5)),
                         size: font - 1,
                       ) /
                       2)
@@ -2606,9 +2737,9 @@ class ChartPainter extends CustomPainter {
                 size.width -
                     right -
                     textWidth(
-                      (data.bars[index].time.length > 10
-                          ? data.bars[index].time.substring(11)
-                          : data.bars[index].time.substring(5)),
+                      (drawData.bars[index].time.length > 10
+                          ? drawData.bars[index].time.substring(11)
+                          : drawData.bars[index].time.substring(5)),
                       size: font - 1,
                     ),
               ),
@@ -2617,7 +2748,7 @@ class ChartPainter extends CustomPainter {
         size: font - 1,
       );
     }
-    if (hover != null && hover! >= start && hover! < end) {
+    if (hover != null && hover! >= start && hover! < drawEnd) {
       final cross = Paint()
         ..color = ink.withValues(alpha: .54)
         ..strokeWidth = .8;
@@ -2627,8 +2758,8 @@ class ChartPainter extends CustomPainter {
         cross,
       );
       c.drawLine(
-        Offset(left, y(data.bars[hover!].close)),
-        Offset(size.width - right, y(data.bars[hover!].close)),
+        Offset(left, y(drawData.bars[hover!].close)),
+        Offset(size.width - right, y(drawData.bars[hover!].close)),
         cross,
       );
     }
@@ -2636,6 +2767,8 @@ class ChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ChartPainter old) =>
+      forecast != old.forecast ||
+      projection != old.projection ||
       light != old.light ||
       data != old.data ||
       start != old.start ||

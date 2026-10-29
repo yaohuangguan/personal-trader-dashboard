@@ -776,7 +776,7 @@ class _StockPageState extends State<StockPage> {
               children: [
                 _quoteStrip(),
                 SizedBox(
-                  height: 26,
+                  height: 14,
                   child: InkWell(
                     onTap: openTrend,
                     child: Padding(

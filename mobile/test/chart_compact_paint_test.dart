@@ -28,6 +28,18 @@ void main() {
                       bars.length,
                       null,
                       true,
+                      forecast: IndicatorData([
+                        ...bars,
+                        for (var j = 1; j <= 15; j++)
+                          Bar(
+                            '2026-01-${j.toString().padLeft(2, '0')}',
+                            43 + j * .1,
+                            44 + j * .1,
+                            42 + j * .1,
+                            43.5 + j * .1,
+                            1500,
+                          ),
+                      ], defaultMa),
                       true,
                       true,
                       [],
