@@ -89,10 +89,7 @@ class _StockPageState extends State<StockPage> {
     if (!cnStock(widget.symbol)) return;
     final generation = ++historyGeneration;
     final store = context.read<AtlasStore>(), studies = store.chartStudies;
-    final ma = (store.chartMAParameters['ma'] ?? '5,13,20,30,60,120,144,250')
-        .split(',')
-        .map(int.parse)
-        .toList();
+    final ma = store.chartMAPeriods;
     historyRetry?.cancel();
     try {
       if (studies.isLocal) {
@@ -191,11 +188,7 @@ class _StockPageState extends State<StockPage> {
           parameters: {'symbol': widget.symbol},
         );
         if (!mounted || generation != analysisGeneration) return;
-        final ma =
-            (store.chartMAParameters['ma'] ?? '5,13,20,30,60,120,144,250')
-                .split(',')
-                .map(int.parse)
-                .toList();
+        final ma = store.chartMAPeriods;
         final pair = await store.chartStudies.pair(
           historyFrame!,
           ma,

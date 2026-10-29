@@ -224,6 +224,13 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  List<int> get chartMAPeriods =>
+      (chartMAParameters['ma'] ?? '5,13,20,30,60,120,144,250')
+          .split(',')
+          .where((p) => p.isNotEmpty)
+          .map(int.parse)
+          .toList();
+
   Future<void> setTheme(String value) async {
     themeMode = value == 'light' ? 'light' : 'dark';
     await prefs.setString('themeMode', themeMode);

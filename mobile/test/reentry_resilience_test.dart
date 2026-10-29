@@ -7,8 +7,25 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:market_atlas/core/api.dart';
 import 'package:market_atlas/core/chart_studies.dart';
+import 'package:market_atlas/core/store.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('hiding every MA keeps an empty study selection instead of crashing page loading', () async {
+    SharedPreferences.setMockInitialValues({
+      'ma': jsonEncode([
+        for (final period in [5, 13, 20, 30, 60, 120, 144, 250])
+          {'period': period, 'enabled': false},
+      ]),
+    });
+    final api = AtlasApi(
+          client: MockClient((r) async => http.Response('{}', 200)),
+        ),
+        store = AtlasStore(api, await SharedPreferences.getInstance(), {});
+    expect(store.chartMAPeriods, isEmpty);
+    store.dispose();
+    api.dispose();
+  });
   test('re-entering shares pending public requests; errors never poison the next attempt', () async {
     var calls = 0;
     final gate = Completer<void>();
