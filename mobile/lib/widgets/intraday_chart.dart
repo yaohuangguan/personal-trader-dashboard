@@ -101,7 +101,9 @@ class _IntradayChartState extends State<IntradayChart> {
         '/api/desk/index-equal',
         parameters: {'symbol': symbol},
       );
-      if (mounted && r['symbol'] == symbol && r['date'] == widget.data['date']) {
+      if (mounted &&
+          r['symbol'] == symbol &&
+          r['date'] == widget.data['date']) {
         setState(() => yellow = r);
       }
     } catch (_) {
