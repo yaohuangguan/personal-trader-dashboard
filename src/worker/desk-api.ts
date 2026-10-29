@@ -1,3 +1,4 @@
+import {candidateNow,type CandidateReference} from '../shared/candidate-now';
 import {sectorMap,sectorDetail,sectorNews} from './sector-map';
 import {loadSessionReview} from './session-review';
 import {watchInsight} from './watch-insight';
@@ -8,16 +9,28 @@ import {f10} from './f10';
 import {dailyTrend} from '../shared/daily-trend';
 import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, fundFlowHistory, flowObservation, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
-import {auction,sectorIntraday} from './intraday-extras';
+import {auction,sectorIntraday,indexEqual} from './intraday-extras';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith('/api/desk/')) return null;
   const respond = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+  if(url.pathname==='/api/desk/candidate-check'&&request.method==='POST'){
+    try{
+      const raw=await request.text();if(raw.length>64000)return respond({error:'候选过多'},413);
+      const input=JSON.parse(raw) as {candidates:CandidateReference[]};
+      if(!Array.isArray(input.candidates)||input.candidates.length>60||input.candidates.some(c=>!c||!/^\d{6}\.(SH|SZ|BJ)$/.test(c.symbol)||typeof c.asOf!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(c.asOf)))return respond({error:'无效候选'},400);
+      const symbols=[...new Set(input.candidates.map(c=>c.symbol))];
+      if(!symbols.length)return respond({items:[]});
+      const feed=await memo('quotes:'+symbols.sort().join(','),15,()=>quotes(symbols));
+      return respond({items:input.candidates.map(c=>candidateNow(c,feed.items.find(q=>q.symbol===c.symbol))),source:feed.source,fetchedAt:feed.fetchedAt});
+    }catch(e){return respond({error:'当前候选行情暂不可用',details:String(e)},502);}
+  }
   if (request.method !== 'GET') return respond({ error: 'Method not allowed' }, 405);
   const symbol = url.searchParams.get('symbol') || '';
   const kind = url.pathname.slice('/api/desk/'.length);
   try {
+    if(kind==='index-equal')return respond(await memo('index-yellow:'+symbol,90,()=>indexEqual(symbol)));
     if(kind==='sector-intraday'){
       const code=url.searchParams.get('code')||'',name=(url.searchParams.get('name')||'').slice(0,40);
       if(!/^(?:BK\d{4,6}|SN:new_[a-z0-9]{2,20}|SN:gn_[A-Za-z0-9_]{1,40})$/.test(code))return respond({error:'无效板块代码'},400);

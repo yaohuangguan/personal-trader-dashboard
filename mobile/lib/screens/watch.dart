@@ -1,3 +1,4 @@
+import 'watch_import.dart';
 import '../widgets/cloud_sync.dart';
 
 import 'dart:async';
@@ -234,6 +235,11 @@ class _WatchPageState extends State<WatchPage> {
           onPressed: () => showStockSearch(context),
           icon: const Icon(Icons.add),
         ),
+      ),
+      TextButton.icon(
+        onPressed: () => showWatchImport(context),
+        icon: const Icon(Icons.playlist_add),
+        label: const Text('从其他App导入自选'),
       ),
       SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -622,9 +628,9 @@ class SettingsPage extends StatelessWidget {
                   label: Text(s.t('导出自选')),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => _import(context, s),
+                  onPressed: () => showWatchImport(context),
                   icon: const Icon(Icons.download),
-                  label: Text(s.t('导入自选 JSON')),
+                  label: Text(s.t('从截图／名单导入')),
                 ),
                 Notice(s.t('连接云同步后，自选与分组跨设备同步；显示设置、收藏和提醒仍保存在当前设备。')),
               ],
@@ -681,55 +687,6 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Future<void> _import(BuildContext context, AtlasStore s) async {
-    final controller = TextEditingController();
-    String? error;
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            22,
-            20,
-            MediaQuery.viewInsetsOf(ctx).bottom + 22,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(s.t('导入自选 JSON'), style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  hintText: '["300545.SZ", "NVDA"]',
-                ),
-              ),
-              if (error != null) Text(error!, style: TextStyle(color: up)),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () async {
-                  try {
-                    await s.importWatch(controller.text);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  } catch (e) {
-                    set(() => error = e.toString());
-                  }
-                },
-                child: Text(s.t('导入')),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    controller.dispose();
   }
 }
 

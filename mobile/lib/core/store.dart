@@ -280,6 +280,32 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Future<int> mergeWatch(List<String> symbols, {String? groupId}) async {
+    final target = groupId == null
+        ? null
+        : groups.where((g) => g['id'] == groupId).firstOrNull;
+    if (groupId != null && target == null)
+      throw const FormatException('分组已不存在');
+    final unique = symbols.map(normalize).toSet(), before = watchlist.length;
+    for (final symbol in unique) {
+      if (!watchlist.contains(symbol) && watchlist.length < 60) {
+        watchlist.add(symbol);
+      }
+    }
+    if (groupId != null) {
+      final group = target!;
+      group['symbols'] = <dynamic>{
+        ...List<String>.from(group['symbols'] ?? []),
+        ...unique.where(watchlist.contains),
+      }.toList();
+      await prefs.setString('watchGroups', jsonEncode(groups));
+    }
+    await prefs.setStringList('watchlist', watchlist);
+    notifyListeners();
+    refreshQuotes();
+    return watchlist.length - before;
+  }
+
   Future<void> importWatch(String text) async {
     final raw = jsonDecode(text);
     final list = raw is List ? raw : obj(raw)['watchlist'];

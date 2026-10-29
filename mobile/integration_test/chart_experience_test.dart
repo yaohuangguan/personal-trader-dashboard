@@ -1,3 +1,5 @@
+import 'package:market_atlas/core/watch_import.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -240,7 +242,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('行情推演').first);
       await tester.pumpAndSettle();
-      expect(painter(tester).forecast!.bars.length, candles.length + 15);
+      expect(painter(tester).forecast!.bars.length, candles.length + 10);
       Navigator.of(tester.element(find.text('行情推演').last)).pop();
       await tester.pumpAndSettle();
       await binding.takeScreenshot('ios-projected-candles-ma');
@@ -345,6 +347,53 @@ void main() {
     s.dispose();
     prices.dispose();
   }, timeout: const Timeout(Duration(minutes: 5)));
+  testWidgets(
+    'native screenshot recognition extracts watchlist codes entirely on device',
+    (tester) async {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: RepaintBoundary(
+                key: key,
+                child: const SizedBox(
+                  width: 340,
+                  height: 200,
+                  child: ColoredBox(
+                    color: Colors.white,
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Text(
+                        '300750\n002594\n600036',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 30,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final capture = StockSnapshot.capture(key, pixelRatio: 2);
+      await tester.pump();
+      final png = await capture.timeout(const Duration(seconds: 20));
+      final result = obj(
+        await WatchImport.channel.invokeMethod('recognizeImage', png),
+      );
+      expect(
+        parseWatchText(str(result['text'])),
+        containsAll(['300750.SZ', '002594.SZ', '600036.SH']),
+      );
+      binding.reportData = {...?binding.reportData, 'nativeWatchOCR': true};
+    },
+  );
   testWidgets(
     'native screenshot PNG copies to image clipboard without Photos',
     (tester) async {

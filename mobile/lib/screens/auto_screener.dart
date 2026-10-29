@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -19,10 +21,84 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
   bool loading = false, activity = true, recent = false, live = false;
   String concentration = '20', cap = '1000', group = 'all';
   int visible = 30;
+  final Map<String, Json> currentQuotes = {};
+  Timer? quoteTimer;
+  String quoteKey = '';
+  bool quoteBusy = false;
+  String? quoteError;
+  List<Json> quoteCandidates = [];
+  @override
+  void dispose() {
+    quoteTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> refreshCandidateQuotes() async {
+    if (!mounted ||
+        quoteBusy ||
+        quoteCandidates.isEmpty ||
+        !context.read<AtlasStore>().foreground ||
+        !TickerMode.valuesOf(context).enabled) {
+      return;
+    }
+    final key = quoteKey;
+    setState(() => quoteBusy = true);
+    try {
+      final r = await context.read<AtlasStore>().api.post(
+        '/api/desk/candidate-check',
+        {'candidates': quoteCandidates},
+      );
+      if (mounted && quoteKey == key) {
+        setState(() {
+          currentQuotes.clear();
+          for (final q in rows(r['items'])) {
+            currentQuotes[str(q['symbol'])] = q;
+          }
+          quoteError = null;
+        });
+      }
+    } catch (_) {
+      if (mounted && quoteKey == key) {
+        setState(() {
+          currentQuotes.clear();
+          quoteError = '当前行情刷新失败，历史价格保留日期。';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => quoteBusy = false);
+    }
+  }
+
+  void queueCandidateQuotes(List<Json> candidates) {
+    final input = candidates
+        .take(visible)
+        .take(60)
+        .map(
+          (c) => <String, dynamic>{
+            'symbol': c['symbol'],
+            'asOf': c['asOf'],
+            'price': c['price'],
+            'riskReference': c['riskReference'],
+          },
+        )
+        .toList();
+    final key = input.map((c) => '${c['symbol']}:${c['asOf']}').join(',');
+    quoteCandidates = input;
+    if (key == quoteKey) return;
+    quoteKey = key;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) refreshCandidateQuotes();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     load();
+    quoteTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => refreshCandidateQuotes(),
+    );
     context.read<ScreenerController>().connectShared();
   }
 
@@ -75,7 +151,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   !rows(
                     c['patterns'],
                   ).any((p) => ['multi', 'strongmulti'].contains(p['mode'])) ||
-                  obj(c['multiLine'])['version'] == 2,
+                  obj(c['multiLine'])['version'] == 3,
             )
             .where(
               (c) =>
@@ -108,6 +184,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
               group == 'retest' && c['bucket'] == '回踩观察',
         )
         .toList();
+    queueCandidateQuotes(candidates);
     final accent = AtlasPalette.light
         ? const Color(0xff6d59ad)
         : const Color(0xffb5a5de);
@@ -189,6 +266,19 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
             ],
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Text(
+            '结构分保留原收盘日期；价格与涨跌按当前快照。只更新已显示候选，不重扫全市场。',
+            style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: quoteBusy ? null : refreshCandidateQuotes,
+          icon: const Icon(Icons.refresh, size: 16),
+          label: Text(quoteBusy ? '核验当前行情…' : '更新当前行情'),
+        ),
+        if (quoteError != null) Notice(quoteError!),
         if (usePrevious) Notice(tr(context, '新任务尚无有效候选，下面保留上一轮快照，非当前实时结果。')),
         if (manual && job.isNotEmpty)
           Panel(
@@ -443,7 +533,11 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
     final s = context.watch<AtlasStore>(),
         r = obj(c['ranking']),
         a = obj(c['advice']);
-    final parts = rows(r['parts']);
+    final parts = rows(r['parts']), live = currentQuotes[str(c['symbol'])];
+    final price = live?['price'] ?? c['price'],
+        change = live?['price'] == null
+            ? c['changePercent']
+            : live?['changePercent'];
     return Panel(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -500,19 +594,16 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   crossAxisAlignment: WrapCrossAlignment.end,
                   children: [
                     Text(
-                      fixed(c['price']),
+                      fixed(price),
                       style: TextStyle(
                         fontSize: 28,
-                        color: tone(c['changePercent']),
+                        color: tone(change),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
-                      percent(c['changePercent']),
-                      style: TextStyle(
-                        color: tone(c['changePercent']),
-                        fontSize: 14,
-                      ),
+                      percent(change),
+                      style: TextStyle(color: tone(change), fontSize: 14),
                     ),
                   ],
                 ),
@@ -527,6 +618,30 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
               ),
               Text(' /100', style: TextStyle(color: muted, fontSize: 11)),
             ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            live?['asOf'] != null
+                ? '报价 ${str(live?['asOf']).replaceFirst('T', ' ')} · 结构分 ${c['asOf']}'
+                : '历史价格 · ${c['asOf']}（当前报价待核验）',
+            style: TextStyle(color: muted, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            str(live?['label'], '当前行情待核验'),
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: live?['tone'] == 'bear'
+                  ? down
+                  : live?['tone'] == 'bull'
+                  ? up
+                  : ink,
+            ),
+          ),
+          Text(
+            str(live?['reason'], '保留收盘候选结构，当前买点需核验。'),
+            style: TextStyle(fontSize: 13, color: muted, height: 1.5),
           ),
           const SizedBox(height: 13),
           Wrap(
@@ -552,7 +667,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
           ),
           const SizedBox(height: 12),
           Text(
-            '${tr(context, str(a['action'], '观望'))} · ${tr(context, str(c['bucket']))}',
+            '结构参考：${tr(context, str(a['action'], '观望'))} · ${tr(context, str(c['bucket']))}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),

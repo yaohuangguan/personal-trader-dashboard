@@ -74,7 +74,7 @@ class _MarketChartState extends State<MarketChart> {
   int studyRequest = 0;
   String studyKey = '', studyStatus = '标注依据当前MA · 核验中';
   bool projectionOn = false, projectionBusy = false;
-  int projectionHorizon = 15, projectionRequest = 0;
+  int projectionHorizon = 10, projectionRequest = 0;
   String projectionKey = '', projectionScenario = 'base', forecastKey = '';
   IndicatorData? forecastCache;
   IndicatorData? get forecastData {
@@ -184,7 +184,7 @@ class _MarketChartState extends State<MarketChart> {
                 Wrap(
                   spacing: 8,
                   children: [
-                    for (final n in [5, 10, 15])
+                    for (final n in [5, 10, 15, 20])
                       ChoiceChip(
                         label: Text(
                           widget.unit == 'day'
@@ -223,9 +223,33 @@ class _MarketChartState extends State<MarketChart> {
                 if (projectionError != null) Text(projectionError!),
                 if (projection != null) ...[
                   Text(
-                    '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? '历史相似窗口 ${projection!['sampleCount']} 段' : '样本不足 · 波动规则情景'}',
+                    '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? '历史相似窗口 ${projection!['sampleCount']} 段' : '样本不足 · 近期量价片段重采样'}',
                     style: TextStyle(color: muted, fontSize: 12),
                   ),
+                  const SizedBox(height: 10),
+                  Text(
+                    str(obj(projection!['basis'])['regime']),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  for (final fact
+                      in obj(projection!['basis'])['facts'] as List? ?? [])
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        str(fact),
+                        style: const TextStyle(height: 1.5),
+                      ),
+                    ),
+                  for (final scenario in rows(
+                    projection!['scenarios'],
+                  ).where((s) => s['id'] == projectionScenario))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        '本条路径依据：${str(scenario['explanation'])}',
+                        style: const TextStyle(height: 1.6),
+                      ),
+                    ),
                   for (final r in rows(projection!['conditions']))
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -239,6 +263,16 @@ class _MarketChartState extends State<MarketChart> {
                               ? down
                               : ink,
                         ),
+                      ),
+                    ),
+                  for (final text
+                      in obj(projection!['basis'])['limitations'] as List? ??
+                          [])
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        str(text),
+                        style: TextStyle(color: muted, fontSize: 12),
                       ),
                     ),
                   const SizedBox(height: 14),
@@ -293,7 +327,7 @@ class _MarketChartState extends State<MarketChart> {
     projection = widget.initialProjection;
     projectionScenario = str(projection?['selectedScenario'], 'base');
     projectionOn = projection != null;
-    projectionHorizon = (numOf(projection?['horizon']) ?? 15).toInt();
+    projectionHorizon = (numOf(projection?['horizon']) ?? 10).toInt();
     viewport.length = widget.bars.length;
     acceptInitialStudy();
     WidgetsBinding.instance.addPostFrameCallback((_) => refreshStudy());

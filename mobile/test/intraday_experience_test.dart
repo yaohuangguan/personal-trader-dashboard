@@ -81,7 +81,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(requested, isEmpty);
+      expect(requested, contains('/api/desk/intraday'));
       await tester.tap(find.text('竞价'));
       await tester.pumpAndSettle();
       expect(find.text('撮合成交', findRichText: true), findsNothing);
@@ -89,8 +89,8 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('叠加'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(Switch).first);
-      await tester.pumpAndSettle();
+      expect(tester.widget<Switch>(find.byType(Switch).first).value, isTrue);
+
       expect(requested, contains('/api/desk/intraday'));
       Navigator.of(tester.element(find.byType(Switch).first)).pop();
       await tester.pumpAndSettle();

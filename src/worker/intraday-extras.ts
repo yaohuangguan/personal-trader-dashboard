@@ -59,3 +59,27 @@ export async function sectorIntraday(code:string,name:string){
  if(!points.length)throw Error('板块成分同时段覆盖不足，暂不叠加');
  return {symbol:code,name:(('resolvedName' in members&&members.resolvedName)||name)+(related?' · 相关分类样本':' · 样本等权'),date,previous:100,points,available:true,source:'腾讯成分股分时 · 等权观测',sourceUrl:'https://gu.qq.com/',fetchedAt,classification:related?'related-sample':'sample',sampleCount:same.length,requestedCount:symbols.length,notice:(related?'原板块不可用，此处为新浪相关分类参考，非原板块指数。':'')+`${same.length}/${symbols.length}只样本，以各自昨收归一后等权，非官方板块指数；不填补缺失分钟。`};
 }
+
+
+export async function indexEqual(raw:string){
+ const {symbol}=chineseSymbol(raw),nodes:Record<string,string>={'000001.SH':'sh_a','399001.SZ':'sz_a','399006.SZ':'cyb','000300.SH':'hs300','000688.SH':'kcb','899050.BJ':'bj_a'};
+ const node=nodes[symbol];if(!node)throw Error('不支持的指数');
+ const memberURL='https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?'+new URLSearchParams({node,page:'1',num:'80',sort:'symbol',asc:'1'});
+ const list=await memo('index-yellow-members:'+symbol,3600,async()=>{
+  const r=await fetch(memberURL,{headers:{Referer:'https://finance.sina.com.cn/'},signal:AbortSignal.timeout(4000)});
+  if(!r.ok)throw Error('指数成分来源 HTTP '+r.status);
+  const rows=JSON.parse(new TextDecoder('gbk').decode(await r.arrayBuffer())) as {symbol:string}[];
+  if(!Array.isArray(rows))throw Error('指数成分格式不可用');
+  const codes=rows.filter(r=>/^(sh|sz|bj)\d{6}$/.test(r.symbol)).map(r=>r.symbol.slice(2)+'.'+r.symbol.slice(0,2).toUpperCase());
+  return [...new Set(Array.from({length:6},(_,i)=>codes[Math.floor(i*Math.max(0,codes.length-1)/5)]))].filter(Boolean);
+ });
+ if(list.length<3)throw Error('同源成分样本不足');
+ const results=await Promise.allSettled(list.map(s=>memo('overlay-minute:'+s,90,()=>intraday(s))));
+ const feeds=results.filter((r):r is PromiseFulfilledResult<Awaited<ReturnType<typeof intraday>>>=>(r.status==='fulfilled')).map(r=>r.value).filter(r=>(r.previous||0)>0&&r.points.length);
+ const date=feeds.map(r=>r.date).sort().at(-1),same=feeds.filter(r=>r.date===date);
+ if(!date||same.length<3)throw Error('同交易日样本不足，黄线暂不可用');
+ const grouped=new Map<string,{time:number;values:number[]}>();
+ for(const f of same)for(const p of f.points){if(sessionMinute(p.clock)===null)continue;const item=grouped.get(p.clock)||{time:p.time,values:[]};item.values.push(p.price/f.previous!*100);grouped.set(p.clock,item);}
+ const points:IntradayPoint[]=[...grouped].filter(([,v])=>v.values.length>=Math.max(3,Math.ceil(same.length*.8))).map(([clock,v])=>({clock,time:v.time,price:v.values.reduce((s,v)=>s+v,0)/v.values.length,volume:0,cumulativeVolume:0,amount:null})).sort((a,b)=>a.time-b.time);
+ return{available:points.length>0,symbol,date,previous:100,points,sampleCount:same.length,name:'成分样本等权（'+same.length+'只）',source:'新浪成分名单／腾讯或东方财富分时',sourceUrl:memberURL,fetchedAt:new Date().toISOString(),classification:'sample-equal',notice:'黄线为当前成分名单页中分散选取的'+same.length+'只股票等权涨跌参考，不是全成分不加权指数；来源不齐时不补假线。'};
+}

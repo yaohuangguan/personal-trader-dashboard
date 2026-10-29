@@ -1,3 +1,4 @@
+import type {CandidateNow} from '../../shared/candidate-now';
 import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Download,Pause,Play,RefreshCw,Sparkles,SlidersHorizontal,CheckCircle2} from 'lucide-react';
 import MultiLineFilters from './MultiLineFilters';
@@ -16,6 +17,19 @@ export default function ScreenerWorkspace({active=true,onOpen,watchlist,onStock,
  const auto=tab==='auto',currentOptions={...options,auto},manual=!useShared&&state.startedAt>0&&!!state.options.auto===auto,base=manual?(state.sharedCandidates||state.candidates):report?.candidates||[];
  const rows=useMemo(()=>filterReport({candidates:base},{...options,auto}).filter(c=>(!excludeST||!/ST|退/i.test(c.name))&&(!query||c.name.includes(query)||c.symbol.toLowerCase().includes(query.toLowerCase()))),[base,options,auto,excludeST,query]);
  const count=Math.max(1,Math.ceil(rows.length/40)),current=Math.min(page,count-1),shown=rows.slice(current*40,current*40+40);
+ const [currentQuotes,setCurrentQuotes]=useState<Record<string,CandidateNow>>({}),[quoteBusy,setQuoteBusy]=useState(false),[quoteError,setQuoteError]=useState(''),[quoteVersion,setQuoteVersion]=useState(0);
+ const quoteKey=JSON.stringify(shown.map(c=>({symbol:c.symbol,asOf:c.asOf,price:c.price,riskReference:c.riskReference})));
+ useEffect(()=>{
+  if(!active||tab==='sector')return;
+  const ac=new AbortController();let running=false;
+  const refresh=async()=>{if(running||document.hidden)return;running=true;setQuoteBusy(true);setQuoteError('');
+   try{const candidates=JSON.parse(quoteKey);if(!candidates.length)return;
+    const r=await fetch('/api/desk/candidate-check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({candidates}),signal:ac.signal}),j=await r.json();
+    if(!r.ok)throw Error(j.error||'当前行情暂不可用');if(!ac.signal.aborted)setCurrentQuotes(Object.fromEntries((j.items as CandidateNow[]).map(q=>[q.symbol,q])));
+   }catch(e){if(!ac.signal.aborted){setCurrentQuotes({});setQuoteError('当前行情刷新失败，历史报价已标明日期。');}}finally{running=false;if(!ac.signal.aborted)setQuoteBusy(false);}
+  };void refresh();const timer=setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);
+  return()=>{ac.abort();clearInterval(timer);document.removeEventListener('visibilitychange',refresh);};
+ },[active,tab,quoteKey,quoteVersion]);
  const changeTab=(value:string)=>{setTab(value);setPage(0);};
  const exportCsv=()=>{const data=[['名称','代码','综合分','建议','命中形态','成交额(元)','90%集中度','日期'],...rows.map(c=>[c.name,c.symbol,c.ranking?.score,c.advice?.action,c.patterns?.map(p=>p.label).join('；'),c.amount,c.chip?.concentration90,c.asOf])].map(r=>r.map(v=>'"'+String(v??'').replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+data],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='MarketAtlas-'+(report?.date||'screen')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
  if(!active)return busy||state.phase==='paused'?<button className="screen-running-indicator" onClick={onOpen}>{t('手动复核')} {state.cursor}/{state.targets.length} · {state.candidates.length} {t('个候选')}</button>:null;
@@ -36,7 +50,7 @@ export default function ScreenerWorkspace({active=true,onOpen,watchlist,onStock,
    {(error||scan.storageError)&&<p className="screen-warning" role="alert">{error||scan.storageError}</p>}
    {manual&&<section className="screen-progress" aria-live="polite"><div><b>{t(state.phase==='complete'?'当前范围处理完毕':state.phase==='universe'?'读取证券池':state.phase==='paused'?'已暂停':'并行核验历史日线')}</b><span>{state.cursor}/{state.targets.length} · {state.candidates.length} {t('个候选')}</span></div><progress max={state.phase==='universe'?state.total||1:state.targets.length||1} value={state.phase==='universe'?state.universe.length:state.cursor}/><small>{t(state.message)} · {t('来源失败')} {state.failed.length}</small></section>}
    <section className="screen-results"><div className="screen-results-heading"><div><h2>{t(auto?'综合排名':'形态候选')} <span>{rows.length}</span></h2><small>{t('不是所有技法同时满足；按各自条件独立识别。')}</small></div><label><SlidersHorizontal size={16}/><input aria-label={t('筛选候选')} placeholder={t('名称或代码')} value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label></div>
-    <div className="screen-candidate-grid">{shown.map((c,i)=><CandidateCard key={c.symbol} row={c} rank={current*40+i+1} watched={watchlist.includes(c.symbol)} onStock={onStock} onWatch={onWatch}/>)}</div>
+    <p className="screen-source-note">结构分保留收盘日期，价格与涨跌采用当前快照；只更新当前页候选，不重扫全市场。 <button disabled={quoteBusy} onClick={()=>setQuoteVersion(v=>v+1)}>{quoteBusy?'核验当前行情…':'更新当前行情'}</button> {quoteError}</p><div className="screen-candidate-grid">{shown.map((c,i)=><CandidateCard key={c.symbol} row={c} live={currentQuotes[c.symbol]} rank={current*40+i+1} watched={watchlist.includes(c.symbol)} onStock={onStock} onWatch={onWatch}/>)}</div>
     {!rows.length&&<div className="screen-empty">{t(loading?'正在读取共享收盘报告…':busy?'候选会随核验进度出现。':report||manual?'当前条件没有命中，结果保持为空。':'共享收盘报告尚未生成，可先进行扫描全市场。')}</div>}
     {count>1&&<div className="screen-pagination"><button disabled={current===0} onClick={()=>setPage(current-1)}>{t('上一页')}</button><span>{current+1}/{count}</span><button disabled={current>=count-1} onClick={()=>setPage(current+1)}>{t('下一页')}</button></div>}
    </section>

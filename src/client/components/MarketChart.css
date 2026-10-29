@@ -67,3 +67,5 @@
 .terminal-pattern-readout span{padding:3px 6px;background:#8a9cb80c;border-radius:4px}
 .terminal-projection-details{padding:12px 16px;border-top:1px solid #88888830;font-size:.9em;line-height:1.7}.terminal-projection-details>label{margin-right:16px}.terminal-projection-details>small{display:block;color:var(--muted,#9999a3)}.terminal-projection-details select{background:var(--surface,#19191d);color:inherit;border:1px solid #88888844;padding:4px;font:inherit}
 .terminal-price-pane{position:relative}.terminal-projection-badge{position:absolute;right:10px;top:8px;z-index:3;pointer-events:none;color:#d5ae58;background:var(--surface,#161618);font-size:11px;padding:3px 6px;border-radius:3px}
+
+.terminal-projection-basis{display:flex;gap:12px;flex-wrap:wrap;padding:8px 14px;line-height:1.55;font-size:.85em;border-bottom:1px solid #88888825;color:var(--muted,#9999a3)}.terminal-projection-basis b{color:var(--foreground,inherit)}

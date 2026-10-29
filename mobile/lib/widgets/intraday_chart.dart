@@ -33,8 +33,8 @@ class IntradayChart extends StatefulWidget {
 }
 
 class _IntradayChartState extends State<IntradayChart> {
-  bool auctionOpen = false, benchmarkOn = false;
-  Json? board, benchmark, sector, auction;
+  bool auctionOpen = false, benchmarkOn = false, macdOn = true;
+  Json? board, benchmark, sector, auction, yellow;
   String? overlayError, auctionError;
   bool extraBusy = false;
   int generation = 0, auctionGeneration = 0;
@@ -47,6 +47,13 @@ class _IntradayChartState extends State<IntradayChart> {
   void initState() {
     super.initState();
     index = defaultBenchmark(symbol);
+    benchmarkOn = !isMarketIndex(symbol);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        if (benchmarkOn) refreshOverlays();
+        if (isMarketIndex(symbol)) refreshYellow();
+      }
+    });
     timer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted ||
           !context.read<AtlasStore>().foreground ||
@@ -55,7 +62,29 @@ class _IntradayChartState extends State<IntradayChart> {
       }
       if (benchmarkOn || board != null) refreshOverlays();
       if (auctionOpen) refreshAuction();
+      if (isMarketIndex(symbol)) refreshYellow();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant IntradayChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data['symbol'] != widget.data['symbol'] ||
+        oldWidget.data['date'] != widget.data['date']) {
+      index = defaultBenchmark(symbol);
+      benchmarkOn = !isMarketIndex(symbol);
+      benchmark = null;
+      sector = null;
+      yellow = null;
+      board = null;
+      selected = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          if (benchmarkOn) refreshOverlays();
+          if (isMarketIndex(symbol)) refreshYellow();
+        }
+      });
+    }
   }
 
   @override
@@ -64,6 +93,22 @@ class _IntradayChartState extends State<IntradayChart> {
     generation++;
     auctionGeneration++;
     super.dispose();
+  }
+
+  Future<void> refreshYellow() async {
+    try {
+      final r = await context.read<AtlasStore>().api.get(
+        '/api/desk/index-equal',
+        parameters: {'symbol': symbol},
+      );
+      if (mounted && r['symbol'] == symbol && r['date'] == widget.data['date']) {
+        setState(() => yellow = r);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => yellow = {'notice': '黄色全成分等权源暂不可用，样本参考未取得，不补假线。'});
+      }
+    }
   }
 
   Future<void> refreshAuction() async {
@@ -221,13 +266,18 @@ class _IntradayChartState extends State<IntradayChart> {
 
   @override
   Widget build(BuildContext context) {
-    final points = rows(widget.data['points']),
+    final points = intradayStudy(
+          rows(widget.data['points']),
+          numOf(widget.data['previous']),
+        ),
         shown = selected == null
             ? points.lastOrNull
             : points.where((p) => p['clock'] == selected!['clock']).firstOrNull;
     final comparisons = <Json>[
+      if (yellow?['date'] == widget.data['date'])
+        {...yellow!, 'label': yellow!['name'], 'color': 0xffd5ae58},
       if (benchmarkOn && benchmark?['date'] == widget.data['date'])
-        {...benchmark!, 'label': _benchmarkNames[index], 'color': 0xffd5ae58},
+        {...benchmark!, 'label': _benchmarkNames[index], 'color': 0xff6a92dc},
       if (board != null && sector?['date'] == widget.data['date'])
         {...sector!, 'label': sector!['name'], 'color': 0xff758eef},
     ];
@@ -253,6 +303,13 @@ class _IntradayChartState extends State<IntradayChart> {
                     if (auctionOpen) refreshAuction();
                   },
                   child: Text(tr(context, auctionOpen ? '收起竞价' : '竞价')),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => macdOn = !macdOn),
+                  child: Text(
+                    'MACD',
+                    style: TextStyle(color: macdOn ? ink : muted),
+                  ),
                 ),
                 TextButton(
                   onPressed: chooseOverlays,
@@ -317,6 +374,7 @@ class _IntradayChartState extends State<IntradayChart> {
                     numOf(widget.data['previous']),
                     comparisons,
                     selected: shown,
+                    macdOn: macdOn,
                   ),
                 ),
               ),
@@ -326,6 +384,16 @@ class _IntradayChartState extends State<IntradayChart> {
             SizedBox(
               height: math.min(185, widget.height * .42),
               child: _auctionPanel(),
+            ),
+          if (isMarketIndex(symbol))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                str(yellow?['notice'], '正在加载黄线样本参考…'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: muted, fontSize: 10),
+              ),
             ),
           if (widget.showSource) SourceLine(widget.data),
         ],
@@ -435,17 +503,19 @@ class IntradayPainter extends CustomPainter {
     this.previous,
     this.comparisons, {
     this.selected,
+    this.macdOn = true,
   });
   final List<Json> points, comparisons;
   final double? previous;
   final Json? selected;
+  final bool macdOn;
   @override
   void paint(Canvas c, Size size) {
     if (size.width < 70 || size.height < 80) return;
     final width = size.width - 65,
-        priceBottom = size.height * .70,
+        priceBottom = size.height * (macdOn ? .52 : .70),
         volTop = priceBottom + 22,
-        volBottom = size.height - 25;
+        volBottom = macdOn ? size.height * .73 : size.height - 25;
     final base = previous != null && previous! > 0
         ? previous!
         : numOf(points.firstOrNull?['price']) ?? 1;
@@ -564,6 +634,68 @@ class IntradayPainter extends CustomPainter {
         ),
         Paint()..color = price >= prior ? up : down,
       );
+    }
+    if (macdOn) {
+      final studied = intradayStudy(
+        points,
+        previous,
+      ).where((p) => p['warmup'] == false).toList();
+      final top = size.height * .80, bottom = size.height - 26;
+      final bound = studied.fold<double>(
+        .0001,
+        (v, p) => math.max(
+          v,
+          math.max(
+            (numOf(p['dif']) ?? 0).abs(),
+            math.max(
+              (numOf(p['dea']) ?? 0).abs(),
+              (numOf(p['histogram']) ?? 0).abs(),
+            ),
+          ),
+        ),
+      );
+      double my(double n) =>
+          (top + bottom) / 2 - n / bound * math.max(1, bottom - top) / 2;
+      text('MACD (12,26,9)', Offset(8, top - 15), muted, 10);
+      c.drawLine(
+        Offset(8, my(0)),
+        Offset(width + 8, my(0)),
+        Paint()..color = muted.withValues(alpha: .18),
+      );
+      for (final p in studied) {
+        final v = numOf(p['histogram']) ?? 0, py = my(v), zero = my(0);
+        c.drawRect(
+          Rect.fromLTWH(
+            x(str(p['clock'])) - .5,
+            math.min(py, zero),
+            math.max(.8, width / 240 * .65),
+            math.max(.5, (zero - py).abs()),
+          ),
+          Paint()..color = v >= 0 ? up : down,
+        );
+      }
+      for (final entry in [('dif', ink), ('dea', const Color(0xffd5ae58))]) {
+        final path = Path();
+        int? prior;
+        for (final p in studied) {
+          final m = sessionMinute(str(p['clock']));
+          if (m == null) continue;
+          final px = x(str(p['clock'])), py = my(numOf(p[entry.$1]) ?? 0);
+          if (prior == null || m - prior > 2) {
+            path.moveTo(px, py);
+          } else {
+            path.lineTo(px, py);
+          }
+          prior = m;
+        }
+        c.drawPath(
+          path,
+          Paint()
+            ..color = entry.$2
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        );
+      }
     }
     for (final entry in [
       (0, '09:30'),
