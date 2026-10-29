@@ -1,3 +1,4 @@
+export 'intraday_chart.dart';
 import '../core/patch_daily_quote.dart';
 import '../core/pattern_ranges.dart';
 
@@ -32,12 +33,16 @@ class MarketChart extends StatefulWidget {
     this.patterns = const [],
     this.expanded = false,
     this.initialStudy,
+    this.onLiveAlerts,
+    this.initialProjection,
   });
   final List<Bar> bars;
   final String symbol, unit, volumeUnit;
   final String name;
   final List<Json> events, trades, patterns;
   final Json? initialStudy;
+  final ValueChanged<List<Json>>? onLiveAlerts;
+  final Json? initialProjection;
   final bool expanded;
   final bool terminal;
   final double? amount;
@@ -68,6 +73,150 @@ class _MarketChartState extends State<MarketChart> {
       studyRegimes = [];
   int studyRequest = 0;
   String studyKey = '', studyStatus = '标注依据当前MA · 核验中';
+  bool projectionOn = false, projectionBusy = false;
+  int projectionHorizon = 15, projectionRequest = 0;
+  String projectionKey = '';
+  Json? projection;
+  String? projectionError;
+  bool get drawProjection =>
+      projectionOn &&
+      projection?['available'] == true &&
+      offset == 0 &&
+      widget.unit == 'day';
+  Future<void> refreshProjection() async {
+    if (!mounted || !projectionOn || widget.bars.isEmpty) return;
+    final key = '$currentStudyKey:$projectionHorizon';
+    if (projectionBusy || projectionKey == key) return;
+    projectionBusy = true;
+    final request = ++projectionRequest;
+    try {
+      final result = await context.read<AtlasStore>().chartStudies.compute({
+        'task': 'projection',
+        'symbol': widget.symbol,
+        'ma': mas.where((m) => m.enabled).map((m) => m.period).toList(),
+        'horizon': projectionHorizon,
+        'candles': widget.bars
+            .map(
+              (b) => {
+                'time': b.time,
+                'open': b.open,
+                'high': b.high,
+                'low': b.low,
+                'close': b.close,
+                'volume': b.volume,
+              },
+            )
+            .toList(),
+      });
+      if (mounted &&
+          request == projectionRequest &&
+          key == '$currentStudyKey:$projectionHorizon') {
+        setState(() {
+          projection = obj(result['projection']);
+          projectionError = null;
+          projectionKey = key;
+        });
+      }
+    } catch (e) {
+      if (mounted && request == projectionRequest) {
+        setState(() {
+          projectionError = '$e';
+          projectionKey = key;
+        });
+      }
+    } finally {
+      projectionBusy = false;
+    }
+  }
+
+  Future<void> projectionSettings() async {
+    if (!projectionOn) {
+      setState(() => projectionOn = true);
+      await refreshProjection();
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, update) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        tr(ctx, '行情推演'),
+                        style: Theme.of(ctx).textTheme.titleLarge,
+                      ),
+                    ),
+                    Switch(
+                      value: projectionOn,
+                      onChanged: (v) {
+                        setState(() => projectionOn = v);
+                        update(() {});
+                        if (v) refreshProjection();
+                      },
+                    ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final n in [5, 10, 15])
+                      ChoiceChip(
+                        label: Text('$n ${tr(ctx, '个交易步')}'),
+                        selected: projectionHorizon == n,
+                        onSelected: (_) async {
+                          setState(() => projectionHorizon = n);
+                          await refreshProjection();
+                          update(() {});
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(tr(ctx, '虚线为条件情景，不是实盘或确定预测；随最新量价和MA重新计算。')),
+                if (projectionError != null) Text(projectionError!),
+                if (projection != null) ...[
+                  Text(
+                    '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? '历史相似窗口 ${projection!['sampleCount']} 段' : '样本不足 · 波动规则情景'}',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                  for (final r in rows(projection!['conditions']))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        str(r['text']),
+                        style: TextStyle(
+                          height: 1.6,
+                          color: r['side'] == 'bull'
+                              ? up
+                              : r['side'] == 'bear'
+                              ? down
+                              : ink,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+                  Text(
+                    str(projection!['notice']),
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   bool volume = true, macd = true, kdj = true, markers = true;
   bool shapeMarkers = true, crossMarkers = false, indicatorLabels = true;
   Timer? studyRetry;
@@ -103,6 +252,9 @@ class _MarketChartState extends State<MarketChart> {
       }
     } catch (_) {}
     indicators = IndicatorData(widget.bars, mas);
+    projection = widget.initialProjection;
+    projectionOn = projection != null;
+    projectionHorizon = (numOf(projection?['horizon']) ?? 15).toInt();
     viewport.length = widget.bars.length;
     acceptInitialStudy();
     WidgetsBinding.instance.addPostFrameCallback((_) => refreshStudy());
@@ -424,7 +576,12 @@ class _MarketChartState extends State<MarketChart> {
   }
 
   void selectAt(Offset p, double width) {
-    final i = viewport.select(ChartPlot.fraction(p.dx, width));
+    final future = drawProjection ? rows(projection!['points']).length : 0;
+    final i = viewport.select(
+      ChartPlot.fraction(p.dx, width) *
+          (end - start + future) /
+          math.max(1, end - start),
+    );
     if (i != hover &&
         DateTime.now().difference(hapticAt).inMilliseconds >= 80) {
       hapticAt = DateTime.now();
@@ -446,6 +603,7 @@ class _MarketChartState extends State<MarketChart> {
           events: widget.events,
           trades: widget.trades,
           patterns: widget.patterns,
+          initialProjection: drawProjection ? projection : null,
           initialStudy: studyReady
               ? {
                   'tradeMarkers': studyTrades,
@@ -534,6 +692,10 @@ class _MarketChartState extends State<MarketChart> {
     studyPatterns = rows(seed['patternMarks']);
     studyIndicators = rows(seed['indicatorMarks']);
     studyRegimes = rows(seed['trendRegimes']);
+    final alerts = rows(seed['liveAlerts']);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onLiveAlerts?.call(alerts);
+    });
     studyKey = currentStudyKey;
     studyReady = true;
     studyStatus = 'K线与标注 · 同步快照';
@@ -557,14 +719,10 @@ class _MarketChartState extends State<MarketChart> {
     setState(() {
       if (!sameParameters) studyReady = false;
       studyTrades = sameParameters
-          ? studyTrades
-                .where((m) => m['time'] != widget.bars.last.time)
-                .toList()
+          ? studyTrades.where((m) => m['provisional'] != true).toList()
           : [];
       studyPatterns = sameParameters
-          ? studyPatterns
-                .where((m) => m['time'] != widget.bars.last.time)
-                .toList()
+          ? studyPatterns.where((m) => m['provisional'] != true).toList()
           : [];
       studyIndicators = sameParameters
           ? studyIndicators
@@ -602,6 +760,7 @@ class _MarketChartState extends State<MarketChart> {
         studyPatterns = rows(result['patternMarks']);
         studyIndicators = rows(result['indicatorMarks']);
         studyRegimes = rows(result['trendRegimes']);
+        widget.onLiveAlerts?.call(rows(result['liveAlerts']));
         studyStatus = '当前 MA${periods.join('/')} · 形态量价 v4';
       });
     } catch (_) {
@@ -972,7 +1131,10 @@ class _MarketChartState extends State<MarketChart> {
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) refreshStudy();
+      if (mounted) {
+        refreshStudy();
+        refreshProjection();
+      }
     });
     if (widget.bars.isEmpty) {
       return const SizedBox(
@@ -1116,6 +1278,16 @@ class _MarketChartState extends State<MarketChart> {
                 tooltip: tr(context, '均线参数'),
                 icon: const Icon(Icons.tune, size: 20),
               ),
+              if (widget.unit == 'day')
+                IconButton(
+                  onPressed: projectionSettings,
+                  tooltip: tr(context, '行情推演'),
+                  icon: Icon(
+                    Icons.auto_graph,
+                    size: 20,
+                    color: projectionOn ? const Color(0xffd5ae58) : muted,
+                  ),
+                ),
               if (offset > 0)
                 IconButton(
                   onPressed: () => range(count),
@@ -1432,6 +1604,7 @@ class _MarketChartState extends State<MarketChart> {
                                 : const [],
                             showPatterns: shapeMarkers,
                             showCrosses: crossMarkers,
+                            projection: drawProjection ? projection : null,
                           )
                         : null,
                     child:
@@ -1585,6 +1758,7 @@ class FullscreenChart extends StatefulWidget {
     this.trades = const [],
     this.patterns = const [],
     this.initialStudy,
+    this.initialProjection,
     this.amount,
     this.amountDate,
   });
@@ -1593,6 +1767,7 @@ class FullscreenChart extends StatefulWidget {
   final String name;
   final List<Json> events, trades, patterns;
   final Json? initialStudy;
+  final Json? initialProjection;
   final double? amount;
   final String? amountDate;
   @override
@@ -1736,6 +1911,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
             trades: trades,
             patterns: patterns,
             initialStudy: widget.initialStudy,
+            initialProjection: widget.initialProjection,
             expanded: true,
             terminal: portrait,
             viewportHeight: c.maxHeight,
@@ -1767,6 +1943,7 @@ class ChartPainter extends CustomPainter {
     this.indicatorMarks = const [],
     this.showPatterns = true,
     this.showCrosses = false,
+    this.projection,
   });
   final IndicatorData data;
   final int start, end;
@@ -1774,6 +1951,7 @@ class ChartPainter extends CustomPainter {
   final bool volume, macd, kdj;
   final List<Json> events, trades, patterns;
   final List<Json> indicatorMarks;
+  final Json? projection;
   final String unit;
   final double font;
   final bool showSignals, rsi, showPatterns, showCrosses;
@@ -1821,7 +1999,8 @@ class ChartPainter extends CustomPainter {
     const left = ChartPlot.inset, right = ChartPlot.inset;
     final width = ChartPlot.width(size.width),
         n = end - start,
-        step = width / math.max(1, n),
+        future = rows(projection?['points']),
+        step = width / math.max(1, n + future.length),
         parts =
             1 +
             (volume ? 1 : 0) +
@@ -1847,6 +2026,15 @@ class ChartPainter extends CustomPainter {
     final visible = data.bars.sublist(start, end);
     var lo = visible.map((b) => b.low).reduce(math.min),
         hi = visible.map((b) => b.high).reduce(math.max);
+    for (final p in future) {
+      for (final key in ['base', 'bull', 'bear']) {
+        final v = numOf(p[key]);
+        if (v != null) {
+          lo = math.min(lo, v);
+          hi = math.max(hi, v);
+        }
+      }
+    }
     for (final ma in data.mas.where((m) => m.enabled && overlay == 'MA')) {
       for (final value
           in data.averages[ma.period]!
@@ -2160,6 +2348,53 @@ class ChartPainter extends CustomPainter {
         background: true,
       );
     }
+    if (future.isNotEmpty) {
+      final boundary = x(end - 1) + step * .5,
+          anchor = data.bars[end - 1].close;
+      c.save();
+      c.clipRect(Rect.fromLTRB(left, 14, size.width - right, priceHeight));
+      c.drawRect(
+        Rect.fromLTRB(boundary, 14, size.width - right, priceHeight),
+        Paint()..color = const Color(0xffd5ae58).withValues(alpha: .065),
+      );
+      c.drawLine(
+        Offset(boundary, 14),
+        Offset(boundary, priceHeight),
+        Paint()..color = const Color(0xffd5ae58).withValues(alpha: .4),
+      );
+      for (final branch in [
+        ('base', const Color(0xffd5ae58)),
+        ('bull', up),
+        ('bear', down),
+      ]) {
+        var from = Offset(x(end - 1), y(anchor));
+        for (var i = 0; i < future.length; i++) {
+          final value = numOf(future[i][branch.$1]);
+          if (value == null) continue;
+          final to = Offset(x(end + i), y(value)),
+              delta = to - from,
+              length = delta.distance;
+          for (var d = 0.0; d < length; d += 7) {
+            c.drawLine(
+              from + delta * (d / math.max(1, length)),
+              from + delta * (math.min(length, d + 4) / math.max(1, length)),
+              Paint()
+                ..color = branch.$2.withValues(alpha: .8)
+                ..strokeWidth = 1.2,
+            );
+          }
+          from = to;
+        }
+      }
+      label(
+        c,
+        '推演 · 非实盘',
+        Offset(boundary + 3, 17),
+        color: const Color(0xffd5ae58),
+        size: 10,
+      );
+      c.restore();
+    }
     var top = priceHeight + 4;
     void pane(
       String title,
@@ -2419,165 +2654,4 @@ class ChartPainter extends CustomPainter {
       overlay != old.overlay ||
       rsi != old.rsi ||
       trades != old.trades;
-}
-
-class IntradayChart extends StatelessWidget {
-  const IntradayChart(
-    this.data, {
-    super.key,
-    this.height = 280,
-    this.showSource = true,
-  });
-  final double height;
-  final bool showSource;
-  final Json data;
-  @override
-  Widget build(BuildContext context) {
-    final points = rows(data['points']);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '${data['date']} · ${tr(context, '北京时间')}',
-          style: TextStyle(color: muted, fontSize: 13),
-        ),
-        SizedBox(
-          height: height,
-          width: double.infinity,
-          child: CustomPaint(
-            painter: _IntradayPainter(points, numOf(data['previous'])),
-          ),
-        ),
-        if (showSource) SourceLine(data),
-      ],
-    );
-  }
-}
-
-class _IntradayPainter extends CustomPainter {
-  _IntradayPainter(this.points, this.previous);
-  final List<Json> points;
-  final double? previous;
-  @override
-  void paint(Canvas c, Size size) {
-    if (points.isEmpty) return;
-    final prices = points.map((p) => numOf(p['price']) ?? 0).toList(),
-        min = prices.reduce(math.min),
-        max = prices.reduce(math.max),
-        lo = math.min(min, previous ?? min) * .999,
-        hi = math.max(max, previous ?? max) * 1.001;
-    final width = size.width - 61, height = (size.height - 45) * .72;
-    double y(double value) => 15 + (hi - value) / (hi - lo) * height;
-    final path = Path();
-    for (var i = 0; i < prices.length; i++) {
-      final p = Offset(
-        8 + i / math.max(1, prices.length - 1) * width,
-        y(prices[i]),
-      );
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    for (var i = 0; i < 4; i++) {
-      final v = lo + (hi - lo) * i / 3;
-      final text = TextPainter(
-        text: TextSpan(
-          text: v.toStringAsFixed(2),
-          style: TextStyle(color: muted, fontSize: 12),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      text.paint(c, Offset(width + 13, y(v) - 6));
-      c.drawLine(
-        Offset(8, y(v)),
-        Offset(width + 8, y(v)),
-        Paint()..color = atlasColor(0xff303038),
-      );
-    }
-    c.drawPath(
-      path,
-      Paint()
-        ..color = atlasColor(0xffdddded)
-        ..strokeWidth = 1.8
-        ..style = PaintingStyle.stroke,
-    );
-    if (previous != null) {
-      c.drawLine(
-        Offset(8, y(previous!)),
-        Offset(width + 8, y(previous!)),
-        Paint()..color = Colors.amber.withValues(alpha: .4),
-      );
-    }
-    final volumes = points
-            .map((p) => math.max(0, numOf(p['volume']) ?? 0))
-            .toList(),
-        maxVolume = volumes.fold<double>(
-          0,
-          (n, v) => math.max(n, v).toDouble(),
-        ),
-        volTop = height + 35,
-        volBottom = size.height - 25,
-        barWidth = math.max(.8, width / math.max(1, points.length) * .7);
-    final title = TextPainter(
-      text: TextSpan(
-        text: 'VOL  ${amount(volumes.last)}',
-        style: TextStyle(color: muted, fontSize: 12),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    title.paint(c, Offset(8, volTop - 17));
-    c.drawLine(
-      Offset(8, volTop),
-      Offset(8 + width, volTop),
-      Paint()..color = atlasColor(0xff303038),
-    );
-    if (maxVolume > 0) {
-      for (var i = 0; i < points.length; i++) {
-        final px = 8 + i / math.max(1, points.length - 1) * width,
-            barHeight =
-                volumes[i] / maxVolume * math.max(5, volBottom - volTop);
-        c.drawRect(
-          Rect.fromLTWH(
-            px - barWidth / 2,
-            volBottom - barHeight,
-            barWidth,
-            barHeight,
-          ),
-          Paint()
-            ..color =
-                prices[i] >= (i == 0 ? previous ?? prices[i] : prices[i - 1])
-                ? up
-                : down,
-        );
-      }
-    }
-    for (final pair in [
-      (0, str(points.first['clock'])),
-      (points.length ~/ 2, str(points[points.length ~/ 2]['clock'])),
-      (points.length - 1, str(points.last['clock'])),
-    ]) {
-      final t = TextPainter(
-        text: TextSpan(
-          text: pair.$2,
-          style: TextStyle(color: muted, fontSize: 12),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      t.paint(
-        c,
-        Offset(
-          (8 + pair.$1 / math.max(1, points.length - 1) * width - 12).clamp(
-            0,
-            size.width - 40,
-          ),
-          size.height - 20,
-        ),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _IntradayPainter old) => true;
 }

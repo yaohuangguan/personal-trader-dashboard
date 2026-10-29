@@ -68,6 +68,9 @@ class AtlasApi {
       '/api/desk/quotes',
       '/api/desk/history',
       '/api/desk/intraday',
+      '/api/desk/auction',
+      '/api/desk/sector-intraday',
+      '/api/desk/sectors',
       '/api/desk/trend',
     };
     if (token == null && publicPaths.contains(path)) {

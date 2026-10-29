@@ -8,8 +8,9 @@ function append(bars:Candle[],v:Omit<Candle,'time'>){bars.push({...v,time:new Da
 test('intraday volume stall/rejection is a revocable sell warning, independent of a simulated holding',()=>{
  const b=trend(),p=b.at(-1)!;append(b,{open:p.close+.1,close:p.close,high:p.close+1,low:p.close-.2,volume:25000});
  const now=new Date(b.at(-1)!.time+'T03:00:00Z'),study=chartStudy(b,{now,amount:3e8});
- assert.ok(study.patternMarks.some(m=>m.time===b.at(-1)!.time&&m.kind==='vp-stall'&&m.provisional));
- const alert=study.tradeMarkers.find(m=>m.time===b.at(-1)!.time&&m.side==='sell');assert.equal(alert?.label,'卖预警');assert.equal(alert?.confirmed,false);assert.equal(alert?.provisional,true);assert.match(alert!.reason,/量大滞涨|放量冲高回落/);
+ assert.ok(study.liveAlerts.some(m=>m.time===b.at(-1)!.time&&m.kind==='vp-stall'&&m.provisional));
+ const alert=study.liveAlerts.find(m=>m.time===b.at(-1)!.time&&m.kind==='timing-sell');assert.equal(alert?.title,'卖预警');assert.equal(alert?.provisional,true);assert.match(alert!.detail,/量大滞涨|放量冲高回落/);
+ assert.ok(study.patternMarks.every(m=>!m.provisional));assert.ok(study.tradeMarkers.every(m=>!m.provisional));
  assert.ok(study.strategy!.signals.every(m=>m.time!==b.at(-1)!.time));
  const repaired=b.map((v,i)=>i===b.length-1?{...v,close:p.close+.9,high:p.close+1,low:p.close-.2}:v),next=chartStudy(repaired,{now,amount:3e8});assert.ok(next.tradeMarkers.every(m=>m.time!==b.at(-1)!.time||m.side!=='sell'));
  assert.deepEqual(next.tradeMarkers.filter(m=>m.time<b.at(-1)!.time),study.tradeMarkers.filter(m=>m.time<b.at(-1)!.time));
@@ -17,9 +18,9 @@ test('intraday volume stall/rejection is a revocable sell warning, independent o
 test('dark cloud warning appears during the session and is confirmed only after the close',()=>{
  const b=trend();append(b,{open:22.5,close:24,high:24.1,low:22.4,volume:20000});append(b,{open:24.3,close:23,high:24.4,low:22.8,volume:25000});
  const day=b.at(-1)!.time,live=chartStudy(b,{now:new Date(day+'T03:00:00Z')}),close=chartStudy(b,{now:new Date(day+'T08:00:00Z')});
- assert.ok(live.patternMarks.some(m=>m.time===day&&m.kind==='dark-cloud'&&m.provisional));assert.ok(close.patternMarks.some(m=>m.time===day&&m.kind==='dark-cloud'&&!m.provisional));
- assert.equal(live.patternMarks.find(m=>m.time===day&&m.kind==='dark-cloud')?.direction,'bearish');
- assert.ok(live.tradeMarkers.some(m=>m.time===day&&m.label==='卖预警'&&m.confirmed===false));
+ assert.ok(live.liveAlerts.some(m=>m.time===day&&m.kind==='dark-cloud'&&m.provisional));assert.ok(close.patternMarks.some(m=>m.time===day&&m.kind==='dark-cloud'&&!m.provisional));
+ assert.equal(live.liveAlerts.find(m=>m.time===day&&m.kind==='dark-cloud')?.direction,'bearish');
+ assert.ok(live.liveAlerts.some(m=>m.time===day&&m.title==='卖预警'));
  assert.ok(close.tradeMarkers.some(m=>m.time===day&&m.label==='减仓观察'&&m.confirmed===false));
 });
 test('an intraday pattern trigger can be observed without inventing a confirmed trade',()=>{

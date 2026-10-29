@@ -8,6 +8,7 @@ import {f10} from './f10';
 import {dailyTrend} from '../shared/daily-trend';
 import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, fundFlowHistory, flowObservation, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
+import {auction,sectorIntraday} from './intraday-extras';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
@@ -17,6 +18,11 @@ export async function deskRoute(request: Request): Promise<Response | null> {
   const symbol = url.searchParams.get('symbol') || '';
   const kind = url.pathname.slice('/api/desk/'.length);
   try {
+    if(kind==='sector-intraday'){
+      const code=url.searchParams.get('code')||'',name=(url.searchParams.get('name')||'').slice(0,40);
+      if(!/^(?:BK\d{4,6}|SN:new_[a-z0-9]{2,20}|SN:gn_[A-Za-z0-9_]{1,40})$/.test(code))return respond({error:'无效板块代码'},400);
+      return respond(await memo('sector-intraday:'+code+':'+name,60,()=>sectorIntraday(code,name)));
+    }
     if(kind==='sector-map'){const type=url.searchParams.get('type')==='industry'?'industry':'concept';return respond(await memo('heat:'+type,90,()=>sectorMap(type)));}
     if(kind==='sector-detail'||kind==='sector-news'){const code=url.searchParams.get('code')||'';if(!/^SN:(?:gn_[A-Za-z0-9_]{1,40}|new_[a-z0-9]{2,20})$/.test(code))return respond({error:'无效板块代码'},400);return respond(await memo<unknown>(kind+code,60,()=>kind==='sector-detail'?sectorDetail(code):sectorNews(code)));}
     if(kind==='screen-batch'){const symbols=[...new Set((url.searchParams.get('symbols')||'').split(','))];if(!symbols.length||symbols.length>4||symbols.some(s=>!/^\d{6}\.(SH|SZ|BJ)$/.test(s)))return respond({error:'请提供1至4个证券代码'},400);return respond(await patternBatch(symbols,url.searchParams));}
@@ -63,6 +69,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
     }));
     if (kind === 'chips')return respond(await memo(kind+symbol,600,()=>chips(symbol)));
     if (kind === 'intraday') return respond(await memo(kind + symbol, 15, () => intraday(symbol)));
+    if (kind === 'auction') return respond(await memo(kind+symbol,30,()=>auction(symbol)));
     if (kind === 'ticks') return respond(await memo(kind + symbol, 15, () => ticks(symbol)));
     if (kind === 'sectors') return respond(await memo(kind + symbol, 300, () => sectors(symbol)));
     if (kind === 'flow') return respond(await memo(kind + symbol, 45, () => fundFlow(symbol)));

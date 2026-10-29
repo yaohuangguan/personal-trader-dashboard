@@ -1,4 +1,5 @@
 import {chartStudy} from '../shared/chart-study';
+import {projectMarket} from '../shared/market-projection';
 import {loadChartBundle,loadChartFrame} from './chart-bundle';
 import {historicalSnapshot} from './history-cache';
 import {chartPayload} from './chart-payload';
@@ -515,9 +516,11 @@ export default {
    const synced=await watchSyncRoute(request,env.MARKET_SCANNER);if(synced)return synced;
    if(new URL(request.url).pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
-    const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
+    const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
     if(!Array.isArray(body.candles)||body.candles.length>1500||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
-    const ma=parseMAPeriods(body.ma.join(','));return computeCache(request,'chart-study-v5:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
+    const ma=body.ma.length?parseMAPeriods(body.ma.join(',')):[];
+    if(body.task==='projection')return computeCache(request,'projection-v1:'+studySession()+':'+raw,60,()=>json({projection:projectMarket(body.candles,{maPeriods:ma,horizon:body.horizon})}));
+    return computeCache(request,'chart-study-v6:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
    }
    if(incoming.pathname==='/api/chart-frame'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);

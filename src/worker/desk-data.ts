@@ -39,7 +39,7 @@ async function request(url: string, timeout = 9000, signal?:AbortSignal) {
   return response;
 }
 let nextEastmoneyStart = 0;
-async function eastmoney(url: string, timeout = 9000, signal?:AbortSignal) {
+export async function eastmoney(url: string, timeout = 9000, signal?:AbortSignal) {
   // Keep the wait in the calling request's context. A cross-request promise
   // queue can retain a timer after its owner request has already completed.
   const delay = Math.max(0, nextEastmoneyStart - Date.now());
@@ -105,8 +105,7 @@ export async function intraday(raw: string) {
     points.push({ time: Date.parse(date + 'T' + clock.slice(0, 2) + ':' + clock.slice(2) + ':00+08:00') / 1000, clock: clock.slice(0, 2) + ':' + clock.slice(2), price, volume: cumulativeVolume - prior, cumulativeVolume, amount: num(amount) });
     prior = cumulativeVolume;
   }
-  if (!points.length) throw new Error('暂无有效分时');
-  return { ...stamp('腾讯财经公开分时', url), symbol, date, previous: num(node.qt?.[wire]?.[4]), points };
+  return { ...stamp('腾讯财经公开分时', url), symbol, date, previous: num(node.qt?.[wire]?.[4]), points,volumeUnit:/^68[89]/.test(symbol)?'股':'手',notice:points.length?undefined:'尚无成交分时，等待开盘；未发生时段保持空白。' };
 }
 export async function history(raw: string, period: string) {
   const { symbol, wire } = chineseSymbol(raw);

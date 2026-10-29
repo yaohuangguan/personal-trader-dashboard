@@ -3,6 +3,9 @@ import {migrateMAPreferences} from '../../shared/chart-indicators';
 import ResizeRail,{usePanelWidth} from './ResizeRail';
 import type {CSSProperties} from 'react';
 import StockSnapshot from './StockSnapshot';
+import LiveAlerts from './LiveAlerts';
+import {reviewedPatternMarks} from '../../shared/pattern-marks';
+import {splitLiveAlerts} from '../../shared/live-alerts';
 import {analyzeStrategy} from '../../shared/strategy';
 import type {DecisionPayload} from '../../shared/trade-review';
 import WatchInsight from './WatchInsight';
@@ -112,6 +115,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   const character=useMemo(()=>analysis?.asOf&&market?stockCharacter(market.candles,analysis.asOf):null,[analysis,market]);
   const strategy=useMemo(()=>decision.data?.strategy||(market?analyzeStrategy(market.candles,{symbol}):null),[decision.data,market,symbol]);
   const tradeMarkers=strategy?.signals||[];
+  const liveAlerts=useMemo(()=>market&&strategy?splitLiveAlerts(reviewedPatternMarks(market.candles,strategy,new Date(),{symbol,maPeriods:strategy.plan.maPeriods}),[...strategy.signals,...strategy.alerts]).liveAlerts:[],[market,strategy,symbol]);
   const known = CATALOG.find(item => item.symbol === symbol), name = quote?.name || market?.name || known?.name || symbol;
   const price = quote?.price ?? market?.last, change = quote?.changePercent ?? market?.changePercent;
   const benchmark = quoteMap.get('000300.SH');
@@ -154,7 +158,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
       <div className="desk-center">
         <div className="desk-mobile-security">{securityCard}</div>
 
-        {chinese && <DailyTrendPanel symbol={symbol} />}
+        {chinese && <><LiveAlerts alerts={liveAlerts}/><DailyTrendPanel symbol={symbol} liveAlerts={liveAlerts}/></>}
         {uiText(analysis && <GuideSummary strategy={strategy} review={decision.data?.review} candles={market?.candles} character={character} data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
 
 

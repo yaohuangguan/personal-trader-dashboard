@@ -70,6 +70,16 @@ void main() {
         debugPrint(
           'Local native study ${DateTime.now().difference(start).inMilliseconds}ms',
         );
+        final forecast = await service.compute({
+          'task': 'projection',
+          'symbol': '300001.SZ',
+          'ma': [5, 13, 20, 30, 60, 120, 144, 250],
+          'candles': candles,
+          'horizon': 15,
+          'now': '2026-10-28T08:00:00Z',
+        });
+        expect(obj(forecast['projection'])['available'], true);
+        expect(rows(obj(forecast['projection'])['points']).length, 15);
       }
       expect(networkCalls, 0);
       api.dispose();
@@ -109,6 +119,51 @@ void main() {
                     'turnover': 6.28,
                     'session': 'closed',
                     'asOf': '2025-10-27T15:00:00+08:00',
+                  },
+                ],
+              },
+              '/api/desk/intraday' => {
+                'symbol': request.url.queryParameters['symbol'] ?? '300545.SZ',
+                'date': '2025-10-27',
+                'previous': 47.0,
+                'points': [
+                  {
+                    'clock': '09:30',
+                    'price': 47.0,
+                    'volume': 200,
+                    'time':
+                        DateTime.parse('2025-10-27T09:30:00+08:00')
+                            .millisecondsSinceEpoch ~/
+                        1000,
+                  },
+                  {
+                    'clock': '10:00',
+                    'price': 47.36,
+                    'volume': 300,
+                    'time':
+                        DateTime.parse('2025-10-27T10:00:00+08:00')
+                            .millisecondsSinceEpoch ~/
+                        1000,
+                  },
+                ],
+              },
+              '/api/desk/auction' => {
+                'symbol': '300545.SZ',
+                'date': '2025-10-27',
+                'segments': [
+                  {
+                    'key': 'open',
+                    'notice': '公开竞价测试样本',
+                    'points': [
+                      {
+                        'clock': '09:25',
+                        'sourceClock': '09:25:00',
+                        'price': 47.0,
+                        'volume': 200,
+                        'amount': 940000,
+                        'indicative': false,
+                      },
+                    ],
                   },
                 ],
               },
@@ -183,6 +238,15 @@ void main() {
       }
       await s.setTheme('dark');
       await tester.pumpAndSettle();
+      await tester.tap(find.text('分时').first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('intraday-canvas')), findsOneWidget);
+      await binding.takeScreenshot('ios-intraday-full-session');
+      await tester.tap(find.text('竞价'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('09:25:00'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await binding.takeScreenshot('ios-intraday-auction');
       await tester.pumpWidget(const SizedBox());
       s.dispose();
       await push.dispose();

@@ -2,6 +2,7 @@ import '../core/patch_daily_quote.dart';
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +16,7 @@ import '../widgets/market_chart.dart';
 import '../widgets/daily_trend.dart';
 import '../widgets/flow_research.dart';
 import '../widgets/live_chart_feed.dart';
+import '../widgets/live_alerts.dart';
 import 'guide.dart';
 import 'f10.dart';
 import 'news.dart';
@@ -42,6 +44,17 @@ class _StockPageState extends State<StockPage> {
   String? quoteError, analysisError, historyError;
   String tab = 'chart', timeframe = 'day', newsTab = 'news';
   bool auto = true, loading = false;
+  List<Json> liveAlerts = [];
+  String alertKey = '';
+  void acceptAlerts(List<Json> alerts) {
+    final key = jsonEncode(alerts);
+    if (!mounted || key == alertKey) return;
+    setState(() {
+      alertKey = key;
+      liveAlerts = alerts;
+    });
+  }
+
   Timer? timer, historyRetry;
   int historyFailures = 0;
   late ValueNotifier<int> chartMARevision;
@@ -286,7 +299,14 @@ class _StockPageState extends State<StockPage> {
         '/api/desk/trend',
         parameters: {'symbol': widget.symbol},
       ),
-      builder: (r) => DailyTrendPanel(r),
+      builder: (r) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LiveAlertsPanel(liveAlerts),
+          const SizedBox(height: 20),
+          DailyTrendPanel(r),
+        ],
+      ),
     ),
   );
   Json get q =>
@@ -514,6 +534,8 @@ class _StockPageState extends State<StockPage> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          LiveAlertsPanel(liveAlerts),
+          const Divider(height: 26),
           Wrap(
             spacing: 26,
             runSpacing: 18,
@@ -753,6 +775,44 @@ class _StockPageState extends State<StockPage> {
             child: Column(
               children: [
                 _quoteStrip(),
+                SizedBox(
+                  height: 26,
+                  child: InkWell(
+                    onTap: openTrend,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.sensors,
+                            size: 13,
+                            color: liveAlerts.isEmpty
+                                ? muted
+                                : const Color(0xffd5ae58),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              liveAlerts.isEmpty
+                                  ? tr(context, '盘中观察 · 无新增预警')
+                                  : liveAlerts
+                                        .take(2)
+                                        .map((a) => str(a['title']))
+                                        .join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: liveAlerts.isEmpty ? muted : ink,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, size: 14, color: muted),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 _periodBar(),
                 Expanded(
                   child: LayoutBuilder(
@@ -924,6 +984,7 @@ class _StockPageState extends State<StockPage> {
         symbol: widget.symbol,
         volumeUnit: volumeUnit,
         initialStudy: historyStudy,
+        onLiveAlerts: acceptAlerts,
         events: rows(obj(analysis?['guide'])['events']),
         trades: rows(analysis?['tradeMarkers']),
         patterns: rows(analysis?['patternMarks']),

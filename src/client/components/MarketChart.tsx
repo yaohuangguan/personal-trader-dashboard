@@ -1,4 +1,5 @@
 import {chartStudy} from '../../shared/chart-study';
+import {projectMarket} from '../../shared/market-projection';
 import {indicatorOverlay} from './chart-indicator-overlay';
 import {CLASSIC_MA,FIBONACCI_MA} from '../../shared/ma-system';
 import {chartPatternOverlay} from './chart-pattern-overlay';
@@ -51,6 +52,8 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsError, setSettingsError] = useState('');
   const [panels, setPanels] = useState<Record<Panel, boolean>>({ VOL: true, MACD: true, KDJ: true,RSI:false });
   const [overlay,setOverlay]=useState('MA');
+  const [projectionOn,setProjectionOn]=useState(false),[projectionHorizon,setProjectionHorizon]=useState(15);
+  const projection=useMemo(()=>projectionOn&&unit==='day'?projectMarket(candles,{horizon:projectionHorizon,maPeriods:preferences.filter(p=>p.enabled).map(p=>p.period)}):null,[projectionOn,projectionHorizon,candles,preferences,unit]);
   const extra=useMemo(()=>({boll:bollinger(candles),rsi:rsi(candles),sar:parabolicSar(candles)}),[candles]);
   const [markers, setMarkers] = useState(true), [expanded, setExpanded] = useState(false);
   const [shapesVisible,setShapesVisible]=useState(true),[crossMarkers,setCrossMarkers]=useState(false);
@@ -122,6 +125,12 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       const main = makeChart(priceRef.current, compact ? 210 : expanded ? 480 : 390, !lastPanel);
       const prices = main.addCandlestickSeries({ priceScaleId: 'left', upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, priceLineVisible: false, lastValueVisible: false });
       prices.setData(candles.map(c => ({ time: chartTime(c.time), open: c.open, high: c.high, low: c.low, close: c.close })));
+      if(projection?.available){
+        for(const [branch,color] of [['base','#d5ae58'],['bull',UP],['bear',DOWN]] as const){
+          const line=main.addLineSeries({priceScaleId:'left',color,lineWidth:1,lineStyle:LineStyle.Dashed,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,title:'推演 · 非实盘'});
+          line.setData([{time:chartTime(candles.at(-1)!.time),value:candles.at(-1)!.close},...projection.points.map(p=>({time:chartTime(p.time),value:p[branch]}))]);
+        }
+      }
       if (!compact) {
         for (const line of preferences.filter(p => p.enabled && overlay==='MA')) addLine(main, indicators.ma[line.period] || [], line.color);
         if(overlay==='BOLL')for(const [key,color] of [['mid','#eeeeee'],['upper','#f7cf65'],['lower','#ed89bf']] as const)addLine(main,extra.boll.map(p=>({time:p.time,value:p[key]})),color);
@@ -187,7 +196,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       }
       if(!compact&&panels.RSI&&rsiRef.current){const chart=makeChart(rsiRef.current,130,lastPanel==='RSI'),line=addLine(chart,extra.rsi,'#f7cf65');for(const level of [30,70])line.createPriceLine({price:level,color:'#35373b',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:false});panes.push({chart,anchor:line,values:new Map(extra.rsi.map(p=>[p.time,p.value]))});}
       const count = rangeSize(period, candles.length, unit);
-      const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + 3 };
+      const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + (projection?.available?projection.points.length:0) + 3 };
       for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(initial);
       updateAnnotations(main.timeScale().getVisibleLogicalRange());
       for (const pane of panes) {
@@ -238,11 +247,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       removers.forEach(remove => remove()); observers.forEach(observer => observer.disconnect());
       instances.forEach(chart => chart.remove()); chartsRef.current = [];
     };
-  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers,indicatorLabels,study]);
+  }, [display, candles, compact, expanded, indicators, markers, panels, period, preferences, unit, guideEvents,overlay,extra,tradeMarkers,shapes,shapesVisible,crossMarkers,indicatorLabels,study,projection]);
 
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
-    const range = { from: Math.max(-1, candles.length - rangeSize(period, candles.length, unit) - 1), to: candles.length + 3 };
+    const range = { from: Math.max(-1, candles.length - rangeSize(period, candles.length, unit) - 1), to: candles.length + (projection?.available?projection.points.length:0) + 3 };
     visibleRef.current = range as LogicalRange;
     chartsRef.current.forEach(chart => chart.timeScale().setVisibleLogicalRange(range));
   }
@@ -258,9 +267,11 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         <div className="terminal-tools"><select aria-label={uiText("主图指标")} value={overlay} onChange={e=>setOverlay(e.target.value)}>{['MA','BOLL','SAR'].map(v=><option key={v}>{v}</option>)}</select><span className="terminal-frequency">{uiText(unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : unit.startsWith('m')?unit.slice(1)+'分钟':'日 K')}{uiText(symbol ? ' · ' + symbol : '')}</span>
           <button type="button" aria-pressed={chipsOpen} onClick={()=>setChipsOpen(v=>!v)} disabled={unit!=='day'||!chipEligible}>{uiText("筹码峰")}</button><button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />{uiText("均线参数")}</button>
           <button type="button" onClick={resetView} aria-label={uiText("重置缩放")}><RotateCcw size={14} /></button>
+          {unit==='day'&&<button type="button" aria-pressed={projectionOn} onClick={()=>{visibleRef.current=null;setProjectionOn(v=>!v);}}>{uiText('行情推演')}</button>}
           <button type="button" onClick={() => setExpanded(value => !value)} aria-label={uiText(expanded ? '收起图表' : '展开图表')}>{uiText(expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />)}</button>
         </div>
       </div>
+      {projectionOn&&unit==='day'&&<div className="terminal-settings"><label>推演范围 <select aria-label="推演范围" value={projectionHorizon} onChange={e=>{visibleRef.current=null;setProjectionHorizon(Number(e.target.value));}}>{[5,10,15].map(n=><option key={n} value={n}>{n} 个交易步</option>)}</select></label><b>虚线 · 条件情景 · 非实盘</b><small>{projection?.model==='analogs'?`同股历史相似窗口 ${projection.sampleCount} 段`:'相似样本不足，使用波动规则情景'}</small>{projection?.conditions.map(c=><p key={c.side} style={{color:c.side==='bull'?UP:c.side==='bear'?DOWN:undefined}}>{c.text}</p>)}<small>{projection?.notice||projection?.reason}</small></div>}
       {uiText(settingsOpen && <form className="terminal-settings" aria-label={uiText("均线参数设置")} onSubmit={event => {
         event.preventDefault();
         const next = draft.map(p => ({ ...p, period: Number(p.period) }));
