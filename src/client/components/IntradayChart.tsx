@@ -34,7 +34,7 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
    const chart=createChart(pane,{width:el.clientWidth,height,
     layout:{background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.fontSize*.8)},
     grid:{vertLines:{visible:false},horzLines:{color:light?'#e9ecf0':'#202023'}},
-    rightPriceScale:{visible:!label,borderVisible:false,minimumWidth:65,scaleMargins:{top:.12,bottom:.08}},
+    rightPriceScale:{visible:true,textColor:label?'#00000000':light?'#59616d':'#a1a1aa',borderVisible:false,minimumWidth:65,scaleMargins:{top:.12,bottom:.08}},
     timeScale:{visible:last,borderVisible:false,timeVisible:true,secondsVisible:false,tickMarkFormatter:format,fixLeftEdge:true,fixRightEdge:false},
     crosshair:{mode:CrosshairMode.Normal},handleScroll:false,handleScale:false,localization:{locale:display.locale,timeFormatter:format}});
    const clock=chart.addLineSeries({visible:false,priceScaleId:'clock',lastValueVisible:false,priceLineVisible:false});clock.setData(grid.map(p=>({time:p.time as UTCTimestamp,value:0})));
