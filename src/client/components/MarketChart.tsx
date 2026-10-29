@@ -271,7 +271,6 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           <button type="button" onClick={() => setExpanded(value => !value)} aria-label={uiText(expanded ? '收起图表' : '展开图表')}>{uiText(expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />)}</button>
         </div>
       </div>
-      {projectionOn&&unit==='day'&&<div className="terminal-settings"><label>推演范围 <select aria-label="推演范围" value={projectionHorizon} onChange={e=>{visibleRef.current=null;setProjectionHorizon(Number(e.target.value));}}>{[5,10,15].map(n=><option key={n} value={n}>{n} 个交易步</option>)}</select></label><b>虚线 · 条件情景 · 非实盘</b><small>{projection?.model==='analogs'?`同股历史相似窗口 ${projection.sampleCount} 段`:'相似样本不足，使用波动规则情景'}</small>{projection?.conditions.map(c=><p key={c.side} style={{color:c.side==='bull'?UP:c.side==='bear'?DOWN:undefined}}>{c.text}</p>)}<small>{projection?.notice||projection?.reason}</small></div>}
       {uiText(settingsOpen && <form className="terminal-settings" aria-label={uiText("均线参数设置")} onSubmit={event => {
         event.preventDefault();
         const next = draft.map(p => ({ ...p, period: Number(p.period) }));
@@ -309,6 +308,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       </section>)}
       {panels.RSI&&<section className="terminal-indicator" aria-label="RSI"><div className="terminal-indicator-heading"><b>RSI (14)</b><span>{number(extra.rsi.find(p=>p.time===current?.time)?.value)}</span></div><div ref={rsiRef} data-testid="rsi-pane"/></section>}
       <div className="terminal-status" title={study.method}><span>形态与买卖点依据当前 MA{activePeriods.join('/')} · MACD/KDJ固定参数</span>{study.trendRegimes.map(r=><span key={r.scale} title={r.detail} style={{color:r.direction==='up'?UP:r.direction==='down'?DOWN:undefined}}>{uiText('最新')} · {uiText(r.label)}{uiText(r.direction==='up'?'上涨':r.direction==='down'?'下跌':r.direction==='range'?'震荡':'待确认')}{r.provisional?' · '+uiText('盘中'):''}</span>)}<span>{uiText(candles.length)} {uiText("根K线 · 拖动平移 / 滚轮缩放")}</span></div>
+      {projectionOn&&unit==='day'&&<div className="terminal-projection-details"><label>推演范围 <select aria-label="推演范围" value={projectionHorizon} onChange={e=>{visibleRef.current=null;setProjectionHorizon(Number(e.target.value));}}>{[5,10,15].map(n=><option key={n} value={n}>约{n/5}周</option>)}</select></label><b>虚线 · 条件情景 · 非实盘</b><small>{projection?.model==='analogs'?`同股历史相似窗口 ${projection.sampleCount} 段`:'相似样本不足，使用波动规则情景'}</small>{projection?.conditions.map(c=><p key={c.side} style={{color:c.side==='bull'?UP:c.side==='bear'?DOWN:undefined}}>{c.text}</p>)}<small>{projection?.notice||projection?.reason}</small></div>}
       <details className="terminal-method"><summary>{uiText("交叉和展开标记的口径")}</summary><p>{uiText("金叉 / 死叉：已启用均线中周期最短的两条发生交叉。均线展开：已启用均线按周期从短到长多头排列、全部高于 5 根K线以前的均值、收盘高于最短均线，且 MACD 柱大于 0；仅在首次满足时标点。这里随自定义均线变化；“指南启动 / 开花确认”标记另按姚记指南固定MA5/10/20/30/60、粘合、放量穿线及后续3–5根确认计算，不随图表参数改变。MACD 柱 = 2 × (DIF − DEA)。KDJ 使用 9/3/3 递推，J 保留超出 0–100 的实际数值。")}</p></details>
     </>)}
   </div>;
