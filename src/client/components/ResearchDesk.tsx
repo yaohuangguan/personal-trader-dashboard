@@ -158,7 +158,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
       <div className="desk-center">
         <div className="desk-mobile-security">{securityCard}</div>
 
-        {chinese && <><LiveAlerts alerts={liveAlerts} compact/><DailyTrendPanel symbol={symbol} liveAlerts={liveAlerts}/></>}
+        {chinese && <><LiveAlerts alerts={liveAlerts}/><DailyTrendPanel symbol={symbol} liveAlerts={liveAlerts}/></>}
         {uiText(analysis && <GuideSummary strategy={strategy} review={decision.data?.review} candles={market?.candles} character={character} data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
 
 
