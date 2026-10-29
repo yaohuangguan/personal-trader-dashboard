@@ -284,8 +284,9 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     final target = groupId == null
         ? null
         : groups.where((g) => g['id'] == groupId).firstOrNull;
-    if (groupId != null && target == null)
+    if (groupId != null && target == null) {
       throw const FormatException('分组已不存在');
+    }
     final unique = symbols.map(normalize).toSet(), before = watchlist.length;
     for (final symbol in unique) {
       if (!watchlist.contains(symbol) && watchlist.length < 60) {

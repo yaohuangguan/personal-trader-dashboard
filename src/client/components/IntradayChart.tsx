@@ -27,30 +27,38 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
   if(!grid.length)return;
   const cn=new Intl.DateTimeFormat(display.locale,{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false});
   const format=(time:Time)=>typeof time==='number'?cn.format(new Date(time*1000)):String(time);
-  const chart=createChart(el,{width:el.clientWidth,height:el.clientWidth<600?300:420,
-   layout:{background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.fontSize*.8)},
-   grid:{vertLines:{visible:false},horzLines:{color:light?'#e9ecf0':'#202023'}},
-   rightPriceScale:{borderVisible:false,scaleMargins:{top:.1,bottom:macdOn?.48:.28}},timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false,tickMarkFormatter:format,fixLeftEdge:true,fixRightEdge:false},
-   crosshair:{mode:CrosshairMode.Normal},handleScroll:false,handleScale:false,localization:{locale:display.locale,timeFormatter:format}});
+  const charts:ReturnType<typeof createChart>[]=[],small=el.clientWidth<600,total=small?340:450;
+  const make=(height:number,last:boolean,label?:string)=>{
+   const pane=document.createElement('div');pane.style.position='relative';pane.style.height=height+'px';el.appendChild(pane);
+   if(label){const tag=document.createElement('span');tag.textContent=label;tag.style.cssText='position:absolute;left:8px;top:2px;font-size:11px;z-index:1;color:#999;pointer-events:none';pane.appendChild(tag);}
+   const chart=createChart(pane,{width:el.clientWidth,height,
+    layout:{background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.fontSize*.8)},
+    grid:{vertLines:{visible:false},horzLines:{color:light?'#e9ecf0':'#202023'}},
+    rightPriceScale:{visible:!label,borderVisible:false,minimumWidth:65,scaleMargins:{top:.12,bottom:.08}},
+    timeScale:{visible:last,borderVisible:false,timeVisible:true,secondsVisible:false,tickMarkFormatter:format,fixLeftEdge:true,fixRightEdge:false},
+    crosshair:{mode:CrosshairMode.Normal},handleScroll:false,handleScale:false,localization:{locale:display.locale,timeFormatter:format}});
+   const clock=chart.addLineSeries({visible:false,priceScaleId:'clock',lastValueVisible:false,priceLineVisible:false});clock.setData(grid.map(p=>({time:p.time as UTCTimestamp,value:0})));
+   charts.push(chart);return chart;
+  };
+  el.replaceChildren();
+  const chart=make(total*(macdOn?.60:.75),false),volChart=make(total*(macdOn?.16:.25),!macdOn,'VOL'),macdChart=macdOn?make(total*.24,true,'MACD (12,26,9)'):null;
   const normalize=!!base&&base>0;
   const price=chart.addAreaSeries({lineColor:light?'#364f70':'#e4e4e7',topColor:'#d0d0d019',bottomColor:'#d0d0d000',lineWidth:2,priceLineVisible:false,lastValueVisible:false,priceFormat:normalize?{type:'percent'}:{type:'price',precision:2,minMove:.01}});
   const studied=intradayStudy(data.points,data.previous),byTime=new Map(studied.map(p=>[p.time,p]));
-  const clock=chart.addLineSeries({visible:false,priceScaleId:'clock',lastValueVisible:false,priceLineVisible:false});clock.setData(grid.map(p=>({time:p.time as UTCTimestamp,value:0})));
   price.setData(grid.map(p=>{const row=byTime.get(p.time);return row?{time:p.time as UTCTimestamp,value:normalize?(row.price/base!-1)*100:row.price}:{time:p.time as UTCTimestamp};}));
   if(normalize)price.createPriceLine({price:0,lineStyle:LineStyle.Dashed,lineWidth:1,color:'#73737c',axisLabelVisible:true,title:t('昨收')});
   for(const r of comparison){if(!normalize)continue;const line=chart.addLineSeries({color:r.color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'percent'}}),points=new Map(r.data.points.map(p=>[p.time,p]));line.setData(grid.map(p=>{const row=points.get(p.time);return row?{time:p.time as UTCTimestamp,value:(row.price/r.data.previous!-1)*100}:{time:p.time as UTCTimestamp};}));}
-  const vol=chart.addHistogramSeries({priceScaleId:'volume',priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});vol.priceScale().applyOptions({scaleMargins:{top:macdOn?.58:.80,bottom:macdOn?.27:.02}});
+  const vol=volChart.addHistogramSeries({priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
   vol.setData(grid.map(p=>{const row=byTime.get(p.time);return row?{time:p.time as UTCTimestamp,value:row.volume,color:row.rising?'#f04a55':'#28cdb6'}:{time:p.time as UTCTimestamp};}));
-  if(macdOn){
-   const hist=chart.addHistogramSeries({priceScaleId:'macd',lastValueVisible:false,priceLineVisible:false,base:0});
-   hist.priceScale().applyOptions({scaleMargins:{top:.80,bottom:.02}});
+  if(macdChart){
+   const hist=macdChart.addHistogramSeries({lastValueVisible:false,priceLineVisible:false,base:0});
    hist.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:p.time as UTCTimestamp,value:r.histogram,color:r.histogram>=0?'#f04a55':'#28cdb6'}:{time:p.time as UTCTimestamp};}));
-   for(const [key,color] of [['dif','#e4e4e7'],['dea','#d5ae58']] as const){const line=chart.addLineSeries({priceScaleId:'macd',color,lineWidth:1,lastValueVisible:false,priceLineVisible:false});line.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:p.time as UTCTimestamp,value:r[key]}:{time:p.time as UTCTimestamp};}));}
+   for(const [key,color] of [['dif','#e4e4e7'],['dea','#d5ae58']] as const){const line=macdChart.addLineSeries({color,lineWidth:1,lastValueVisible:false,priceLineVisible:false});line.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:p.time as UTCTimestamp,value:r[key]}:{time:p.time as UTCTimestamp};}));}
   }
-  chart.timeScale().setVisibleLogicalRange({from:0,to:grid.length-1});
-  chart.subscribeCrosshairMove(p=>setHover(typeof p.time==='number'?byTime.get(p.time):data.points.at(-1)));
-  const observer=new ResizeObserver(()=>{chart.applyOptions({width:el.clientWidth});chart.timeScale().setVisibleLogicalRange({from:0,to:grid.length-1});});observer.observe(el);
-  return()=>{observer.disconnect();chart.remove();};
+  const resize=()=>{for(const c of charts){c.applyOptions({width:el.clientWidth});c.timeScale().setVisibleLogicalRange({from:0,to:grid.length-1});}};
+  for(const c of charts)c.subscribeCrosshairMove(p=>setHover(typeof p.time==='number'?byTime.get(p.time):data.points.at(-1)));
+  resize();const observer=new ResizeObserver(resize);observer.observe(el);
+  return()=>{observer.disconnect();for(const c of charts)c.remove();el.replaceChildren();};
  },[data,display,market.data,sector.data,yellow.data,marketOn,board,macdOn]);
  const chosen=auction.data?.date===data.date?auction.data.segments.find(s=>s.key===segment):null;
  return <div className="intraday-chart">
