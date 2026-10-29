@@ -35,14 +35,15 @@ class StockPage extends StatefulWidget {
 class _StockPageState extends State<StockPage> {
   final snapshotKey = GlobalKey();
   bool snapshotBusy = false;
-  Json? quote, analysis, trend, historyMarket, historyStudy;
+  Json? quote, analysis, trend, historyMarket, historyStudy, historyFrame;
   String? historyVolumeUnit;
   String? trendError;
   bool trendLoading = false;
   String? quoteError, analysisError, historyError;
   String tab = 'chart', timeframe = 'day', newsTab = 'news';
   bool auto = true, loading = false;
-  Timer? timer;
+  Timer? timer, historyRetry;
+  int historyFailures = 0;
   late ValueNotifier<int> chartMARevision;
   int tick = 0, analysisGeneration = 0, historyGeneration = 0;
   void maChanged() {
@@ -55,10 +56,13 @@ class _StockPageState extends State<StockPage> {
     super.initState();
     chartMARevision = context.read<AtlasStore>().chartRevision;
     chartMARevision.addListener(maChanged);
-    refreshQuote();
+    final local = context.read<AtlasStore>().chartStudies.isLocal;
     refreshHistory();
-    refreshAnalysis();
-    refreshTrend();
+    if (!local || !cnStock(widget.symbol)) {
+      refreshQuote();
+      refreshAnalysis();
+      refreshTrend();
+    }
     timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (auto &&
           mounted &&
@@ -76,6 +80,7 @@ class _StockPageState extends State<StockPage> {
   @override
   void dispose() {
     timer?.cancel();
+    historyRetry?.cancel();
     chartMARevision.removeListener(maChanged);
     super.dispose();
   }
@@ -83,13 +88,36 @@ class _StockPageState extends State<StockPage> {
   Future<void> refreshHistory() async {
     if (!cnStock(widget.symbol)) return;
     final generation = ++historyGeneration;
+    final store = context.read<AtlasStore>(), studies = store.chartStudies;
+    final ma = (store.chartMAParameters['ma'] ?? '5,13,20,30,60,120,144,250')
+        .split(',')
+        .map(int.parse)
+        .toList();
+    historyRetry?.cancel();
     try {
-      final data = await context.read<AtlasStore>().api.get(
+      if (studies.isLocal) {
+        if (historyMarket == null) {
+          final cached = await studies.cachedFrame(widget.symbol, ma);
+          if (mounted && generation == historyGeneration && cached != null) {
+            setState(() => acceptFrame(cached));
+          }
+        }
+        if (!mounted || generation != historyGeneration) return;
+        final data = await studies.loadFrame(widget.symbol, ma);
+        if (mounted && generation == historyGeneration) {
+          setState(() {
+            acceptFrame(data);
+            historyError = null;
+            historyFailures = 0;
+          });
+          refreshAnalysis();
+          refreshTrend();
+        }
+        return;
+      }
+      final data = await store.api.get(
         '/api/chart-bundle',
-        parameters: {
-          'symbol': widget.symbol,
-          ...context.read<AtlasStore>().chartMAParameters,
-        },
+        parameters: {'symbol': widget.symbol, ...store.chartMAParameters},
       );
       if (rows(obj(data['market'])['candles']).isEmpty ||
           obj(obj(data['study'])['verification']).isEmpty) {
@@ -97,18 +125,35 @@ class _StockPageState extends State<StockPage> {
       }
       if (mounted && generation == historyGeneration) {
         setState(() {
-          historyMarket = obj(data['market']);
-          historyStudy = obj(data['study']);
-          historyVolumeUnit = str(data['volumeUnit'], '手');
-          // The first candle and its annotations must refer to the same snapshot.
-          if (data['quote'] is Map) quote = obj(data['quote']);
+          acceptFrame(data);
           historyError = null;
         });
       }
     } catch (e) {
       if (mounted && generation == historyGeneration) {
         setState(() => historyError = e.toString());
+        if (studies.isLocal && historyFailures++ < 2) {
+          historyRetry = Timer(
+            Duration(seconds: historyFailures == 1 ? 2 : 8),
+            () {
+              if (mounted) refreshHistory();
+            },
+          );
+        }
       }
+    }
+  }
+
+  void acceptFrame(Json data) {
+    historyFrame = data;
+    historyMarket = obj(data['market']);
+    historyStudy = obj(data['study']);
+    historyVolumeUnit = str(data['volumeUnit'], '手');
+    if (data['quote'] is Map) quote = obj(data['quote']);
+    final localAnalysis = obj(historyStudy?['analysis']);
+    if (localAnalysis.isNotEmpty) {
+      analysis = localAnalysis;
+      analysisError = null;
     }
   }
 
@@ -138,6 +183,32 @@ class _StockPageState extends State<StockPage> {
     loading = true;
     try {
       final api = context.read<AtlasStore>().api;
+      final store = context.read<AtlasStore>();
+      if (store.chartStudies.isLocal && cnStock(widget.symbol)) {
+        if (historyFrame == null) return;
+        final extra = await api.get(
+          '/api/review-context',
+          parameters: {'symbol': widget.symbol},
+        );
+        if (!mounted || generation != analysisGeneration) return;
+        final ma =
+            (store.chartMAParameters['ma'] ?? '5,13,20,30,60,120,144,250')
+                .split(',')
+                .map(int.parse)
+                .toList();
+        final pair = await store.chartStudies.pair(
+          historyFrame!,
+          ma,
+          context: extra,
+        );
+        if (mounted && generation == analysisGeneration) {
+          setState(() {
+            analysis = obj(obj(pair['study'])['analysis']);
+            analysisError = null;
+          });
+        }
+        return;
+      }
       final r = cnStock(widget.symbol)
           ? await api.get(
               '/api/analysis',
@@ -160,6 +231,28 @@ class _StockPageState extends State<StockPage> {
           }
           analysis = r;
           analysisError = null;
+          if (historyMarket == null &&
+              historyError != null &&
+              rows(obj(r['market'])['candles']).isNotEmpty) {
+            final market = obj(r['market']), candles = rows(market['candles']);
+            historyMarket = market;
+            historyStudy = {
+              ...r,
+              'verification': {
+                'symbol': widget.symbol,
+                'unit': 'day',
+                'maPeriods':
+                    r['maPeriods'] ??
+                    store.chartMAParameters['ma']
+                        ?.split(',')
+                        .map(int.parse)
+                        .toList(),
+                'candleCount': candles.length,
+                'last': candles.last,
+              },
+            };
+            quote = null;
+          }
         });
       }
     } catch (e) {
@@ -486,6 +579,7 @@ class _StockPageState extends State<StockPage> {
             onTap: () {
               Navigator.pop(context);
               refreshQuote();
+              refreshHistory();
               refreshAnalysis();
             },
           ),
@@ -886,7 +980,11 @@ class _StockPageState extends State<StockPage> {
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            '${str(q['asOf'], '').replaceFirst('T', ' ').replaceFirst('+08:00', '')} · ${tr(context, q['stale'] == true
+            '${historyError != null
+                ? '${tr(context, '刷新失败，保留上一快照')} · '
+                : historyFrame?['cached'] == true
+                ? '${tr(context, '上次成功快照')} · '
+                : ''}${str(q['asOf'], '').replaceFirst('T', ' ').replaceFirst('+08:00', '')} · ${tr(context, q['stale'] == true
                 ? '快照已过期'
                 : q['session'] == 'trading'
                 ? '盘中快照'

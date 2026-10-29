@@ -1,12 +1,13 @@
 import {chartStudy} from '../shared/chart-study';
-import {loadChartBundle} from './chart-bundle';
+import {loadChartBundle,loadChartFrame} from './chart-bundle';
+import {historicalSnapshot} from './history-cache';
 import {chartPayload} from './chart-payload';
 import {computeCache,studySession} from './compute-cache';
 import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
 import {indicatorMarks} from '../shared/indicator-marks';
 import {analyzeStrategy} from '../shared/strategy';
-import {loadTradeReview} from './trade-review';
+import {loadTradeReview,loadTradeContext} from './trade-review';
 import {reviewedPatternMarks} from '../shared/pattern-marks';
 import {GUIDE_PATTERN_COVERAGE} from '../shared/guide-patterns';
 import {evaluateStrategyHistory} from '../shared/strategy-backtest';
@@ -517,6 +518,16 @@ export default {
     const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
     if(!Array.isArray(body.candles)||body.candles.length>1500||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
     const ma=parseMAPeriods(body.ma.join(','));return computeCache(request,'chart-study-v5:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
+   }
+   if(incoming.pathname==='/api/chart-frame'){
+    if(request.method!=='GET')return json({error:'Method not allowed'},405);
+    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    return computeCache(request,'chart-frame-v1:'+studySession()+symbol,2,async()=>json(await loadChartFrame(symbol,()=>cached('mobile-analysis:'+symbol,60,()=>historicalSnapshot(incoming.origin,symbol,()=>market(symbol,env))),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
+   }
+   if(incoming.pathname==='/api/review-context'){
+    if(request.method!=='GET')return json({error:'Method not allowed'},405);
+    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    return computeCache(request,'review-context-v1:'+studySession()+symbol,15,async()=>json(await loadTradeContext(symbol)));
    }
    if(incoming.pathname==='/api/chart-bundle'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);

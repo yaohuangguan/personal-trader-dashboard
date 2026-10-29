@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'chart_studies.dart';
 part 'watch_cloud.dart';
 
 class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
@@ -30,6 +31,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
   final AtlasApi api;
+  late final chartStudies = ChartStudies(api, prefs);
   final SharedPreferences prefs;
   final Map<String, dynamic> english;
   late List<String> watchlist;

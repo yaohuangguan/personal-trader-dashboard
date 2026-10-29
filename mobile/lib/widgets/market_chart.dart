@@ -574,30 +574,27 @@ class _MarketChartState extends State<MarketChart> {
       studyStatus = '标注依据当前MA · 核验中';
     });
     try {
-      final result = await context.read<AtlasStore>().api.post(
-        '/api/chart-study',
-        {
-          'symbol': widget.symbol,
-          'name': widget.name,
-          'unit': widget.unit,
-          'ma': periods,
-          'amount': widget.amountDate == widget.bars.last.time
-              ? widget.amount
-              : null,
-          'candles': widget.bars
-              .map(
-                (b) => {
-                  'time': b.time,
-                  'open': b.open,
-                  'high': b.high,
-                  'low': b.low,
-                  'close': b.close,
-                  'volume': b.volume,
-                },
-              )
-              .toList(),
-        },
-      );
+      final result = await context.read<AtlasStore>().chartStudies.compute({
+        'symbol': widget.symbol,
+        'name': widget.name,
+        'unit': widget.unit,
+        'ma': periods,
+        'amount': widget.amountDate == widget.bars.last.time
+            ? widget.amount
+            : null,
+        'candles': widget.bars
+            .map(
+              (b) => {
+                'time': b.time,
+                'open': b.open,
+                'high': b.high,
+                'low': b.low,
+                'close': b.close,
+                'volume': b.volume,
+              },
+            )
+            .toList(),
+      });
       if (!mounted || request != studyRequest || key != currentStudyKey) return;
       setState(() {
         studyReady = true;

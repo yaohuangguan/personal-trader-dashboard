@@ -12,5 +12,6 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: node tools/build-mobile-engine.mjs --check
       - run: npm test
       - run: npm run build

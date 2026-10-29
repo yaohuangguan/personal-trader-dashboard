@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:market_atlas/core/api.dart';
+import 'package:market_atlas/core/chart_studies.dart';
 import 'package:market_atlas/core/push_service.dart';
 import 'package:market_atlas/core/store.dart';
 import 'package:market_atlas/core/snapshot.dart';
@@ -17,6 +18,60 @@ import '../test/support/chart_harness.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets(
+    'native local engine computes both directions and exact candles without a compute API',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      var networkCalls = 0;
+      final api = AtlasApi(
+            client: MockClient((r) async {
+              networkCalls++;
+              throw StateError('No network allowed for the local study');
+            }),
+          ),
+          service = ChartStudies(
+            api,
+            await SharedPreferences.getInstance(),
+            local: true,
+          );
+      for (final direction in [1, -1]) {
+        final candles = List.generate(150, (i) {
+          final close = 30 + direction * i * .1, open = close - direction * .1;
+          return {
+            'time': DateTime.utc(
+              2026,
+              1,
+              1,
+            ).add(Duration(days: i)).toIso8601String().substring(0, 10),
+            'open': open,
+            'high': close > open ? close + .15 : open + .15,
+            'low': close < open ? close - .15 : open - .15,
+            'close': close,
+            'volume': 10000,
+          };
+        });
+        final start = DateTime.now();
+        final result = await service.compute({
+          'symbol': '300001.SZ',
+          'ma': [5, 13, 20, 30, 60, 120, 144, 250],
+          'candles': candles,
+          'now': '2026-10-28T08:00:00Z',
+        });
+        expect(
+          rows(result['trendRegimes'])
+              .every((r) => r['direction'] == (direction == 1 ? 'up' : 'down')),
+          true,
+        );
+        expect(obj(result['verification'])['last'], candles.last);
+        expect(rows(result['patternMarks']), isNotEmpty);
+        debugPrint(
+          'Local native study ${DateTime.now().difference(start).inMilliseconds}ms',
+        );
+      }
+      expect(networkCalls, 0);
+      api.dispose();
+    },
+  );
   testWidgets(
     'iPhone stock first screen fits every indicator at both text sizes',
     (tester) async {
@@ -54,12 +109,16 @@ void main() {
                   },
                 ],
               },
-              '/api/analysis' || '/api/chart-bundle' => {
+              '/api/analysis' || '/api/chart-bundle' || '/api/chart-frame' => {
                 'market': {
+                  'symbol': '300545.SZ',
+                  'name': '联得装备',
+                  'last': candles.last['close'],
                   'candles': candles,
                   'provider': 'Native integration fixture',
                   'asOf': '2025-10-27',
                 },
+                'volumeUnit': '手',
                 'guide': {'events': []},
               },
               _ => {'items': []},

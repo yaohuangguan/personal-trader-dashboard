@@ -50,6 +50,8 @@ class AtlasApi {
       client = client ?? http.Client();
   final String base;
   final http.Client client;
+  final _pending = <String, Future<Json>>{};
+  final _recent = <String, ({DateTime until, Json data})>{};
   Future<Json> get(
     String path, {
     Map<String, String>? parameters,
@@ -57,6 +59,52 @@ class AtlasApi {
     Duration timeout = const Duration(seconds: 35),
   }) async {
     final uri = Uri.parse('$base$path').replace(queryParameters: parameters);
+    const publicPaths = {
+      '/api/chart-frame',
+      '/api/chart-bundle',
+      '/api/market',
+      '/api/analysis',
+      '/api/review-context',
+      '/api/desk/quotes',
+      '/api/desk/history',
+      '/api/desk/intraday',
+      '/api/desk/trend',
+    };
+    if (token == null && publicPaths.contains(path)) {
+      final key = uri.toString(), cached = _recent[key];
+      if (cached != null && cached.until.isAfter(DateTime.now())) {
+        return Map.of(cached.data);
+      }
+      final pending = _pending[key];
+      if (pending != null) return pending;
+      final task = _get(uri, token, timeout);
+      _pending[key] = task;
+      try {
+        final data = await task;
+        if (_recent.length >= 64) _recent.remove(_recent.keys.first);
+        _recent[key] = (
+          until: DateTime.now().add(
+            Duration(
+              seconds: path == '/api/market' || path == '/api/desk/history'
+                  ? 60
+                  : path == '/api/analysis' ||
+                        path == '/api/review-context' ||
+                        path == '/api/desk/trend'
+                  ? 10
+                  : 2,
+            ),
+          ),
+          data: Map.of(data),
+        );
+        return data;
+      } finally {
+        _pending.remove(key);
+      }
+    }
+    return _get(uri, token, timeout);
+  }
+
+  Future<Json> _get(Uri uri, String? token, Duration timeout) async {
     final response = await client
         .get(
           uri,
@@ -106,7 +154,7 @@ class AtlasApi {
           text.contains('Error 1102');
       throw ApiException(
         limit
-            ? 'Cloudflare 分析计算资源达到上限，K线与其他数据可独立查看；可稍后重试。'
+            ? '云端计算达到上限，请重试；已保存的行情快照仍可查看。'
             : '数据服务暂未返回有效响应（HTTP ${response.statusCode}），请稍后重试。',
         response.statusCode,
       );
