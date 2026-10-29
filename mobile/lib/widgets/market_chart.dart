@@ -1236,33 +1236,41 @@ class _MarketChartState extends State<MarketChart> {
             height: 30,
             child: Row(
               children: [
-                for (final n in [1, 3, 6])
-                  GestureDetector(
-                    onTap: () => range(_months(n)),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
+                SizedBox(
+                  width: 64,
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      isDense: true,
+                      isExpanded: true,
+                      iconSize: 16,
+                      value: [
+                        1,
+                        3,
+                        6,
+                      ].where((n) => _months(n) == count).firstOrNull,
+                      hint: Text(
+                        '$count根',
+                        style: TextStyle(fontSize: 11, color: muted),
                       ),
-                      child: Text(
-                        tr(
-                          context,
-                          widget.unit.startsWith('m') && widget.unit != 'month'
-                              ? '${n * 22}根'
-                              : n == 1
-                              ? '1个月'
-                              : n == 3
-                              ? '3个月'
-                              : '6个月',
-                        ),
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1,
-                          color: count == _months(n) ? ink : muted,
-                        ),
-                      ),
+                      style: TextStyle(fontSize: 11, color: ink),
+                      items: [
+                        for (final n in [1, 3, 6])
+                          DropdownMenuItem(
+                            value: n,
+                            child: Text(
+                              widget.unit.startsWith('m') &&
+                                      widget.unit != 'month'
+                                  ? '${n * 22}根'
+                                  : '$n个月',
+                            ),
+                          ),
+                      ],
+                      onChanged: (n) {
+                        if (n != null) range(_months(n));
+                      },
                     ),
                   ),
+                ),
                 const Spacer(),
                 if (offset > 0)
                   _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
