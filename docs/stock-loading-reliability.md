@@ -21,6 +21,8 @@ Cloudflare过去24小时截至UTC 2026-10-29 00:11的采样，guanlan有260次�
 
 `tests/local-study.test.ts`在没有fetch和DOM的隔离JS环境中，对经典／斐波那契、日／周／月六组结果与共享源逐项比对形态、买卖点、指标和走势状态。Dart验证重复进入合并请求、错误后恢复、离线重开保留同组行情、更改MA重新计算。iOS集成测试直接调用实际JavaScriptCore，禁止计算网络请求，并检查上下行两种状态及最后一根OHLCV。
 
+部署后按相同6只股票、两轮、每轮4个并发端点复测48个请求，全部成功；新行情首屏12次均成功，墙钟耗时中位257ms、最大1425ms。该统计只测数据传输，手机本机计算另由原生测试验证，不把墙钟耗时当成Cloudflare计费CPU时间，也不把12次成功宣传为所有股票／网络永远零失败。
+
 每次共享规则更新必须运行 `npm run build:mobile-engine`，重新发布iOS包。CI用 `node tools/build-mobile-engine.mjs --check`拒绝源规则与打包引擎不一致。此改动需要安装新App，仅刷新网站不能替换旧App的加载链路。公开源或网络仍可能中断；保留快照提高可用性，不构成行情来源SLA。
 
 参考：[Apple JavaScriptCore JSContext](https://developer.apple.com/documentation/javascriptcore/jscontext)。
