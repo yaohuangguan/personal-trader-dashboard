@@ -20,3 +20,8 @@ test('local guide and strategy remain available with explicit missing context in
  const input={symbol:'300001.SZ',candles,ma:CLASSIC_MA,now,market:{symbol:'300001.SZ',name:'Fixture',candles,last:candles.at(-1)!.close,provider:'Tencent',asOf:candles.at(-1)!.time,notice:''}},actual=JSON.parse(computeJSON(JSON.stringify(input)));
  assert.equal(actual.analysis.available,true);assert.ok(actual.analysis.strategy.plan);assert.ok(actual.analysis.guide);assert.ok(actual.analysis.review.waitingFor.length>0);assert.equal(actual.analysis.review.current,false);
 });
+test('periodic context reviews use the latest verified quote rather than freezing at page-open prices',()=>{
+ const last=candles.at(-1)!,day=new Date(Date.parse(last.time)+86400000).toISOString().slice(0,10),quote={symbol:'300001.SZ',name:'Fixture',asOf:day+'T15:05:00+08:00',price:last.close+.5,previous:last.close,open:last.close,high:last.close+.6,low:last.close-.1,volume:50000,volumeUnit:'手',amount:3e8,stale:false,change:.5,changePercent:.5/last.close*100,turnover:5,pe:20,pb:2,marketCap:1e10,floatCap:8e9,volumeRatio:2,limitUp:last.close*1.2,limitDown:last.close*.8,bids:[],asks:[],session:'closed'};
+ const input={symbol:'300001.SZ',candles,ma:CLASSIC_MA,now:day+'T08:00:00Z',market:{symbol:'300001.SZ',name:'Fixture',candles,last:last.close,provider:'Tencent',asOf:last.time,notice:''},context:{quote}},actual=JSON.parse(computeJSON(JSON.stringify(input)));
+ assert.equal(actual.analysis.market.last,quote.price);assert.equal(actual.verification.last.close,quote.price);assert.equal(actual.analysis.strategy.plan.asOf,day);assert.equal(actual.analysis.review.current,true);
+});
