@@ -67,7 +67,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const [hoverTime, setHoverTime] = useState<string | null>(null), [chartError, setChartError] = useState('');
   const indicators = useMemo(() => chartIndicators(candles, preferences), [candles, preferences]);
   const candleByTime = useMemo(() => new Map([...candles,...futureCandles].map(c => [c.time, c])), [candles,futureCandles]);
-  const maMaps = useMemo(() => Object.fromEntries(Object.entries(projectedIndicators.ma).map(([p, values]) => [p, new Map(values.map(v => [v.time, v.value]))])) as Record<number, Map<string, number>>, [indicators]);
+  const maMaps = useMemo(() => Object.fromEntries(Object.entries(projectedIndicators.ma).map(([p, values]) => [p, new Map(values.map(v => [v.time, v.value]))])) as Record<number, Map<string, number>>, [projectedIndicators]);
   const macdByTime = useMemo(() => new Map(projectedIndicators.macd.map(p => [p.time, p])), [projectedIndicators]);
   const kdjByTime = useMemo(() => new Map(projectedIndicators.kdj.map(p => [p.time, p])), [projectedIndicators]);
   const volume5 = useMemo(() => new Map(projectedIndicators.volume5.map(p => [p.time, p.value])), [projectedIndicators]);
@@ -167,7 +167,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
           updateAnnotations(main.timeScale().getVisibleLogicalRange());
         }
       }
-      panes.push({ chart: main, anchor: prices, values: new Map(candles.map(c => [c.time, c.close])) });
+      panes.push({ chart: main, anchor: prices, values: new Map([...candles,...futureCandles].map(c => [c.time, c.close])) });
       if (!compact && panels.VOL && volumeRef.current) {
         const chart = makeChart(volumeRef.current, 106, lastPanel === 'VOL');
         chart.priceScale('left').applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } });
@@ -176,7 +176,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         if(futureCandles.length){const projected=chart.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false});projected.setData(futureCandles.map(c=>({time:chartTime(c.time),value:c.volume,color:c.close>=c.open?'#f04a5550':'#28cdb650'})));addFuture(chart,projectedIndicators.volume5,'#f1d55c');addFuture(chart,projectedIndicators.volume20,'#d968e8');}
         addLine(chart, indicators.volume5, '#f1d55c'); addLine(chart, indicators.volume20, '#d968e8');
         if(indicatorLabels)removers.push(indicatorOverlay(volumeRef.current,chart,bars,study.indicatorMarks.filter(m=>m.pane==='VOL'),chartTime));
-        panes.push({ chart, anchor: bars, values: new Map(candles.map(c => [c.time, c.volume])) });
+        panes.push({ chart, anchor: bars, values: new Map([...candles,...futureCandles].map(c => [c.time, c.volume])) });
       }
       if (!compact && panels.MACD && macdRef.current) {
         const chart = makeChart(macdRef.current, 122, lastPanel === 'MACD');
@@ -191,7 +191,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         const line = addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dif })), '#ebedf1');
         addLine(chart, indicators.macd.map(p => ({ time: p.time, value: p.dea })), '#f1d55c');
         if(indicatorLabels)removers.push(indicatorOverlay(macdRef.current,chart,line,study.indicatorMarks.filter(m=>m.pane==='MACD'),chartTime));
-        panes.push({ chart, anchor: line, values: new Map(indicators.macd.map(p => [p.time, p.dif])) });
+        panes.push({ chart, anchor: line, values: new Map(projectedIndicators.macd.map(p => [p.time, p.dif])) });
       }
       if (!compact && panels.KDJ && kdjRef.current) {
         const chart = makeChart(kdjRef.current, 140, lastPanel === 'KDJ');
@@ -206,9 +206,9 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
         if(futureCandles.length)for(const [key,color] of [['k','#ebedf1'],['d','#f1d55c'],['j','#d968e8']] as const)addFuture(chart,projectedIndicators.kdj.map(p=>({time:p.time,value:p[key]})),color);
         if(indicatorLabels)removers.push(indicatorOverlay(kdjRef.current,chart,lines[0],study.indicatorMarks.filter(m=>m.pane==='KDJ'),chartTime));
         for (const level of [20, 80]) lines[0].createPriceLine({ price: level, color: '#35373b', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
-        panes.push({ chart, anchor: lines[0], values: new Map(indicators.kdj.map(p => [p.time, p.k])) });
+        panes.push({ chart, anchor: lines[0], values: new Map(projectedIndicators.kdj.map(p => [p.time, p.k])) });
       }
-      if(!compact&&panels.RSI&&rsiRef.current){const chart=makeChart(rsiRef.current,130,lastPanel==='RSI'),line=addLine(chart,extra.rsi,'#f7cf65');addFuture(chart,projectedExtra.rsi,'#f7cf65');for(const level of [30,70])line.createPriceLine({price:level,color:'#35373b',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:false});panes.push({chart,anchor:line,values:new Map(extra.rsi.map(p=>[p.time,p.value]))});}
+      if(!compact&&panels.RSI&&rsiRef.current){const chart=makeChart(rsiRef.current,130,lastPanel==='RSI'),line=addLine(chart,extra.rsi,'#f7cf65');addFuture(chart,projectedExtra.rsi,'#f7cf65');for(const level of [30,70])line.createPriceLine({price:level,color:'#35373b',lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:false});panes.push({chart,anchor:line,values:new Map(projectedExtra.rsi.map(p=>[p.time,p.value]))});}
       const count = rangeSize(period, candles.length, unit);
       const initial = visibleRef.current || { from: Math.max(-1, candles.length - count - 1), to: candles.length + (projection?.available?projection.points.length:0) + 3 };
       for (const pane of panes) pane.chart.timeScale().setVisibleLogicalRange(initial);
