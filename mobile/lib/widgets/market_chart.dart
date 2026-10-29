@@ -1268,6 +1268,7 @@ class _MarketChartState extends State<MarketChart> {
                   _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
                 _smallIcon(Icons.show_chart, '图表指标', indicatorSettings),
                 _smallIcon(Icons.tune, '均线参数', settings),
+                _smallIcon(Icons.auto_graph, '行情推演', projectionSettings),
                 _smallIcon(Icons.sell_outlined, '标注设置', annotationSettings),
                 _smallIcon(Icons.info_outline, '标注依据', annotationDetails),
                 if (!widget.expanded)

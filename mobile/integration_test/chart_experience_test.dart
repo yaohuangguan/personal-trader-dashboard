@@ -318,7 +318,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(1), '10');
     await tester.testTextInput.receiveAction(TextInputAction.done);
+    // iOS keyboard dismissal runs outside Flutter's frame scheduler.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('应用参数'));
+    await Scrollable.ensureVisible(
+      tester.element(find.text('应用参数')),
+      alignment: .5,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('应用参数'));
     await tester.pumpAndSettle();
     expect(painter(tester).data.mas[1].period, 10);
