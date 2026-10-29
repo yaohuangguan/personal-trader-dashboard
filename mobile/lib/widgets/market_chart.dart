@@ -1261,535 +1261,696 @@ class _MarketChartState extends State<MarketChart> {
         ? math.max(450.0, MediaQuery.sizeOf(context).height - 280)
         : (280 + (volume ? 100 : 0) + (macd ? 100 : 0) + (kdj ? 100 : 0))
               .toDouble();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.terminal && widget.expanded) _portraitHeader(),
-        if (widget.terminal)
-          SizedBox(
-            height: 30,
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 64,
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      isDense: true,
-                      isExpanded: true,
-                      iconSize: 16,
-                      value: [
-                        1,
-                        3,
-                        6,
-                      ].where((n) => _months(n) == count).firstOrNull,
-                      hint: Text(
-                        '$count根',
-                        style: TextStyle(fontSize: 11, color: muted),
-                      ),
-                      style: TextStyle(fontSize: 11, color: ink),
-                      items: [
-                        for (final n in [1, 3, 6])
-                          DropdownMenuItem(
-                            value: n,
-                            child: Text(
-                              widget.unit.startsWith('m') &&
-                                      widget.unit != 'month'
-                                  ? '${n * 22}根'
-                                  : '$n个月',
-                            ),
+    return LayoutBuilder(
+      builder: (context, outer) {
+        final basis = obj(projection?['basis']),
+            sampleCount = (numOf(projection?['sampleCount']) ?? 0).toInt();
+        final source = obj(
+          rows(projection?['scenarios'])
+              .where((r) => r['id'] == projectionScenario)
+              .firstOrNull?['source'],
+        );
+        final method = projection?['model'] == 'analogs'
+            ? '从 $sampleCount 段相似窗口中选整段代表路径（${str(source['from'])}—${str(source['to'])}）'
+            : '相似样本不足，采用近期3根量价片段重采样';
+        final reason = '${str(basis['regime'], '条件情景')}；$method，保留实体、影线和量能节奏。';
+        final invalid =
+            '失效观察：跌破 ${fixed(projection?['support'])} 且不能收回，或放量下跌／均线向下发散。假设走势，不是发生概率。';
+        const explanationStyle = TextStyle(fontSize: 13, height: 1.45);
+        double measured(String text) {
+          final p = TextPainter(
+            text: TextSpan(text: text, style: explanationStyle),
+            textDirection: TextDirection.ltr,
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: math.max(80, outer.maxWidth - 20));
+          return p.height;
+        }
+
+        final summaryHeight = drawProjection
+            ? 44 + measured(reason) + measured(invalid) + 18
+            : 0.0;
+        final plotHeight = math.max(160.0, height - summaryHeight);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.terminal && widget.expanded) _portraitHeader(),
+            if (widget.terminal)
+              SizedBox(
+                height: 30,
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          isDense: true,
+                          isExpanded: true,
+                          iconSize: 16,
+                          value: [
+                            1,
+                            3,
+                            6,
+                          ].where((n) => _months(n) == count).firstOrNull,
+                          hint: Text(
+                            '$count根',
+                            style: TextStyle(fontSize: 11, color: muted),
                           ),
-                      ],
-                      onChanged: (n) {
-                        if (n != null) range(_months(n));
-                      },
+                          style: TextStyle(fontSize: 11, color: ink),
+                          items: [
+                            for (final n in [1, 3, 6])
+                              DropdownMenuItem(
+                                value: n,
+                                child: Text(
+                                  widget.unit.startsWith('m') &&
+                                          widget.unit != 'month'
+                                      ? '${n * 22}根'
+                                      : '$n个月',
+                                ),
+                              ),
+                          ],
+                          onChanged: (n) {
+                            if (n != null) range(_months(n));
+                          },
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (offset > 0)
+                      _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
+                    _smallIcon(Icons.show_chart, '图表指标', indicatorSettings),
+                    _smallIcon(Icons.tune, '均线参数', settings),
+                    _smallIcon(Icons.auto_graph, '行情推演', projectionSettings),
+                    _smallIcon(Icons.sell_outlined, '标注设置', annotationSettings),
+                    _smallIcon(Icons.info_outline, '标注依据', annotationDetails),
+                    if (!widget.expanded)
+                      _smallIcon(Icons.fullscreen, '展开图表', expand),
+                  ],
+                ),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final item in [
+                            (
+                              '1个月',
+                              widget.unit == 'month'
+                                  ? 1
+                                  : widget.unit == 'week'
+                                  ? 4
+                                  : 22,
+                            ),
+                            (
+                              '3个月',
+                              widget.unit == 'month'
+                                  ? 3
+                                  : widget.unit == 'week'
+                                  ? 13
+                                  : 66,
+                            ),
+                            (
+                              '6个月',
+                              widget.unit == 'month'
+                                  ? 6
+                                  : widget.unit == 'week'
+                                  ? 26
+                                  : 132,
+                            ),
+                            (
+                              '1年',
+                              widget.unit == 'month'
+                                  ? 12
+                                  : widget.unit == 'week'
+                                  ? 52
+                                  : 264,
+                            ),
+                            ('全部', widget.bars.length),
+                          ])
+                            TextButton(
+                              onPressed: () => range(item.$2),
+                              child: Text(
+                                tr(context, item.$1),
+                                style: TextStyle(
+                                  color: count == item.$2 ? ink : muted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
+                  IconButton(
+                    onPressed: indicatorSettings,
+                    tooltip: tr(context, '图表指标'),
+                    icon: const Icon(Icons.show_chart, size: 20),
+                  ),
+                  IconButton(
+                    onPressed: settings,
+                    tooltip: tr(context, '均线参数'),
+                    icon: const Icon(Icons.tune, size: 20),
+                  ),
+                  IconButton(
+                    onPressed: projectionSettings,
+                    tooltip: tr(context, '行情推演'),
+                    icon: Icon(
+                      Icons.auto_graph,
+                      size: 20,
+                      color: projectionOn ? const Color(0xffd5ae58) : muted,
+                    ),
+                  ),
+                  if (offset > 0)
+                    IconButton(
+                      onPressed: () => range(count),
+                      tooltip: tr(context, '回到最新'),
+                      icon: const Icon(Icons.skip_next),
+                    ),
+                  if (widget.expanded) ...[
+                    if (compact)
+                      PopupMenuButton<String>(
+                        tooltip: tr(context, '副图布局'),
+                        initialValue: paneMode,
+                        onSelected: (v) => setState(() => paneMode = v),
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: 'all',
+                            child: Text(tr(context, '全部副图 · 可纵向滚动')),
+                          ),
+                          PopupMenuItem(value: 'vol', child: Text('VOL')),
+                          PopupMenuItem(
+                            value: 'macd',
+                            child: const Text('VOL + MACD'),
+                          ),
+                          PopupMenuItem(
+                            value: 'kdj',
+                            child: const Text('VOL + KDJ'),
+                          ),
+                        ],
+                        icon: const Icon(Icons.view_stream_outlined),
+                      ),
+                    IconButton(
+                      onPressed: () => SystemChrome.setPreferredOrientations(
+                        compact
+                            ? [DeviceOrientation.portraitUp]
+                            : [
+                                DeviceOrientation.landscapeLeft,
+                                DeviceOrientation.landscapeRight,
+                              ],
+                      ),
+                      tooltip: tr(context, '横竖屏切换'),
+                      icon: const Icon(Icons.screen_rotation_outlined),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      tooltip: tr(context, '关闭全屏'),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ] else
+                    IconButton(
+                      onPressed: expand,
+                      tooltip: tr(context, '展开图表'),
+                      icon: const Icon(Icons.fullscreen),
+                    ),
+                ],
+              ),
+            if (drawProjection)
+              SizedBox(
+                key: const ValueKey('projection-summary'),
+                height: summaryHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        height: 32,
+                        child: Row(
+                          children: [
+                            const Text(
+                              '推演',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            PopupMenuButton<int>(
+                              tooltip: '推演期限',
+                              padding: EdgeInsets.zero,
+                              itemBuilder: (_) => [
+                                for (final n in [5, 10, 15, 20])
+                                  PopupMenuItem(
+                                    value: n,
+                                    child: Text(
+                                      widget.unit == 'day'
+                                          ? '约${n ~/ 5}周'
+                                          : '$n根K',
+                                    ),
+                                  ),
+                              ],
+                              onSelected: (n) async {
+                                setState(() => projectionHorizon = n);
+                                await refreshProjection();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
+                                ),
+                                child: Text(
+                                  widget.unit == 'day'
+                                      ? '约${projectionHorizon ~/ 5}周 ▾'
+                                      : '$projectionHorizon根K ▾',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                            PopupMenuButton<String>(
+                              tooltip: '推演情景',
+                              padding: EdgeInsets.zero,
+                              itemBuilder: (_) => [
+                                for (final row in [
+                                  ('base', '基准'),
+                                  ('bull', '偏强'),
+                                  ('bear', '偏弱'),
+                                ])
+                                  PopupMenuItem(
+                                    value: row.$1,
+                                    child: Text(row.$2),
+                                  ),
+                              ],
+                              onSelected: (v) =>
+                                  setState(() => projectionScenario = v),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
+                                ),
+                                child: Text(
+                                  projectionScenario == 'bull'
+                                      ? '偏强 ▾'
+                                      : projectionScenario == 'bear'
+                                      ? '偏弱 ▾'
+                                      : '基准 ▾',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: projectionSettings,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
+                                minimumSize: const Size(0, 30),
+                              ),
+                              child: const Text(
+                                '详细依据',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(reason, style: explanationStyle),
+                      const SizedBox(height: 4),
+                      Text(
+                        invalid,
+                        style: explanationStyle.copyWith(color: muted),
+                      ),
+                    ],
+                  ),
                 ),
-                const Spacer(),
-                if (offset > 0)
-                  _smallIcon(Icons.skip_next, '回到最新', () => range(count)),
-                _smallIcon(Icons.show_chart, '图表指标', indicatorSettings),
-                _smallIcon(Icons.tune, '均线参数', settings),
-                _smallIcon(Icons.auto_graph, '行情推演', projectionSettings),
-                _smallIcon(Icons.sell_outlined, '标注设置', annotationSettings),
-                _smallIcon(Icons.info_outline, '标注依据', annotationDetails),
-                if (!widget.expanded)
-                  _smallIcon(Icons.fullscreen, '展开图表', expand),
-              ],
+              ),
+            _ChartLegend(
+              compact: compact,
+              dense: widget.terminal,
+              children: overlay != 'MA'
+                  ? (overlay == 'BOLL'
+                        ? [
+                            Text(
+                              'BOLL (20,2)',
+                              style: TextStyle(color: ink, fontSize: 12),
+                            ),
+                            Text(
+                              'MID ${fixed(readout.bollMid[idx])}',
+                              style: TextStyle(color: ink, fontSize: 12),
+                            ),
+                            Text(
+                              'UP ${fixed(readout.bollUpper[idx])}',
+                              style: const TextStyle(
+                                color: Colors.amber,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              'LOW ${fixed(readout.bollLower[idx])}',
+                              style: TextStyle(
+                                color: atlasColor(0xffed89bf),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ]
+                        : [
+                            Text(
+                              'SAR (0.02,0.2)',
+                              style: const TextStyle(
+                                color: Colors.amber,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              fixed(readout.sar[idx]),
+                              style: const TextStyle(
+                                color: Colors.amber,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ])
+                  : mas
+                        .map(
+                          (ma) => InkWell(
+                            onTap: () {
+                              setState(() {
+                                mas = mas
+                                    .map(
+                                      (m) => m == ma
+                                          ? MaLine(
+                                              m.period,
+                                              m.color,
+                                              !m.enabled,
+                                            )
+                                          : m,
+                                    )
+                                    .toList();
+                                indicators = IndicatorData(widget.bars, mas);
+                              });
+                              context.read<AtlasStore>().prefs.setString(
+                                'ma',
+                                jsonEncode(mas.map((m) => m.toJson()).toList()),
+                              );
+                            },
+                            child: Text(
+                              'MA${ma.period} ${ma.enabled ? fixed(readout.averages[ma.period]?[idx]) : '—'}',
+                              style: TextStyle(
+                                color: ma.enabled
+                                    ? chartColor(ma.color)
+                                    : muted,
+                                fontSize: widget.terminal ? 12 : 13,
+                                height: 1.1,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
             ),
-          )
-        else
-          Row(
-            children: [
-              Expanded(
+            SizedBox(
+              height: widget.terminal
+                  ? 0
+                  : compact
+                  ? 4
+                  : 14,
+            ),
+            if (widget.terminal)
+              SizedBox(
+                height: 24,
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      for (final item in [
-                        (
-                          '1个月',
-                          widget.unit == 'month'
-                              ? 1
-                              : widget.unit == 'week'
-                              ? 4
-                              : 22,
-                        ),
-                        (
-                          '3个月',
-                          widget.unit == 'month'
-                              ? 3
-                              : widget.unit == 'week'
-                              ? 13
-                              : 66,
-                        ),
-                        (
-                          '6个月',
-                          widget.unit == 'month'
-                              ? 6
-                              : widget.unit == 'week'
-                              ? 26
-                              : 132,
-                        ),
-                        (
-                          '1年',
-                          widget.unit == 'month'
-                              ? 12
-                              : widget.unit == 'week'
-                              ? 52
-                              : 264,
-                        ),
-                        ('全部', widget.bars.length),
+                      Text(
+                        '${drawProjection && forecastHover != null ? '推演 · ' : ''}${c.time}',
+                        style: TextStyle(fontSize: 11, height: 1, color: muted),
+                      ),
+                      const SizedBox(width: 8),
+                      for (final p in [
+                        ('开', c.open),
+                        ('高', c.high),
+                        ('低', c.low),
+                        ('收', c.close),
                       ])
-                        TextButton(
-                          onPressed: () => range(item.$2),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
                           child: Text(
-                            tr(context, item.$1),
+                            '${tr(context, p.$1)} ${fixed(p.$2)}',
                             style: TextStyle(
-                              color: count == item.$2 ? ink : muted,
-                              fontSize: 13,
+                              fontSize: 11,
+                              height: 1,
+                              color: p.$1 == '高'
+                                  ? up
+                                  : p.$1 == '低'
+                                  ? down
+                                  : ink,
                             ),
                           ),
                         ),
                     ],
                   ),
                 ),
-              ),
-              IconButton(
-                onPressed: indicatorSettings,
-                tooltip: tr(context, '图表指标'),
-                icon: const Icon(Icons.show_chart, size: 20),
-              ),
-              IconButton(
-                onPressed: settings,
-                tooltip: tr(context, '均线参数'),
-                icon: const Icon(Icons.tune, size: 20),
-              ),
-              IconButton(
-                onPressed: projectionSettings,
-                tooltip: tr(context, '行情推演'),
-                icon: Icon(
-                  Icons.auto_graph,
-                  size: 20,
-                  color: projectionOn ? const Color(0xffd5ae58) : muted,
-                ),
-              ),
-              if (offset > 0)
-                IconButton(
-                  onPressed: () => range(count),
-                  tooltip: tr(context, '回到最新'),
-                  icon: const Icon(Icons.skip_next),
-                ),
-              if (widget.expanded) ...[
-                if (compact)
-                  PopupMenuButton<String>(
-                    tooltip: tr(context, '副图布局'),
-                    initialValue: paneMode,
-                    onSelected: (v) => setState(() => paneMode = v),
-                    itemBuilder: (_) => [
-                      PopupMenuItem(
-                        value: 'all',
-                        child: Text(tr(context, '全部副图 · 可纵向滚动')),
-                      ),
-                      PopupMenuItem(value: 'vol', child: Text('VOL')),
-                      PopupMenuItem(
-                        value: 'macd',
-                        child: const Text('VOL + MACD'),
-                      ),
-                      PopupMenuItem(
-                        value: 'kdj',
-                        child: const Text('VOL + KDJ'),
-                      ),
-                    ],
-                    icon: const Icon(Icons.view_stream_outlined),
-                  ),
-                IconButton(
-                  onPressed: () => SystemChrome.setPreferredOrientations(
-                    compact
-                        ? [DeviceOrientation.portraitUp]
-                        : [
-                            DeviceOrientation.landscapeLeft,
-                            DeviceOrientation.landscapeRight,
-                          ],
-                  ),
-                  tooltip: tr(context, '横竖屏切换'),
-                  icon: const Icon(Icons.screen_rotation_outlined),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  tooltip: tr(context, '关闭全屏'),
-                  icon: const Icon(Icons.close),
-                ),
-              ] else
-                IconButton(
-                  onPressed: expand,
-                  tooltip: tr(context, '展开图表'),
-                  icon: const Icon(Icons.fullscreen),
-                ),
-            ],
-          ),
-        _ChartLegend(
-          compact: compact,
-          dense: widget.terminal,
-          children: overlay != 'MA'
-              ? (overlay == 'BOLL'
-                    ? [
-                        Text(
-                          'BOLL (20,2)',
-                          style: TextStyle(color: ink, fontSize: 12),
-                        ),
-                        Text(
-                          'MID ${fixed(readout.bollMid[idx])}',
-                          style: TextStyle(color: ink, fontSize: 12),
-                        ),
-                        Text(
-                          'UP ${fixed(readout.bollUpper[idx])}',
-                          style: const TextStyle(
-                            color: Colors.amber,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          'LOW ${fixed(readout.bollLower[idx])}',
-                          style: TextStyle(
-                            color: atlasColor(0xffed89bf),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ]
-                    : [
-                        Text(
-                          'SAR (0.02,0.2)',
-                          style: const TextStyle(
-                            color: Colors.amber,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          fixed(readout.sar[idx]),
-                          style: const TextStyle(
-                            color: Colors.amber,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ])
-              : mas
-                    .map(
-                      (ma) => InkWell(
-                        onTap: () {
-                          setState(() {
-                            mas = mas
-                                .map(
-                                  (m) => m == ma
-                                      ? MaLine(m.period, m.color, !m.enabled)
-                                      : m,
-                                )
-                                .toList();
-                            indicators = IndicatorData(widget.bars, mas);
-                          });
-                          context.read<AtlasStore>().prefs.setString(
-                            'ma',
-                            jsonEncode(mas.map((m) => m.toJson()).toList()),
-                          );
-                        },
-                        child: Text(
-                          'MA${ma.period} ${ma.enabled ? fixed(readout.averages[ma.period]?[idx]) : '—'}',
-                          style: TextStyle(
-                            color: ma.enabled ? chartColor(ma.color) : muted,
-                            fontSize: widget.terminal ? 12 : 13,
-                            height: 1.1,
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-        ),
-        SizedBox(
-          height: widget.terminal
-              ? 0
-              : compact
-              ? 4
-              : 14,
-        ),
-        if (widget.terminal)
-          SizedBox(
-            height: 24,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+              )
+            else
+              Wrap(
+                spacing: 12,
+                runSpacing: 6,
                 children: [
                   Text(
-                    '${drawProjection && forecastHover != null ? '推演 · ' : ''}${c.time}',
-                    style: TextStyle(fontSize: 11, height: 1, color: muted),
+                    '${widget.expanded ? '${widget.name.isEmpty ? '' : '${widget.name} · '}${widget.symbol} · ' : ''}${c.time}',
+                    style: TextStyle(fontSize: 13, color: muted),
                   ),
-                  const SizedBox(width: 8),
-                  for (final p in [
+                  for (final pair in [
                     ('开', c.open),
                     ('高', c.high),
                     ('低', c.low),
                     ('收', c.close),
                   ])
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Text(
-                        '${tr(context, p.$1)} ${fixed(p.$2)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1,
-                          color: p.$1 == '高'
-                              ? up
-                              : p.$1 == '低'
-                              ? down
-                              : ink,
-                        ),
+                    Text(
+                      '${tr(context, pair.$1)} ${pair.$2.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: pair.$1 == '低'
+                            ? down
+                            : pair.$1 == '高'
+                            ? up
+                            : ink,
+                        fontSize: 13,
                       ),
                     ),
                 ],
               ),
+            SizedBox(
+              height: widget.terminal
+                  ? 0
+                  : compact
+                  ? 4
+                  : 10,
             ),
-          )
-        else
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              Text(
-                '${widget.expanded ? '${widget.name.isEmpty ? '' : '${widget.name} · '}${widget.symbol} · ' : ''}${c.time}',
-                style: TextStyle(fontSize: 13, color: muted),
-              ),
-              for (final pair in [
-                ('开', c.open),
-                ('高', c.high),
-                ('低', c.low),
-                ('收', c.close),
-              ])
-                Text(
-                  '${tr(context, pair.$1)} ${pair.$2.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: pair.$1 == '低'
-                        ? down
-                        : pair.$1 == '高'
-                        ? up
-                        : ink,
-                    fontSize: 13,
-                  ),
-                ),
-            ],
-          ),
-        SizedBox(
-          height: widget.terminal
-              ? 0
-              : compact
-              ? 4
-              : 10,
-        ),
-        LayoutBuilder(
-          builder: (context, constraints) => Listener(
-            onPointerDown: (e) {
-              pointers[e.pointer] = e.localPosition;
-              if (pointers.length == 2) {
-                pinchDistance =
-                    (pointers.values.first - pointers.values.last).distance;
-                viewport.beginPinch(
-                  pinchDistance!,
-                  ChartPlot.fraction(
-                    (pointers.values.first.dx + pointers.values.last.dx) / 2,
-                    constraints.maxWidth,
-                  ),
-                );
-                hover = null;
-              }
-            },
-            onPointerMove: (e) {
-              pointers[e.pointer] = e.localPosition;
-              if (pointers.length == 2 && pinchDistance != null) {
-                final distance =
-                    (pointers.values.first - pointers.values.last).distance;
-                if (distance > 10) {
-                  setState(
-                    () => viewport.pinch(
-                      distance,
+            LayoutBuilder(
+              builder: (context, constraints) => Listener(
+                onPointerDown: (e) {
+                  pointers[e.pointer] = e.localPosition;
+                  if (pointers.length == 2) {
+                    pinchDistance =
+                        (pointers.values.first - pointers.values.last).distance;
+                    viewport.beginPinch(
+                      pinchDistance!,
                       ChartPlot.fraction(
                         (pointers.values.first.dx + pointers.values.last.dx) /
                             2,
                         constraints.maxWidth,
                       ),
-                    ),
-                  );
-                }
-              }
-            },
-            onPointerUp: (e) {
-              pointers.remove(e.pointer);
-              pinchDistance = null;
-            },
-            onPointerCancel: (e) {
-              pointers.remove(e.pointer);
-            },
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragStart: (_) {
-                viewport.beginPan();
-                setState(() => hover = null);
-              },
-              onHorizontalDragUpdate: (e) {
-                if (pointers.length < 2) {
-                  setState(
-                    () => viewport.pan(
-                      e.delta.dx,
-                      ChartPlot.width(constraints.maxWidth),
-                    ),
-                  );
-                }
-              },
-              onDoubleTap: () => range(66),
-              onLongPressStart: (e) =>
-                  selectAt(e.localPosition, constraints.maxWidth),
-              onLongPressMoveUpdate: (e) =>
-                  selectAt(e.localPosition, constraints.maxWidth),
-              onLongPressEnd: (_) {},
-              onTapDown: (e) => selectAt(e.localPosition, constraints.maxWidth),
-              child: Semantics(
-                label:
-                    '${widget.symbol} ${c.time} ${tr(context, '开')} ${fixed(c.open)} ${tr(context, '高')} ${fixed(c.high)} ${tr(context, '低')} ${fixed(c.low)} ${tr(context, '收')} ${fixed(c.close)}',
-                hint: '${tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标')} · $studyStatus',
-                onIncrease: () => setState(
-                  () => hover = ((hover ?? end - 1) + 1).clamp(start, end - 1),
-                ),
-                onDecrease: () => setState(
-                  () => hover = ((hover ?? end - 1) - 1).clamp(start, end - 1),
-                ),
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    key: const ValueKey('candlestick-canvas'),
-                    size: Size(constraints.maxWidth, height),
-                    painter:
-                        studyReady ||
-                            !markers && !shapeMarkers && !indicatorLabels
-                        ? ChartPainter(
-                            indicators,
-                            start,
-                            end,
-                            (drawProjection ? forecastHover : null) ?? hover,
-                            drawVolume,
-                            drawMacd,
-                            drawKdj,
-                            shapeMarkers ? widget.events : [],
-                            widget.volumeUnit,
-                            math.max(
-                              14,
-                              context.watch<AtlasStore>().fontSize * .72,
-                            ),
-                            markers,
-                            overlay: overlay,
-                            rsi: rsi,
-                            trades: studyTrades,
-                            patterns: studyPatterns,
-                            indicatorMarks: indicatorLabels
-                                ? studyIndicators
-                                : const [],
-                            showPatterns: shapeMarkers,
-                            showCrosses: crossMarkers,
-                            projection: drawProjection ? projection : null,
-                            forecast: forecastData,
-                          )
-                        : null,
-                    child:
-                        studyReady ||
-                            !markers && !shapeMarkers && !indicatorLabels
-                        ? null
-                        : SizedBox(
-                            width: constraints.maxWidth,
-                            height: height,
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (studyBusy)
-                                    const CircularProgressIndicator(
-                                      strokeWidth: 1.5,
-                                    ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    tr(
-                                      context,
-                                      studyStatus.contains('失败')
-                                          ? '标注核验失败，请重试'
-                                          : '正在同步 K线与标注',
-                                    ),
-                                    style: TextStyle(
-                                      color: muted,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  if (studyStatus.contains('失败'))
-                                    TextButton(
-                                      onPressed: () =>
-                                          refreshStudy(retry: true),
-                                      child: Text(tr(context, '重试')),
-                                    ),
-                                ],
-                              ),
-                            ),
+                    );
+                    hover = null;
+                  }
+                },
+                onPointerMove: (e) {
+                  pointers[e.pointer] = e.localPosition;
+                  if (pointers.length == 2 && pinchDistance != null) {
+                    final distance =
+                        (pointers.values.first - pointers.values.last).distance;
+                    if (distance > 10) {
+                      setState(
+                        () => viewport.pinch(
+                          distance,
+                          ChartPlot.fraction(
+                            (pointers.values.first.dx +
+                                    pointers.values.last.dx) /
+                                2,
+                            constraints.maxWidth,
                           ),
+                        ),
+                      );
+                    }
+                  }
+                },
+                onPointerUp: (e) {
+                  pointers.remove(e.pointer);
+                  pinchDistance = null;
+                },
+                onPointerCancel: (e) {
+                  pointers.remove(e.pointer);
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragStart: (_) {
+                    viewport.beginPan();
+                    setState(() => hover = null);
+                  },
+                  onHorizontalDragUpdate: (e) {
+                    if (pointers.length < 2) {
+                      setState(
+                        () => viewport.pan(
+                          e.delta.dx,
+                          ChartPlot.width(constraints.maxWidth),
+                        ),
+                      );
+                    }
+                  },
+                  onDoubleTap: () => range(66),
+                  onLongPressStart: (e) =>
+                      selectAt(e.localPosition, constraints.maxWidth),
+                  onLongPressMoveUpdate: (e) =>
+                      selectAt(e.localPosition, constraints.maxWidth),
+                  onLongPressEnd: (_) {},
+                  onTapDown: (e) =>
+                      selectAt(e.localPosition, constraints.maxWidth),
+                  child: Semantics(
+                    label:
+                        '${widget.symbol} ${c.time} ${tr(context, '开')} ${fixed(c.open)} ${tr(context, '高')} ${fixed(c.high)} ${tr(context, '低')} ${fixed(c.low)} ${tr(context, '收')} ${fixed(c.close)}',
+                    hint:
+                        '${tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标')} · $studyStatus',
+                    onIncrease: () => setState(
+                      () => hover = ((hover ?? end - 1) + 1).clamp(
+                        start,
+                        end - 1,
+                      ),
+                    ),
+                    onDecrease: () => setState(
+                      () => hover = ((hover ?? end - 1) - 1).clamp(
+                        start,
+                        end - 1,
+                      ),
+                    ),
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        key: const ValueKey('candlestick-canvas'),
+                        size: Size(constraints.maxWidth, plotHeight),
+                        painter:
+                            studyReady ||
+                                !markers && !shapeMarkers && !indicatorLabels
+                            ? ChartPainter(
+                                indicators,
+                                start,
+                                end,
+                                (drawProjection ? forecastHover : null) ??
+                                    hover,
+                                drawVolume,
+                                drawMacd,
+                                drawKdj,
+                                shapeMarkers ? widget.events : [],
+                                widget.volumeUnit,
+                                math.max(
+                                  14,
+                                  context.watch<AtlasStore>().fontSize * .72,
+                                ),
+                                markers,
+                                overlay: overlay,
+                                rsi: rsi,
+                                trades: studyTrades,
+                                patterns: studyPatterns,
+                                indicatorMarks: indicatorLabels
+                                    ? studyIndicators
+                                    : const [],
+                                showPatterns: shapeMarkers,
+                                showCrosses: crossMarkers,
+                                projection: drawProjection ? projection : null,
+                                forecast: forecastData,
+                              )
+                            : null,
+                        child:
+                            studyReady ||
+                                !markers && !shapeMarkers && !indicatorLabels
+                            ? null
+                            : SizedBox(
+                                width: constraints.maxWidth,
+                                height: plotHeight,
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (studyBusy)
+                                        const CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                        ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        tr(
+                                          context,
+                                          studyStatus.contains('失败')
+                                              ? '标注核验失败，请重试'
+                                              : '正在同步 K线与标注',
+                                        ),
+                                        style: TextStyle(
+                                          color: muted,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      if (studyStatus.contains('失败'))
+                                        TextButton(
+                                          onPressed: () =>
+                                              refreshStudy(retry: true),
+                                          child: Text(tr(context, '重试')),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-        if (!compact && !widget.terminal)
-          Wrap(
-            spacing: 6,
-            children: [
-              FilterChip(
-                label: const Text('VOL'),
-                selected: volume,
-                onSelected: (v) => setState(() => volume = v),
+            if (!compact && !widget.terminal)
+              Wrap(
+                spacing: 6,
+                children: [
+                  FilterChip(
+                    label: const Text('VOL'),
+                    selected: volume,
+                    onSelected: (v) => setState(() => volume = v),
+                  ),
+                  FilterChip(
+                    label: const Text('MACD'),
+                    selected: macd,
+                    onSelected: (v) => setState(() => macd = v),
+                  ),
+                  FilterChip(
+                    label: const Text('KDJ'),
+                    selected: kdj,
+                    onSelected: (v) => setState(() => kdj = v),
+                  ),
+                  FilterChip(
+                    label: Text(tr(context, '买卖点')),
+                    selected: markers,
+                    onSelected: (v) => setState(() => markers = v),
+                  ),
+                ],
               ),
-              FilterChip(
-                label: const Text('MACD'),
-                selected: macd,
-                onSelected: (v) => setState(() => macd = v),
+            if (!compact && !widget.terminal)
+              Text(
+                tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
+                style: TextStyle(fontSize: 12, color: muted),
               ),
-              FilterChip(
-                label: const Text('KDJ'),
-                selected: kdj,
-                onSelected: (v) => setState(() => kdj = v),
-              ),
-              FilterChip(
-                label: Text(tr(context, '买卖点')),
-                selected: markers,
-                onSelected: (v) => setState(() => markers = v),
-              ),
-            ],
-          ),
-        if (!compact && !widget.terminal)
-          Text(
-            tr(context, '双指缩放 · 横滑平移 · 长按联动十字光标'),
-            style: TextStyle(fontSize: 12, color: muted),
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 }

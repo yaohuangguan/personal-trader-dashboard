@@ -88,6 +88,17 @@ void main() {
         await tester.pumpAndSettle();
         expect(painter(tester).forecast!.bars.length, bars.length + 10);
         expect(painter(tester).data.bars.length, bars.length);
+        expect(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('projection-summary')))
+              .dy,
+          lessThan(
+            tester
+                .getTopLeft(find.byKey(const ValueKey('candlestick-canvas')))
+                .dy,
+          ),
+        );
+
         await tester.tap(find.text(unit == 'day' ? '约4周' : '20 根${unit}K'));
         await tester.pumpAndSettle();
         expect(painter(tester).forecast!.bars.length, bars.length + 20);
