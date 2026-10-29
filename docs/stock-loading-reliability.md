@@ -25,4 +25,6 @@ Cloudflare过去24小时截至UTC 2026-10-29 00:11的采样，guanlan有260次�
 
 每次共享规则更新必须运行 `npm run build:mobile-engine`，重新发布iOS包。CI用 `node tools/build-mobile-engine.mjs --check`拒绝源规则与打包引擎不一致。此改动需要安装新App，仅刷新网站不能替换旧App的加载链路。公开源或网络仍可能中断；保留快照提高可用性，不构成行情来源SLA。
 
+原生回归还捕获了横屏190px高图表的绘图异常：指标标注夹取文字位置时，上边界超过下边界，抛出`double.clamp`异常。已改为窄面板保留有颜色的信号点，文字放不下时从“标注依据”查看解释；普通尺寸仍绘制完整文字。新增750×190、90×260和390×500三种画布回归，先复现失败再验证修复，不关闭标注掩盖问题。
+
 参考：[Apple JavaScriptCore JSContext](https://developer.apple.com/documentation/javascriptcore/jscontext)。

@@ -2074,7 +2074,7 @@ class ChartPainter extends CustomPainter {
         final above = mark['position'] == 'above',
             dotY = above ? y(bar.high) - 4 : y(bar.low) + 5;
         c.drawCircle(Offset(px, dotY), 2.2, Paint()..color = colour);
-        if (labels >= 6) continue;
+        if (labels >= 6 || labelWidth > width) continue;
         final lx = (px - labelWidth / 2).clamp(
               left,
               size.width - right - labelWidth,
@@ -2286,6 +2286,23 @@ class ChartPainter extends CustomPainter {
         final text =
                 '${str(mark['label'])}${mark['provisional'] == true ? '·预警' : ''}',
             w = textWidth(text, size: 11) + 6;
+        if (h < 38 || w > width) {
+          // Compact landscape panes still show the event; its full explanation
+          // remains in annotation details when a text label cannot fit.
+          final dot = Offset(
+                x(index),
+                py(value).clamp(top + 2, top + math.max(2.0, h - 2)),
+              ),
+              rect = Rect.fromCircle(center: dot, radius: 2);
+          if (occupied.any((r) => r.inflate(5).overlaps(rect))) continue;
+          occupied.add(rect);
+          c.drawCircle(
+            dot,
+            2,
+            Paint()..color = mark['bullish'] == true ? up : down,
+          );
+          continue;
+        }
         final lx = (x(index) - w / 2).clamp(left, size.width - right - w),
             ly = (py(value) + (mark['bullish'] == true ? 5 : -19)).clamp(
               top + 22,
