@@ -58,6 +58,8 @@ jobs:
           flutter-version: '3.47.5'
           channel: stable
           cache: true
+      - name: Backport upstream simulator log-stream readiness fix
+        run: python3 tool/patch_flutter_simulator.py "$FLUTTER_ROOT"
       - run: flutter pub get
       - name: Boot iPhone simulator
         run: |
