@@ -21,6 +21,9 @@ void main() {
   testWidgets(
     'native local engine computes both directions and exact candles without a compute API',
     (tester) async {
+      // Give the native integration runner an initial view before channel work.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      await tester.pumpAndSettle();
       SharedPreferences.setMockInitialValues({});
       var networkCalls = 0;
       final api = AtlasApi(

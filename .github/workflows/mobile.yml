@@ -66,11 +66,16 @@ jobs:
           xcrun simctl bootstatus "$ATLAS_SIMULATOR_ID" -b
           echo "ATLAS_SIMULATOR_ID=$ATLAS_SIMULATOR_ID" >> "$GITHUB_ENV"
       - name: Validate chart gestures on native iOS
-        run: flutter drive --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d "$ATLAS_SIMULATOR_ID"
+        timeout-minutes: 12
+        run: |
+          mkdir -p build
+          flutter drive --verbose --driver=test_driver/integration_test.dart --target=integration_test/chart_experience_test.dart -d "$ATLAS_SIMULATOR_ID" 2>&1 | tee build/native-chart-drive.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ios-chart-experience-screenshots
-          path: mobile/build/ios-chart-screenshots/*.png
+          path: |
+            mobile/build/ios-chart-screenshots/*.png
+            mobile/build/native-chart-drive.log
           if-no-files-found: warn
           retention-days: 14
