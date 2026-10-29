@@ -92,9 +92,12 @@ export async function quotes(symbols: string[], signal?:AbortSignal) {
   return { ...stamp('腾讯财经公开快照', url), items, unavailable: resolved.map(s => s.symbol).filter(s => !items.some(q => q.symbol === s)), level2: false as const, depth: 5 as const };
 }
 export async function intraday(raw: string) {
-  const { symbol, wire } = chineseSymbol(raw);
-  const url = 'https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=' + wire;
-  const payload = await (await request(url)).json() as { data?: Record<string, { data?: { date?: string; data?: string[] }; qt?: Record<string, string[]> }> };
+  const { symbol, wire, secid } = chineseSymbol(raw);
+  let failure:unknown;
+  for(const host of ['web.ifzq.gtimg.cn','ifzq.gtimg.cn']) {
+    const url = 'https://'+host+'/appstock/app/minute/query?code=' + wire;
+    try {
+  const payload = await (await request(url,4000)).json() as { data?: Record<string, { data?: { date?: string; data?: string[] }; qt?: Record<string, string[]> }> };
   const node = payload.data?.[wire], date = cnDate(node?.data?.date || '');
   if (!date || !Array.isArray(node?.data?.data)) throw new Error('分时源缺少交易日期或数据');
   let prior = 0;
@@ -106,6 +109,20 @@ export async function intraday(raw: string) {
     prior = cumulativeVolume;
   }
   return { ...stamp('腾讯财经公开分时', url), symbol, date, previous: num(node.qt?.[wire]?.[4]), points,volumeUnit:/^68[89]/.test(symbol)?'股':'手',notice:points.length?undefined:'尚无成交分时，等待开盘；未发生时段保持空白。' };
+    }catch(error){failure=error;}
+  }
+  const url='https://push2his.eastmoney.com/api/qt/stock/trends2/get?'+new URLSearchParams({secid,fields1:'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13',fields2:'f51,f52,f53,f54,f55,f56,f57,f58',ndays:'1',iscr:'0'});
+  try {
+    const raw=await(await eastmoney(url,4000)).json() as {data?:{trends?:string[];preClose?:number}},records=raw.data?.trends;
+    if(!records?.length)throw Error('备用分时源暂未返回记录');
+    const date=records.at(-1)!.slice(0,10),points:IntradayPoint[]=[];let cumulativeVolume=0,cumulativeAmount=0;
+    for(const row of records){const f=row.split(','),clock=f[0].slice(11,16),price=num(f[2]),volume=num(f[5]),amount=num(f[6]);
+      if(f[0].slice(0,10)!==date||!(clock>='09:30'&&clock<='11:30'||clock>='13:00'&&clock<='15:00')||!price||volume===null||volume<0||amount===null||amount<0)continue;
+      cumulativeVolume+=volume;cumulativeAmount+=amount;points.push({clock,time:Date.parse(date+'T'+clock+':00+08:00')/1000,price,volume,cumulativeVolume,amount:cumulativeAmount});
+    }
+    if(!points.length)throw Error('备用分时源尚无有效成交时段');
+    return {...stamp('东方财富公开分时 · 独立备用源',url),symbol,date,previous:num(raw.data?.preClose),points,volumeUnit:'手',notice:'腾讯分时暂不可用，已切换独立分钟快照；缺失分钟不填充。'};
+  }catch{throw failure||Error('分时来源暂不可用，请稍后刷新');}
 }
 export async function history(raw: string, period: string) {
   const { symbol, wire } = chineseSymbol(raw);
