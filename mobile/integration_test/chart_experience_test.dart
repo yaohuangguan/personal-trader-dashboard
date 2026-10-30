@@ -208,6 +208,8 @@ void main() {
       final push = NativePushService(s.api, s.deviceToken);
       await tester.pumpWidget(AtlasApp(store: s, push: push));
       await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.star_outline).last);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('300545.SZ').first);
       await tester.pumpAndSettle();
       for (final mode in ['dark', 'light']) {

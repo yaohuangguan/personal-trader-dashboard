@@ -95,7 +95,11 @@ export default function App(){
  const [watchWidth,setWatchWidth]=usePanelWidth('atlas.watch-width.v1',innerWidth>=1600?360:innerWidth<=1200?320:340,320,560);
  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>readStored('atlas.sidebar-collapsed.v1',false));
  useEffect(()=>{localStorage.setItem('atlas.sidebar-collapsed.v1',JSON.stringify(sidebarCollapsed));},[sidebarCollapsed]);
- const [view,setView]=useState<View>(()=>(['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(new URLSearchParams(window.location.search).get('view')||'')?new URLSearchParams(window.location.search).get('view') as View:'research');
+ const [view,setView]=useState<View>(()=>{
+  const params=new URLSearchParams(window.location.search),requested=params.get('view');
+  if((['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(requested||''))return requested as View;
+  return params.get('symbol')?.trim()?'research':'markets';
+ });
  const [mobileNav,setMobileNav]=useState(false);const [workspaceNav,setWorkspaceNav]=useState(false);
  const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
  useEffect(()=>{const load=()=>setWatchlist(readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));window.addEventListener('atlas:watch-cloud',load);return()=>window.removeEventListener('atlas:watch-cloud',load);},[]);
@@ -168,7 +172,7 @@ export default function App(){
  },[]);
  const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):[symbol,...prev].slice(0,30)),[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
- const changeView=useCallback((v:View)=>{if(v==='research')setWorkspaceNav(false);setView(v);setMobileNav(false);const url=new URL(window.location.href);if(v!=='research')url.searchParams.set('view',v);else url.searchParams.delete('view');window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
+ const changeView=useCallback((v:View)=>{if(v==='research')setWorkspaceNav(false);setView(v);setMobileNav(false);const url=new URL(window.location.href);url.searchParams.set('view',v);window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
  useEffect(()=>{const open=()=>changeView('signals');window.addEventListener('atlas:monitor-pool',open);return()=>window.removeEventListener('atlas:monitor-pool',open);},[changeView]);
  const searchOptions=useMemo(()=>{
   const list=remoteResults.length?remoteResults:searchLocal(searchQuery);

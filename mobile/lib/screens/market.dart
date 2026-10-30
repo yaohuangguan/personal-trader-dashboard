@@ -84,12 +84,16 @@ class _MarketPageState extends State<MarketPage> {
     final sourceDate = quotes.isEmpty
         ? null
         : str(quotes.first['asOf']).split('T').first;
+    final textScaler = MediaQuery.textScalerOf(context);
     return Column(
       children: [
         _tabs(context),
         if (view == 'index') ...[
           SizedBox(
-            height: 88,
+            height: math.max(
+              88,
+              35 + textScaler.scale(12) * 2 + textScaler.scale(21),
+            ),
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: 5,

@@ -143,7 +143,7 @@ class AtlasShell extends StatefulWidget {
 }
 
 class _AtlasShellState extends State<AtlasShell> {
-  int index = 0;
+  int index = 1;
   StreamSubscription<String>? messages, pushClicks;
   static const names = ['我的自选', '市场全景', '五线选股器', '收盘信号中心', '7×24 快讯'];
   static const icons = [

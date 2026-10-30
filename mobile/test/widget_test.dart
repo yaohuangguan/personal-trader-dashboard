@@ -255,6 +255,9 @@ void main() {
     final native = NativePushService(s.api, s.deviceToken);
     await tester.pumpWidget(AtlasApp(store: s, push: native));
     await tester.pumpAndSettle();
+    expect(find.text('市场全景'), findsWidgets);
+    await tester.tap(find.byIcon(Icons.star_outline).last);
+    await tester.pumpAndSettle();
     expect(find.text('我的自选'), findsWidgets);
     final theme = Theme.of(tester.element(find.text('我的自选').first));
     expect(theme.textTheme.headlineSmall?.color, const Color(0xffeeeef4));
