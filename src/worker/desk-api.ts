@@ -10,6 +10,7 @@ import {dailyTrend} from '../shared/daily-trend';
 import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, fundFlowHistory, flowObservation, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
 import {auction,sectorIntraday,indexEqual} from './intraday-extras';
+import {earnings} from './earnings';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
@@ -30,6 +31,10 @@ export async function deskRoute(request: Request): Promise<Response | null> {
   const symbol = url.searchParams.get('symbol') || '';
   const kind = url.pathname.slice('/api/desk/'.length);
   try {
+    if(kind==='earnings'){
+      try{return respond(await memo('earnings:'+url.search,300,()=>earnings(url.searchParams)));}
+      catch(e){if(e instanceof RangeError)return respond({error:e.message},400);throw e;}
+    }
     if(kind==='index-equal')return respond(await memo('index-yellow:'+symbol,90,()=>indexEqual(symbol)));
     if(kind==='sector-intraday'){
       const code=url.searchParams.get('code')||'',name=(url.searchParams.get('name')||'').slice(0,40);

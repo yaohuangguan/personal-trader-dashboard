@@ -1,0 +1,15 @@
+# Reported earnings and closing signals
+
+Industry linkage includes an all-market A-share earnings board sourced from Eastmoney's public reported-earnings dataset (`RPT_LICO_FN_CPD`). It covers Shanghai, Shenzhen and Beijing A shares that have disclosed the selected reporting period; it is not restricted to the user's watchlist. The latest disclosed reporting period is resolved from the source. Revenue and attributable net profit are cumulative year-to-date amounts in CNY, with source-provided year-over-year percentages (`YSTZ` and `SJLTZ`). Interim and third-quarter figures are not standalone-quarter values. Forecasts are not combined with reported earnings.
+
+The default ranking is attributable net profit YoY, descending. Revenue YoY, revenue, net profit, and disclosure date are selectable; sorting occurs at the source before 40-row pagination. Search accepts an exact stock name or six-digit code, since this dataset rejects `like` queries. Missing metrics remain null, not zero. Only the source's explicit `9201` no-data result becomes an empty list; transport, schema, and provider errors remain errors. Mismatched report periods or future disclosure dates are rejected. Source growth percentages are not recomputed from a potentially negative prior base. Large percentages can reflect a small base and are shown beside the amount of profit, revenue, EPS and ROE.
+
+`GET /api/desk/earnings` accepts `period=latest|YYYY-MM-DD`, `sort=profitGrowth|revenueGrowth|profit|revenue|disclosed`, `order=desc|asc`, `page`, and `q`. Public pages use a five-minute edge cache and completed-value memoization. The new feature does not schedule scans or create KV/D1 writes. The desktop board uses a sortable table; narrow screens and Flutter use cards. Source attribution, report period, disclosure date and a methodology note remain visible.
+
+The closing-signal page now reads shared report candidates from `/api/desk/close-report`, independently of the device's notification events or subscription. Candidate prices are explicitly closing snapshots. The report can be viewed without enabling notifications. The existing once-per-trading-day push behavior is unchanged. Device/global status failures do not discard successful responses from the other endpoints. Empty reports and failed report loads have distinct messages, and existing settings are loaded before editing.
+
+News emphasis uses the upstream `important` flag. Important headlines and their time labels are red in the web feed, with a textual badge; ordinary news stays neutral. Native news headlines use the same semantic red. This does not infer importance from a stock's price move.
+
+Verification: earnings unit/null/date/validation/provider-error tests; live source first and second pages; 390px Flutter cards at large font size with sorting/search/page navigation; important-versus-ordinary news color; desktop and 390px browser dark/light layouts, including a report with candidates and zero notification events. Other chart and strategy tests remain in the existing suites.
+
+Source: https://data.eastmoney.com/bbsj/

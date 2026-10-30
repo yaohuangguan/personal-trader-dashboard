@@ -565,6 +565,7 @@ export default {
     if(!['000001.SH','399001.SZ','399006.SZ','000300.SH','000688.SH','899050.BJ'].includes(symbol))return json({error:'无效指数'},400);
     return computeCache(request,'index-yellow-v1:'+studySession()+':'+symbol,90,async()=>await deskRoute(request)||json({error:'Not found'},404));
    }
+   if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,async()=>await deskRoute(request)||json({error:'Not found'},404));
    const desk=await deskRoute(request);if(desk)return desk;
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);

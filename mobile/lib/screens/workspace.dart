@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/store.dart';
 import '../widgets/common.dart';
+import '../widgets/earnings_board.dart';
 import 'news.dart';
 import 'stock.dart';
 
@@ -70,6 +71,7 @@ class _WorkspacePageState extends State<WorkspacePage> {
               ),
             ),
           ] else ...[
+            if (view == 'radar') const EarningsBoard(),
             if (view == 'overview')
               Panel(
                 child: AsyncPanel(

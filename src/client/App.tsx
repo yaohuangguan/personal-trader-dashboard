@@ -5,6 +5,7 @@ import SignalCenter from './components/SignalCenter';
 import {t as uiText} from './preferences';
 import Settings from './components/Settings';
 import MarketOverview from './components/MarketOverview';
+import EarningsBoard from './components/EarningsBoard';
 import {usePreferences} from './preferences';
 import * as Dialog from '@radix-ui/react-dialog';
 import ScreenerWorkspace from './components/ScreenerWorkspace';
@@ -55,8 +56,8 @@ function matchSectors(item:NewsItem){
 function sourceDomain(url:string):string{try{return new URL(url).hostname.replace('www.','');}catch{return '';}}
 
 function Logo(){return <div className="brand-mark"><Activity size={22} strokeWidth={2.8}/></div>;}
-function SectionHeading({eyebrow,title,right}:{eyebrow:string;title:string;right?:React.ReactNode}){
- return <div className="section-heading"><div><div className="eyebrow">{uiText(eyebrow)}</div><h2>{uiText(title)}</h2></div>{uiText(right)}</div>;
+function SectionHeading({eyebrow,title,right,className=''}:{eyebrow:string;title:string;right?:React.ReactNode;className?:string}){
+ return <div className={'section-heading '+className}><div><div className="eyebrow">{uiText(eyebrow)}</div><h2>{uiText(title)}</h2></div>{uiText(right)}</div>;
 }
 function StatusNote({children}:{children:React.ReactNode}){return <div className="status-note"><ShieldAlert size={15}/><span>{uiText(children)}</span></div>;}
 function Blank({title,detail,loading=false}:{title:string;detail:string;loading?:boolean}){
@@ -65,10 +66,10 @@ function Blank({title,detail,loading=false}:{title:string;detail:string;loading?
 function NewsRow({item,save,saved,major=false}:{item:NewsItem;save:(n:NewsItem)=>void;saved:boolean;major?:boolean}){
  const sectors=matchSectors(item).slice(0,2);
  const {openNews}=useReader();
- return <article className={'news-row '+(major?'news-major':'')}>
+ return <article className={'news-row '+(major?'news-major ':'')+(item.important?'news-important':'')}>
   <div className="news-copy">
    <div className="news-meta"><span className="source-dot"/><strong>{uiText(item.source)}</strong><span className="separator-dot">·</span><span title={uiText(item.publishedAt||'')}>{uiText(relative(item.publishedAt))}</span>{uiText(sectors.map(s=><span key={s.id} className="tag-neutral">{uiText(s.name)}</span>))}</div>
-   <button type="button" onClick={()=>openNews(item)} className="news-title inapp-news-button">{(item.title)}<BookOpen size={13} className="inline-external"/></button>
+   <button type="button" onClick={()=>openNews(item)} className="news-title inapp-news-button">{item.important&&<em className="news-priority">{uiText('重要')}</em>}{(item.title)}<BookOpen size={13} className="inline-external"/></button>
    {uiText(major&&<div className="news-extra">{uiText("来源：")}{uiText(sourceDomain(item.url))} {uiText("· 点击在本站阅读当前可用摘要")}</div>)}
   </div>
   <button aria-label={uiText(saved?'取消收藏':'收藏新闻')} title={uiText(saved?'取消收藏':'收藏')} className={'icon-button news-save '+(saved?'saved':'')} onClick={()=>save(item)}>{uiText(saved?<BookmarkCheck size={17}/>:<Bookmark size={17}/>)}</button>
@@ -277,8 +278,9 @@ export default function App(){
      </div>
     </>)}
     {uiText(view==='radar'&&<>
-     <SectionHeading eyebrow="THESIS MONITOR / SEVEN INDUSTRY CHAINS" title={uiText("产业催化雷达")} right={<div className="heading-extra"><Radar size={14}/> WATCHING 07 CHAINS</div>}/>
+     <SectionHeading className="industry-heading" eyebrow="THESIS MONITOR / SEVEN INDUSTRY CHAINS" title={uiText("产业催化雷达")} right={<div className="heading-extra"><Radar size={14}/> WATCHING 07 CHAINS</div>}/>
      <p className="section-subtitle">{uiText("扫描媒体线索，拆解美股领先信号与 A 股映射；区分叙事、订单验证、收入确认与利润兑现。")}</p>
+     <EarningsBoard onStock={chooseSymbol}/>
      <div className="thesis-method"><div><span>01</span><b>{uiText("事件与事实")}</b><small>{uiText("原始信息 / 发生时间")}</small></div><ArrowRight size={17}/><div><span>02</span><b>{uiText("供需 / 订单")}</b><small>{uiText("谁真正获得商业利益")}</small></div><ArrowRight size={17}/><div><span>03</span><b>{uiText("收入 / 利润")}</b><small>{uiText("财务披露验证兑现")}</small></div><ArrowRight size={17}/><div><span>04</span><b>{uiText("估值 / 股价")}</b><small>{uiText("预期是否已经反映")}</small></div></div>
      {uiText(newsLoading&&<Blank loading title={uiText("扫描七大产业链")} detail={uiText("聚合来自公开新闻源的产业新闻")}/>)}
      {uiText(!newsLoading&&<div className="radar-grid">{uiText(focusedThemes.map(({sector,items},i)=><div className="panel radar-panel" key={sector.id}>

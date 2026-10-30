@@ -29,7 +29,14 @@ class NewsTile extends StatelessWidget {
         str(item['title']),
         maxLines: compact ? 3 : null,
         overflow: compact ? TextOverflow.ellipsis : null,
-        style: const TextStyle(fontSize: 17, height: 1.65),
+        style: TextStyle(
+          fontSize: 17,
+          height: 1.65,
+          color: item['important'] == true ? up : ink,
+          fontWeight: item['important'] == true
+              ? FontWeight.w600
+              : FontWeight.normal,
+        ),
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 10),

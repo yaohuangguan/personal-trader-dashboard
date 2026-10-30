@@ -6,7 +6,7 @@ export type MarketPayload = {
 };
 export type NewsItem = {
   id: string; title: string; source: string; url: string; publishedAt: string | null;
-  category: string; originalTitle: string; summary?:string;
+  category: string; originalTitle: string; summary?:string; important?:boolean;
 };
 export type NewsPayload = { items: NewsItem[]; fetchedAt: string; category: string; sources: string[]; warnings: string[] };
 export type SearchItem = { symbol: string; name: string; exchange: string; sector?: string };

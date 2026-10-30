@@ -52,8 +52,8 @@ function Source({ text, error }: { text: string; error?: string }) { return <div
 function NewsFeed({ items, compact = false, loading, error }: { items: NewsItem[]; compact?: boolean; loading?: boolean; error?: string }) {
   const { openNews } = useReader();
   if (!items.length) return <Empty loading={loading} text={uiText(error || '当前范围内暂无来源资讯')} />;
-  return <div className={'desk-news-list ' + (compact ? 'is-compact' : '')}>{uiText(items.map((item, i) => <button type="button" className="desk-news-item" key={item.id + '-' + i} onClick={() => openNews(item)}>
-    <time>{uiText(clock(item.publishedAt))}</time><div><span className="desk-news-title">{(item.title)}</span>{uiText(!compact && item.summary && <p>{(item.summary)}</p>)}<small>{uiText(item.source)} <span>· {uiText(dateClock(item.publishedAt))}</span></small></div>
+  return <div className={'desk-news-list ' + (compact ? 'is-compact' : '')}>{uiText(items.map((item, i) => <button type="button" className={'desk-news-item'+(item.important?' is-important':'')} key={item.id + '-' + i} onClick={() => openNews(item)}>
+    <time>{uiText(clock(item.publishedAt))}</time><div><span className="desk-news-title">{item.important&&<em className="news-priority">{uiText('重要')}</em>}{(item.title)}</span>{uiText(!compact && item.summary && item.summary!==item.title && <p>{(item.summary)}</p>)}<small>{uiText(item.source)} <span>· {uiText(dateClock(item.publishedAt))}</span></small></div>
   </button>))}</div>;
 }
 export function FlashNewsDesk() {
