@@ -1,15 +1,14 @@
 # guanlan.nzs.workers.dev
 
-`wrangler.toml` 部署新的公开 Worker `guanlan`。`wrangler.legacy.toml` 更新原 Worker，并将其网页与旧短链接跳转到新站。
+`wrangler.toml` 部署新的公开 Worker `guanlan`。迁移完成后不再部署旧 Worker；仅保留 `guanlan`，原有 Durable Object 状态通过 transfer migration 转移。
 
-两者共用原 SHARES KV，新站的 Durable Object 绑定显式指向 `personal-market-atlas` 的既有命名空间。原 Worker 保留为持久状态的所属脚本，不能删除；它继续保存订阅、VAPID密钥、扫描历史与缓存。新站的收盘报告写入通过内部服务绑定交给原脚本校验既有 `SCREEN_JOB_TOKEN`，不复制或暴露令牌。日常静态页面和行情 API 不通过额外代理。
+迁移后的 `guanlan` 直接持有 `SignalMonitor`、`MarketScanner` 及原有 SQLite Durable Object 数据，保留 `SHARES` KV。`LEGACY_STATE` 绑定已删除，收盘报告由 `guanlan` 自行验证 `SCREEN_JOB_TOKEN`。旧域名不再提供服务，旧客户端需要切换到新域名。
 
-部署顺序：先新公开站，再原状态脚本；新站可访问以后才启用旧网页跳转。
+生产迁移顺序：先更新 `guanlan`，执行带 `transferred_classes` 的 Durable Object 转移；同步更新 `guanlan` 和 GitHub Actions 中的 `SCREEN_JOB_TOKEN`；验证收盘报告，再正常删除旧 Worker。不要用 `--force`。
 
 ```sh
 npm run build
 npx wrangler deploy
-npx wrangler deploy --config wrangler.legacy.toml
 ```
 
-移动端默认 API 与生成分享链接均使用新域名。旧版已安装应用的 API 仍可调用；浏览器/PWA 的通知许可按来源隔离，在新域名需要用户在设备上授予通知许可。原来源既有订阅不被删除。
+移动端默认 API 与分享链接均应使用新域名；旧版应用如果仍访问旧域名，需要升级。浏览器/PWA 的通知许可按来源隔离，新域名需要用户重新授予权限；迁移不删除原有 Durable Object 订阅记录。
