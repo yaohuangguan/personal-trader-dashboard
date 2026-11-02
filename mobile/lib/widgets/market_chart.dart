@@ -324,6 +324,7 @@ class _MarketChartState extends State<MarketChart> {
       }
     } catch (_) {}
     indicators = IndicatorData(widget.bars, mas);
+    viewport.reset(defaultChartBarCount(widget.unit));
     projection = widget.initialProjection;
     projectionScenario = str(projection?['selectedScenario'], 'base');
     projectionOn = projection != null;
@@ -383,6 +384,9 @@ class _MarketChartState extends State<MarketChart> {
           ? -1
           : widget.bars.indexWhere((b) => b.time == selectedDate);
       hover = selectedIndex < 0 ? null : selectedIndex;
+      if (oldWidget.unit != widget.unit) {
+        viewport.reset(defaultChartBarCount(widget.unit));
+      }
       if (oldWidget.symbol != widget.symbol || oldWidget.unit != widget.unit) {
         offset = 0;
       }

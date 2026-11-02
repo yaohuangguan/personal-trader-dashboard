@@ -5,6 +5,12 @@ import 'package:market_atlas/core/chart_viewport.dart';
 import 'support/chart_harness.dart';
 
 void main() {
+  test('default iOS chart displays one month of daily candles', () {
+    expect(defaultChartBarCount('day'), 22);
+    expect(defaultChartBarCount('week'), 52);
+    expect(defaultChartBarCount('month'), 12);
+    expect(defaultChartBarCount('m5'), 66);
+  });
   test('phone plot fills the width and touch fractions match both edges', () {
     expect(ChartPlot.width(390), 378);
     expect(ChartPlot.fraction(6, 390), 0);
