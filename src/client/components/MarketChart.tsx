@@ -47,7 +47,8 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
   const priceRef = useRef<HTMLDivElement>(null), volumeRef = useRef<HTMLDivElement>(null), macdRef = useRef<HTMLDivElement>(null), kdjRef = useRef<HTMLDivElement>(null),rsiRef=useRef<HTMLDivElement>(null);
   const chartsRef = useRef<IChartApi[]>([]);
   const visibleRef = useRef<LogicalRange | null>(null);
-  const [period, setPeriod] = useState<Range>('3M');
+  // Three monthly candles (the former 3M default) made the month view look empty.
+  const [period, setPeriod] = useState<Range>(() => unit === 'week' || unit === 'month' ? '1Y' : '3M');
   const [preferences, setPreferences] = useState<MAPreference[]>(readPreferences);
   const [draft, setDraft] = useState(() => preferences.map(p => ({ ...p, period: String(p.period) })));
   const [settingsOpen, setSettingsOpen] = useState(false), [settingsError, setSettingsError] = useState('');
