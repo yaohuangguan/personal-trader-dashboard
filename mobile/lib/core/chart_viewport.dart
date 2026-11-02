@@ -9,6 +9,14 @@ abstract final class ChartPlot {
       ((x - inset) / width(canvasWidth)).clamp(0.0, 1.0);
 }
 
+/// Default display span by candle interval.
+int defaultChartBarCount(String unit) => switch (unit) {
+  'day' => 22,
+  'week' => 52,
+  'month' => 12,
+  _ => 66,
+};
+
 /// Viewport math is independent of gestures and price calculations.
 class ChartViewport {
   ChartViewport({this.length = 0, this.count = 66, this.offset = 0});
