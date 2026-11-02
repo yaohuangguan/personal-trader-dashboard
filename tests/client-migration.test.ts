@@ -1,8 +1,26 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Script} from 'node:vm';
-import {mergedClientState,OLD_SITE} from '../src/shared/client-state';
+import {mergedClientState,OLD_SITE,NEW_SITE,MIGRATED_KEY} from '../src/shared/client-state';
+import {migrateClientState} from '../src/client/migrate-state';
 import {clientMigrationRoute} from '../src/worker/client-migration';
+test('new Guanlan visitors boot without redirecting to the retired Worker',async()=>{
+ const keys=['location','localStorage','history'] as const;
+ const original=Object.fromEntries(keys.map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+ const state=new Map<string,string>([['atlas.watchlist.v1','["300545.SZ"]']]);
+ let redirected='',replaced='';
+ try{
+  Object.defineProperty(globalThis,'location',{configurable:true,value:{origin:NEW_SITE,href:NEW_SITE+'/?symbol=300545.SZ',replace:(url:string)=>{redirected=url;}}});
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(key:string)=>state.get(key)||null,setItem:(key:string,value:string)=>state.set(key,value)}});
+  Object.defineProperty(globalThis,'history',{configurable:true,value:{replaceState:(_a:unknown,_b:string,url:string)=>{replaced=url;}}});
+  assert.equal(await migrateClientState(),true);
+  assert.equal(redirected,'');assert.equal(replaced,'');
+  assert.equal(state.get(MIGRATED_KEY),'1');
+  assert.equal(state.get('atlas.watchlist.v1'),'["300545.SZ"]');
+ }finally{
+  for(const key of keys){const prior=original[key];if(prior)Object.defineProperty(globalThis,key,prior);else Reflect.deleteProperty(globalThis,key);}
+ }
+});
 test('migration merges old and new watchlists and groups without copying credentials',()=>{
  const r=mergedClientState({'atlas.watchlist.v1':'["300545.SZ"]','atlas.watch.groups.v1':'[{"id":"g","name":"机器人","symbols":["300545.SZ"]}]'},{'atlas.watchlist.v1':'["002472.SZ"]','atlas.watch.groups.v1':'[{"id":"g","name":"机器人","symbols":["002472.SZ"]}]','token':'secret'});
  assert.deepEqual(JSON.parse(r['atlas.watchlist.v1']),['002472.SZ','300545.SZ']);assert.deepEqual(JSON.parse(r['atlas.watch.groups.v1'])[0].symbols,['002472.SZ','300545.SZ']);assert.equal(r.token,undefined);

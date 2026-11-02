@@ -1,4 +1,4 @@
-import {CLIENT_STATE_KEYS,MIGRATED_KEY,NEW_SITE,OLD_SITE,mergedClientState} from '../shared/client-state';
+import {CLIENT_STATE_KEYS,MIGRATED_KEY,NEW_SITE,mergedClientState} from '../shared/client-state';
 const pending='atlas.client-migration.nonce';
 const decode=(s:string)=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 function collect(){const entries:Record<string,string>={};for(const k of CLIENT_STATE_KEYS){const v=localStorage.getItem(k);if(v!==null)entries[k]=v;}return entries;}
@@ -17,9 +17,12 @@ export async function migrateClientState(){
   const merged=mergedClientState(collect(),data.entries);for(const k of CLIENT_STATE_KEYS)if(typeof merged[k]==='string')localStorage.setItem(k,merged[k]);
   localStorage.setItem(MIGRATED_KEY,'1');sessionStorage.removeItem(pending);const destination=new URL(data.returnPath||'/',NEW_SITE);if(destination.origin===NEW_SITE)history.replaceState(null,'',destination.pathname+destination.search+destination.hash);return true;
  }
- if(u.searchParams.get('restore')==='1'||localStorage.getItem(MIGRATED_KEY)!=='1'){
-  u.searchParams.delete('restore');const nonce=btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');sessionStorage.setItem(pending,nonce);
-  location.replace(OLD_SITE+'/api/client-migration/bridge?nonce='+nonce+'&return='+encodeURIComponent(u.pathname+u.search+u.hash));return false;
+ // The old Worker is retired. Redirecting fresh visitors there blocks all charts.
+ if(u.searchParams.get('restore')==='1'){
+  u.searchParams.delete('restore');
+  localStorage.setItem(MIGRATED_KEY,'1');
+  history.replaceState(null,'',u.pathname+u.search+u.hash);
  }
+ if(localStorage.getItem(MIGRATED_KEY)!=='1')localStorage.setItem(MIGRATED_KEY,'1');
  return true;
 }
