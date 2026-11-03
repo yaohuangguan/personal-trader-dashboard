@@ -57,6 +57,8 @@ npm run dev
 
 Flutter iOS：见 [mobile/README.md](mobile/README.md)。
 
+自选支持一键导出文件并分享给其他用户合并导入，保留股票与分组；见 [自选文件交换](docs/watchlist-transfer.md)。
+
 ## 部署与收盘任务
 
 生产地址为 `guanlan.nzs.workers.dev`，Cloudflare账户由 `wrangler.toml` 固定。

@@ -171,7 +171,7 @@ export default function App(){
   window.history.replaceState(null,'','?symbol='+encodeURIComponent(normalized));
   window.scrollTo({top:0,behavior:'smooth'});
  },[]);
- const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):[symbol,...prev].slice(0,30)),[]);
+ const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):prev.length>=60?prev:[symbol,...prev]),[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
  const changeView=useCallback((v:View)=>{if(v==='research')setWorkspaceNav(false);setView(v);setMobileNav(false);const url=new URL(window.location.href);url.searchParams.set('view',v);window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
  useEffect(()=>{const open=()=>changeView('signals');window.addEventListener('atlas:monitor-pool',open);return()=>window.removeEventListener('atlas:monitor-pool',open);},[changeView]);

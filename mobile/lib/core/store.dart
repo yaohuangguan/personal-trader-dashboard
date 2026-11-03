@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 import 'chart_studies.dart';
+import 'watch_transfer.dart';
 part 'watch_cloud.dart';
 
 class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
@@ -278,6 +279,40 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     alerts.removeWhere((r) => r['id'] == rule['id']);
     await prefs.setString('alerts', jsonEncode(alerts));
     notifyListeners();
+  }
+
+  bool _watchImporting = false;
+  Future<WatchImportPlan> mergeWatchTransfer(WatchTransfer input) async {
+    if (_watchImporting || syncBusy) throw const FormatException('正在同步，请稍后导入');
+    _watchImporting = true;
+    final oldWatch = prefs.getStringList('watchlist'),
+        oldGroups = prefs.getString('watchGroups');
+    try {
+      final plan = planWatchImport(watchlist, groups, input);
+      if (!await prefs.setString('watchGroups', jsonEncode(plan.groups)) ||
+          !await prefs.setStringList('watchlist', plan.watchlist)) {
+        throw StateError('无法保存自选，请重试');
+      }
+      watchlist = plan.watchlist;
+      groups = plan.groups;
+      notifyListeners();
+      refreshQuotes();
+      return plan;
+    } catch (_) {
+      if (oldWatch == null) {
+        await prefs.remove('watchlist');
+      } else {
+        await prefs.setStringList('watchlist', oldWatch);
+      }
+      if (oldGroups == null) {
+        await prefs.remove('watchGroups');
+      } else {
+        await prefs.setString('watchGroups', oldGroups);
+      }
+      rethrow;
+    } finally {
+      _watchImporting = false;
+    }
   }
 
   Future<int> mergeWatch(List<String> symbols, {String? groupId}) async {

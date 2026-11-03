@@ -1,12 +1,11 @@
+import '../core/watch_transfer_share.dart';
 import 'watch_import.dart';
 import '../widgets/cloud_sync.dart';
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../core/api.dart';
 import '../core/store.dart';
@@ -236,10 +235,28 @@ class _WatchPageState extends State<WatchPage> {
           icon: const Icon(Icons.add),
         ),
       ),
-      TextButton.icon(
-        onPressed: () => showWatchImport(context),
-        icon: const Icon(Icons.playlist_add),
-        label: const Text('从其他App导入自选'),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          TextButton.icon(
+            onPressed: s.watchlist.isEmpty
+                ? null
+                : () => shareWatchTransfer(context),
+            icon: const Icon(Icons.ios_share, size: 18),
+            label: Text(s.t('导出自选')),
+          ),
+          TextButton.icon(
+            onPressed: () => showWatchImport(context, pickFile: true),
+            icon: const Icon(Icons.file_open_outlined, size: 18),
+            label: Text(s.t('导入自选文件')),
+          ),
+          TextButton.icon(
+            onPressed: () => showWatchImport(context),
+            icon: const Icon(Icons.playlist_add, size: 18),
+            label: Text(s.t('从其他App导入自选')),
+          ),
+        ],
       ),
       SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -617,15 +634,14 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 15),
                 FilledButton.icon(
-                  onPressed: () => SharePlus.instance.share(
-                    ShareParams(
-                      text: const JsonEncoder.withIndent('  ')
-                          .convert({'watchlist': s.watchlist}),
-                      subject: 'Market Atlas watchlist',
-                    ),
-                  ),
+                  onPressed: () => shareWatchTransfer(context),
                   icon: const Icon(Icons.ios_share),
                   label: Text(s.t('导出自选')),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => showWatchImport(context, pickFile: true),
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: Text(s.t('导入自选文件')),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => showWatchImport(context),

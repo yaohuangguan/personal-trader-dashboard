@@ -1,0 +1,26 @@
+{
+  "format": "guanlan-watchlist",
+  "version": 1,
+  "watchlist": [
+    "300031.SZ",
+    "920571.BJ",
+    "AAPL",
+    "510300.SH"
+  ],
+  "groups": [
+    {
+      "name": "科技",
+      "symbols": [
+        "300031.SZ",
+        "AAPL"
+      ]
+    },
+    {
+      "name": "观察",
+      "symbols": [
+        "920571.BJ",
+        "510300.SH"
+      ]
+    }
+  ]
+}

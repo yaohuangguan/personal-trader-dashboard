@@ -6,14 +6,17 @@ import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/store.dart';
 import '../core/watch_import.dart';
+import '../core/watch_transfer.dart';
 import '../widgets/common.dart';
 
-Future<void> showWatchImport(BuildContext context) =>
-    Navigator.of(context)
-        .push<void>(MaterialPageRoute(builder: (_) => const WatchImportPage()));
+Future<void> showWatchImport(BuildContext context, {bool pickFile = false}) =>
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => WatchImportPage(pickFile: pickFile)),
+    );
 
 class WatchImportPage extends StatefulWidget {
-  const WatchImportPage({super.key});
+  const WatchImportPage({super.key, this.pickFile = false});
+  final bool pickFile;
   @override
   State<WatchImportPage> createState() => _WatchImportPageState();
 }
@@ -25,6 +28,20 @@ class _WatchImportPageState extends State<WatchImportPage> {
   bool busy = false, verified = false;
   String? error, notice;
   String group = 'all';
+  WatchTransfer? portable;
+  bool importGroups = true;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.pickFile &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) pick(false);
+      });
+    }
+  }
+
   @override
   void dispose() {
     text.dispose();
@@ -40,10 +57,12 @@ class _WatchImportPageState extends State<WatchImportPage> {
           ? WatchImport.pickImages()
           : WatchImport.pickTextFile());
       if (r['cancelled'] == true) return;
-      text.text = [
-        text.text,
-        str(r['text'], ''),
-      ].where((v) => v.isNotEmpty).join('\n');
+      text.text = image
+          ? [
+              portable == null ? text.text : '',
+              str(r['text'], ''),
+            ].where((v) => v.isNotEmpty).join('\n')
+          : str(r['text'], '');
       notice = (numOf(r['failedImages']) ?? 0) == 0 ? null : '部分图片未识别，请核对结果。';
     } catch (e) {
       if (mounted) setState(() => error = '读取失败：$e');
@@ -60,6 +79,25 @@ class _WatchImportPageState extends State<WatchImportPage> {
       verified = false;
     });
     try {
+      portable = null;
+      final raw = text.text.trimLeft();
+      if (raw.startsWith('{') || raw.startsWith('[')) {
+        final packet = WatchTransfer.parse(text.text);
+        if (packet.watchlist.isEmpty) throw const FormatException('文件中没有自选股票');
+        if (!mounted) return;
+        setState(() {
+          portable = packet;
+          symbols = packet.watchlist;
+          selected
+            ..clear()
+            ..addAll(symbols);
+          names.clear();
+          verified = true;
+          importGroups = true;
+          notice = '已读取自选文件；股票与分组可一起导入，无需等待行情源。';
+        });
+        return;
+      }
       final parsed = parseWatchText(text.text);
       if (parsed.isEmpty) {
         throw const FormatException('未找到股票代码，请在原App显示代码后截图，或粘贴含代码的名单。');
@@ -102,6 +140,21 @@ class _WatchImportPageState extends State<WatchImportPage> {
     if (selected.isEmpty) return;
     setState(() => busy = true);
     try {
+      if (portable != null) {
+        final result = await store.mergeWatchTransfer(
+          portable!.select(selected, includeGroups: importGroups),
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '导入完成 · 新增股票 ${result.added} · 新建分组 ${result.groupsAdded}；已有自选保留。',
+            ),
+          ),
+        );
+        Navigator.pop(context);
+        return;
+      }
       final id = group == 'new'
           ? await store.saveGroup(groupName.text)
           : group == 'all'
@@ -123,15 +176,30 @@ class _WatchImportPageState extends State<WatchImportPage> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<AtlasStore>(),
-        ios = defaultTargetPlatform == TargetPlatform.iOS && !kIsWeb;
+        ios = defaultTargetPlatform == TargetPlatform.iOS && !kIsWeb,
+        packet = portable?.select(selected, includeGroups: importGroups),
+        plan = packet == null
+            ? null
+            : planWatchImport(store.watchlist, store.groups, packet);
     return Scaffold(
       appBar: AppBar(title: const Text('导入自选')),
+      bottomNavigationBar: portable != null && verified
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                child: FilledButton(
+                  onPressed: busy || selected.isEmpty ? null : save,
+                  child: Text(store.t('一键合并导入')),
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             const Text(
-              '从同花顺、招商证券、东方财富等App迁入',
+              '导入观澜自选文件，或从其他App迁入',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
@@ -157,34 +225,36 @@ class _WatchImportPageState extends State<WatchImportPage> {
               ),
             ],
             const SizedBox(height: 12),
-            TextField(
-              controller: text,
-              minLines: 4,
-              maxLines: 8,
-              enabled: !busy,
-              onChanged: (_) => setState(() => verified = false),
-              decoration: const InputDecoration(
-                labelText: '粘贴名单或查看识别原文',
-                hintText: '300750 宁德时代\n002594 比亚迪\n600036 招商银行',
-                border: OutlineInputBorder(),
+            if (portable == null) ...[
+              TextField(
+                controller: text,
+                minLines: 4,
+                maxLines: 8,
+                enabled: !busy,
+                onChanged: (_) => setState(() => verified = false),
+                decoration: const InputDecoration(
+                  labelText: '粘贴名单或查看识别原文',
+                  hintText: '300750 宁德时代\n002594 比亚迪\n600036 招商银行',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            TextButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final data = await Clipboard.getData('text/plain');
-                      if (!mounted) return;
-                      text.text = data?.text ?? '';
-                      await preview();
-                    },
-              icon: const Icon(Icons.content_paste),
-              label: const Text('从剪贴板粘贴并识别'),
-            ),
-            OutlinedButton(
-              onPressed: busy ? null : preview,
-              child: const Text('识别并预览'),
-            ),
+              TextButton.icon(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final data = await Clipboard.getData('text/plain');
+                        if (!mounted) return;
+                        text.text = data?.text ?? '';
+                        await preview();
+                      },
+                icon: const Icon(Icons.content_paste),
+                label: const Text('从剪贴板粘贴并识别'),
+              ),
+              OutlinedButton(
+                onPressed: busy ? null : preview,
+                child: const Text('识别并预览'),
+              ),
+            ],
             if (busy) const LinearProgressIndicator(),
             if (error != null) Notice(error!),
             if (notice != null)
@@ -196,28 +266,63 @@ class _WatchImportPageState extends State<WatchImportPage> {
                 ),
               ),
             if (verified) ...[
-              DropdownButtonFormField<String>(
-                initialValue: group,
-                decoration: const InputDecoration(labelText: '导入到分组'),
-                items: [
-                  const DropdownMenuItem(value: 'all', child: Text('全部自选')),
-                  for (final g in store.groups)
-                    DropdownMenuItem(
-                      value: str(g['id']),
-                      child: Text(str(g['name'])),
-                    ),
-                  const DropdownMenuItem(value: 'new', child: Text('新建分组')),
-                ],
-                onChanged: busy
-                    ? null
-                    : (v) => setState(() => group = v ?? 'all'),
-              ),
-              if (group == 'new')
+              if (portable == null)
+                DropdownButtonFormField<String>(
+                  initialValue: group,
+                  decoration: const InputDecoration(labelText: '导入到分组'),
+                  items: [
+                    const DropdownMenuItem(value: 'all', child: Text('全部自选')),
+                    for (final g in store.groups)
+                      DropdownMenuItem(
+                        value: str(g['id']),
+                        child: Text(str(g['name'])),
+                      ),
+                    const DropdownMenuItem(value: 'new', child: Text('新建分组')),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (v) => setState(() => group = v ?? 'all'),
+                ),
+              if (group == 'new' && portable == null)
                 TextField(
                   controller: groupName,
                   maxLength: 24,
                   decoration: const InputDecoration(labelText: '分组名称'),
                 ),
+              if (portable != null) ...[
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(store.t('同时导入分组')),
+                  value: importGroups,
+                  onChanged: busy
+                      ? null
+                      : (v) => setState(() => importGroups = v == true),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: portable!.groups
+                      .map((g) => Chip(label: Text(str(g['name']))))
+                      .toList(),
+                ),
+                if (plan != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      '新增股票 ${plan.added} · 已有股票 ${plan.existing} · 新建分组 ${plan.groupsAdded}',
+                      style: TextStyle(color: muted, height: 1.7),
+                    ),
+                  ),
+                if (plan != null &&
+                    (plan.skipped > 0 || plan.groupsSkipped > 0))
+                  Notice(
+                    '容量不足跳过：股票 ${plan.skipped} · 分组 ${plan.groupsSkipped}。自选最多60只、分组最多20个；已有数据不会删除。',
+                  ),
+                Text(
+                  store.t('仅交换股票和分组，不包含云同步密钥、提醒或账号资料。'),
+                  style: TextStyle(color: muted, fontSize: 12, height: 1.7),
+                ),
+              ],
               for (final symbol in symbols)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
@@ -240,10 +345,15 @@ class _WatchImportPageState extends State<WatchImportPage> {
                 style: TextStyle(color: muted, fontSize: 12, height: 1.5),
               ),
               const SizedBox(height: 12),
-              FilledButton(
-                onPressed: busy || selected.isEmpty ? null : save,
-                child: Text('确认合并 ${selected.length} 只'),
-              ),
+              if (portable == null)
+                FilledButton(
+                  onPressed: busy || selected.isEmpty ? null : save,
+                  child: Text(
+                    portable != null
+                        ? store.t('一键合并导入')
+                        : '确认合并 ${selected.length} 只',
+                  ),
+                ),
             ],
           ],
         ),

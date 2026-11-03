@@ -24,7 +24,7 @@ extension WatchCloud on AtlasStore {
   }
 
   Future<void> syncCloud() async {
-    if (syncBusy || syncKey.isEmpty || _disposed) return;
+    if (syncBusy || _watchImporting || syncKey.isEmpty || _disposed) return;
     syncBusy = true;
     syncStatus = '正在同步…';
     notifyListeners();

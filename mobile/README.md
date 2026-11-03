@@ -35,6 +35,10 @@ For a different deployed service, add `--dart-define=ATLAS_API_BASE=https://your
 
 Phone workspaces use portrait bottom navigation, sheets and push/pop details. Chart fullscreen unlocks device rotation and restores portrait on exit. Tablets use a navigation rail. Settings and coverage details in the screener/signal center are collapsed so candidates and events remain prominent. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app is inactive. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
 
+## Watchlist file exchange
+
+Watch and Settings offer export through the iOS system share sheet and direct file import. The portable JSON includes stocks and named groups, excluding account data, sync keys and device group IDs. Import previews offline and merges after one confirmation; existing stocks/groups remain, duplicates are ignored, and capacity skips are shown before saving. See [the shared format and usage](../docs/watchlist-transfer.md).
+
 ## Service availability
 
 The shared scanner avoids rewriting unchanged shard configuration, empty event/outbox state and unchanged closing candles; its master sleeps until the next session outside trading hours. Source warmup and meaningful detections are still persisted. Cloudflare Free account quotas can stop monitoring across devices: the API returns HTTP 503 with `MONITOR_QUOTA_EXCEEDED` and a `retryAt` UTC timestamp instead of claiming a healthy scan. The app retains independently readable device state when global coverage is unavailable. Quota exhaustion is an external availability limit; reduced writes do not retroactively restore an exhausted allowance. See [Cloudflare's quota/reset policy](https://developers.cloudflare.com/durable-objects/platform/pricing/).
