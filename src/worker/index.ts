@@ -33,7 +33,7 @@ import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from 
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env extends Level2Env { PUBLIC_ORIGIN?:string; LEGACY_STATE?:{fetch(request:Request):Promise<Response>}; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const pending=new Map<string,Promise<unknown>>();
@@ -544,7 +544,6 @@ export default {
    // asset fetches across origins makes installation fail CORS checks.
    const migrationAsset=incoming.pathname==='/index.html'||incoming.pathname==='/manifest.webmanifest'||incoming.pathname==='/favicon.svg'||incoming.pathname.startsWith('/assets/')||incoming.pathname.startsWith('/icons/');
    if(env.PUBLIC_ORIGIN&&incoming.hostname==='personal-market-atlas.nzs.workers.dev'&&request.method==='GET'&&!incoming.pathname.startsWith('/api/')&&!migrationAsset)return new Response(null,{status:308,headers:{location:env.PUBLIC_ORIGIN+incoming.pathname+incoming.search,'cache-control':'public, max-age=300'}});
-   if(env.LEGACY_STATE&&incoming.pathname.startsWith('/api/close-report/'))return env.LEGACY_STATE.fetch(request);
    const share=await shareRoute(request,env.SHARES,env.PUBLIC_ORIGIN);if(share)return share;
    const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
    const closeUrl=new URL(request.url);

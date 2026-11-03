@@ -24,14 +24,23 @@ PUBLIC_ORIGIN = "https://guanlan.nzs.workers.dev"
 [[durable_objects.bindings]]
 name = "SIGNAL_MONITOR"
 class_name = "SignalMonitor"
-script_name = "personal-market-atlas"
 
 [[durable_objects.bindings]]
 name = "MARKET_SCANNER"
 class_name = "MarketScanner"
-script_name = "personal-market-atlas"
 
 
-[[services]]
-binding = "LEGACY_STATE"
-service = "personal-market-atlas"
+# Preserve existing SQLite Durable Object state while moving both classes
+# from the legacy Worker to guanlan (Cloudflare transfer migration).
+[[migrations]]
+tag = "guanlan-transfer-20261031"
+
+[[migrations.transferred_classes]]
+from = "SignalMonitor"
+from_script = "personal-market-atlas"
+to = "SignalMonitor"
+
+[[migrations.transferred_classes]]
+from = "MarketScanner"
+from_script = "personal-market-atlas"
+to = "MarketScanner"
