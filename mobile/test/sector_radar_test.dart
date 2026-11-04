@@ -11,8 +11,91 @@ import 'package:market_atlas/core/store.dart';
 import 'package:market_atlas/core/screener.dart';
 import 'package:market_atlas/widgets/sector_heatmap.dart';
 import 'package:market_atlas/screens/sector_explorer.dart';
+import 'package:market_atlas/screens/sector.dart';
 
 void main() {
+  testWidgets(
+    'stock sector heatmap only requests this stock memberships and selected members',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
+      final paths = <String>[];
+      final store = AtlasStore(
+        AtlasApi(
+          client: MockClient((request) async {
+            paths.add(request.url.path);
+            if (![
+              "/api/desk/sectors",
+              "/api/desk/peers",
+            ].contains(request.url.path)) {
+              throw StateError("Unexpected market-wide request");
+            }
+            return http.Response(
+              jsonEncode(
+                request.url.path.endsWith('/sectors')
+                    ? {
+                        'boards': [
+                          {
+                            'code': 'BK1335',
+                            'name': '面板',
+                            'changePercent': 3.96,
+                          },
+                          {
+                            'code': 'BK0840',
+                            'name': 'OLED',
+                            'changePercent': 7.02,
+                          },
+                        ],
+                      }
+                    : {
+                        'items': [
+                          {
+                            'code': 'SN:gn_robot',
+                            'name': '机器人',
+                            'changePercent': 2.5,
+                            'amount': 3e9,
+                            'count': 45,
+                          },
+                        ],
+                      },
+              ),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            );
+          }),
+        ),
+        await SharedPreferences.getInstance(),
+        {},
+      );
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: store,
+          child: MaterialApp(
+            home: Scaffold(
+              body: MediaQuery(
+                data: const MediaQueryData(
+                  size: Size(390, 844),
+                  textScaler: TextScaler.linear(22 / 18),
+                ),
+                child: const SingleChildScrollView(
+                  child: StockSectors('300545.SZ'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(paths.toSet(), {"/api/desk/sectors", "/api/desk/peers"});
+      expect(find.byType(SectorHeatmap), findsOneWidget);
+      expect(find.text('所属板块热力图'), findsOneWidget);
+      expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   test(
     'heatmap cells cover bounds without overlap and have tappable dimensions',
     () {

@@ -65,10 +65,14 @@ class SectorHeatmap extends StatelessWidget {
     super.key,
     required this.onSelect,
     this.height = 460,
+    this.showAmount = true,
+    this.selectedCode,
   });
   final List<Json> items;
   final ValueChanged<Json> onSelect;
   final double height;
+  final bool showAmount;
+  final String? selectedCode;
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, box) {
@@ -92,7 +96,12 @@ class SectorHeatmap extends StatelessWidget {
             for (var i = 0; i < items.length; i++)
               Positioned.fromRect(
                 rect: rects[i].deflate(2),
-                child: _Cell(items[i], onTap: () => onSelect(items[i])),
+                child: _Cell(
+                  items[i],
+                  onTap: () => onSelect(items[i]),
+                  showAmount: showAmount,
+                  selected: items[i]['code'] == selectedCode,
+                ),
               ),
           ],
         ),
@@ -102,9 +111,15 @@ class SectorHeatmap extends StatelessWidget {
 }
 
 class _Cell extends StatelessWidget {
-  const _Cell(this.item, {required this.onTap});
+  const _Cell(
+    this.item, {
+    required this.onTap,
+    required this.showAmount,
+    required this.selected,
+  });
   final Json item;
   final VoidCallback onTap;
+  final bool showAmount, selected;
   @override
   Widget build(BuildContext context) {
     final change = numOf(item['changePercent']) ?? 0,
@@ -118,10 +133,16 @@ class _Cell extends StatelessWidget {
       label: '${item['name']} ${percent(item['changePercent'])}',
       child: Material(
         color: Color.alphaBlend(
-          color.withValues(alpha: (.09 + change.abs() * .065).clamp(.09, .38)),
+          color.withValues(alpha: (.25 + change.abs() * .07).clamp(.25, .66)),
           surface,
         ),
-        borderRadius: BorderRadius.circular(7),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(7),
+          side: BorderSide(
+            color: selected ? ink.withValues(alpha: .8) : Colors.transparent,
+            width: 2,
+          ),
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -150,11 +171,13 @@ class _Cell extends StatelessWidget {
                       style: TextStyle(
                         fontSize: c.maxWidth > 120 ? 19 : 15,
                         fontWeight: FontWeight.w600,
-                        color: color,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white
+                            : color,
                       ),
                     ),
                   ),
-                  if (c.maxHeight > 115 && c.maxWidth > 100) ...[
+                  if (showAmount && c.maxHeight > 115 && c.maxWidth > 100) ...[
                     const SizedBox(height: 5),
                     Text(
                       amount(item['amount']),

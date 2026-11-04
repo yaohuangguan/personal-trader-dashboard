@@ -203,6 +203,7 @@ class _IntradayChartState extends State<IntradayChart> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: DropdownButtonFormField<String>(
+                  menuMaxHeight: compactMenuHeight(context),
                   initialValue: index,
                   decoration: InputDecoration(labelText: tr(ctx, '大盘指数')),
                   items: _benchmarkNames.entries

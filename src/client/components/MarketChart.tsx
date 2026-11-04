@@ -1,4 +1,6 @@
+import CompactSelect from './CompactSelect';
 import ProjectionPanel from './ProjectionPanel';
+import {useChartHistory} from '../hooks/useChartHistory';
 import {chartStudy} from '../../shared/chart-study';
 import {projectMarket} from '../../shared/market-projection';
 import {indicatorOverlay} from './chart-indicator-overlay';
@@ -40,7 +42,10 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: string) => range === 'ALL' ? length : (unit==='week'?[4,13,26,52]:unit==='month'?[1,3,6,12]:[22,66,132,264])[['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles, compact = false, symbol, volumeUnit, amount,amountDate,guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string;amount?:number|null;amountDate?:string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+export default function MarketChart({ candles:initialCandles, compact = false, symbol, volumeUnit, amount,amountDate,guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string;amount?:number|null;amountDate?:string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+  const history=useChartHistory(initialCandles,compact?undefined:symbol,unit,volumeUnit),candles=history.candles;
+  const historyRef=useRef(history);historyRef.current=history;
+  const browsedRef=useRef(false),previousBars=useRef(candles),identityRef=useRef(symbol+':'+unit);
   const display=usePreferences(),light=display.theme==='light';
   const chipEligible=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&!(/^(?:000\d{3}\.SH|399\d{3}\.SZ)$/.test(symbol));
   const [chipsOpen,setChipsOpen]=useState(false);
@@ -92,6 +97,14 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
 
   useEffect(() => {
     if (!priceRef.current || !candles.length) return;
+    const identity=symbol+':'+unit;
+    if(identityRef.current!==identity){visibleRef.current=null;browsedRef.current=false;identityRef.current=identity;}
+    else if(visibleRef.current&&previousBars.current.length){
+      const shift=candles.findIndex(c=>c.time===previousBars.current[0].time);
+      if(shift<0)visibleRef.current=null;
+      else if(shift>0)visibleRef.current={from:visibleRef.current.from+shift,to:visibleRef.current.to+shift} as LogicalRange;
+    }
+    previousBars.current=candles;
     const panes: Pane[] = [], instances: IChartApi[] = [], observers: ResizeObserver[] = [], removers: (() => void)[] = [];
     let updateAnnotations: (range:LogicalRange|null)=>void=()=>{};
     let syncingCrosshair = false, syncingRange = false;
@@ -218,6 +231,7 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
       for (const pane of panes) {
         const onRange = (range: LogicalRange | null) => {
           if (!range || syncingRange) return;
+          if(pane===panes[0]&&range.from<24&&browsedRef.current&&!historyRef.current.error)void historyRef.current.loadOlder();
           visibleRef.current = range;
           if(pane===panes[0])updateAnnotations(range);
           for (const target of panes) {
@@ -276,17 +290,18 @@ export default function MarketChart({ candles, compact = false, symbol, volumeUn
     setSettingsError(''); setSettingsOpen(value => !value);
   }
   if (!candles.length) return <div className="chart-empty">{uiText("暂无可绘制的真实 K 线")}</div>;
-  return <div className={'terminal-chart ' + (compact ? 'terminal-compact ' : '') + (expanded ? 'terminal-expanded' : '')} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={uiText(expanded ? '展开的 K 线图表' : undefined)}>
+  return <div className={'terminal-chart ' + (compact ? 'terminal-compact ' : '') + (expanded ? 'terminal-expanded' : '')} onPointerDownCapture={()=>{browsedRef.current=true;}} onWheelCapture={()=>{browsedRef.current=true;}} role={expanded ? 'dialog' : undefined} aria-modal={expanded || undefined} aria-label={uiText(expanded ? '展开的 K 线图表' : undefined)}>
     {uiText(!compact && <>
       <div className="terminal-toolbar">
         <div className="terminal-range" aria-label={uiText("图表显示范围")}>{uiText(([['1M', '1个月'], ['3M', '3个月'], ['6M', '6个月'], ['1Y', '1年'], ['ALL', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={period === value} className={period === value ? 'active' : ''} onClick={() => chooseRange(value)}>{uiText(unit.startsWith('m')&&unit!=='month'&&value!=='ALL'?({'1M':'22根','3M':'66根','6M':'132根','1Y':'264根'}[value]):label)}</button>))}</div>
-        <div className="terminal-tools"><select aria-label={uiText("主图指标")} value={overlay} onChange={e=>setOverlay(e.target.value)}>{['MA','BOLL','SAR'].map(v=><option key={v}>{v}</option>)}</select><span className="terminal-frequency">{uiText(unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : unit.startsWith('m')?unit.slice(1)+'分钟':'日 K')}{uiText(symbol ? ' · ' + symbol : '')}</span>
+        <div className="terminal-tools"><CompactSelect label={uiText('主图指标')} value={overlay} onChange={setOverlay} options={['MA','BOLL','SAR'].map(v=>({value:v,label:v}))}/><span className="terminal-frequency">{uiText(unit === 'week' ? '周 K' : unit === 'month' ? '月 K' : unit.startsWith('m')?unit.slice(1)+'分钟':'日 K')}{uiText(symbol ? ' · ' + symbol : '')}</span>
           <button type="button" aria-pressed={chipsOpen} onClick={()=>setChipsOpen(v=>!v)} disabled={unit!=='day'||!chipEligible}>{uiText("筹码峰")}</button><button type="button" onClick={openSettings} aria-expanded={settingsOpen}><Settings2 size={14} />{uiText("均线参数")}</button>
           <button type="button" onClick={resetView} aria-label={uiText("重置缩放")}><RotateCcw size={14} /></button>
           {!compact&&<button type="button" aria-pressed={projectionOn} onClick={()=>{visibleRef.current=null;setProjectionOn(v=>!v);}}>{uiText('行情推演')}</button>}
           <button type="button" onClick={() => setExpanded(value => !value)} aria-label={uiText(expanded ? '收起图表' : '展开图表')}>{uiText(expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />)}</button>
         </div>
       </div>
+      {history.enabled&&<div className="terminal-history" role="status"><span>{history.loading?'正在加载更早K线…':history.error||(!history.hasMore?'已到数据源最早历史':'向左查看，自动加载更早K线')}</span>{!history.loading&&history.hasMore&&<button onClick={()=>void history.loadOlder()}>{history.error?'重试':'加载更早'}</button>}</div>}
       {uiText(settingsOpen && <form className="terminal-settings" aria-label={uiText("均线参数设置")} onSubmit={event => {
         event.preventDefault();
         const next = draft.map(p => ({ ...p, period: Number(p.period) }));

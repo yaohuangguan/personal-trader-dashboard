@@ -3,6 +3,7 @@ import {observeFlow} from '../shared/flow-observation';
 import type {FlowPayload,FlowPoint} from '../shared/desk-types';
 import {aggregateDaily} from '../shared/market-models';
 import {sinaAdjustedDaily,sinaBeijingDaily,sinaIndexDaily} from './research';
+import {requestTencentHistory} from './chart-history';
 // HTTP adapters ported from a-stock-data v3.10.3 (Apache-2.0).
 // https://github.com/simonlin1212/a-stock-data -- public snapshots are NOT exchange Level-2.
 import { createHash } from 'node:crypto';
@@ -138,9 +139,8 @@ export async function history(raw: string, period: string) {
   if (!['day','week', 'month'].includes(period)) throw new Error('无效历史周期');
   try {
   if(symbol.endsWith('.BJ'))throw new Error('使用北交所日线聚合');
-  const url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + wire + ',' + period + ',,,500,qfq';
-  const payload = await (await request(url,4000)).json() as { data?: Record<string, Record<string, string[][]>> };
-  const node = payload.data?.[wire], rows = node?.['qfq' + period] ?? node?.[period];
+  const {node,url}=await requestTencentHistory(wire,period);
+  const rows = node['qfq' + period] ?? node[period];
   if (!Array.isArray(rows)) throw new Error('历史周期响应格式变化');
   const candles: Candle[] = rows.map(r => {
     const [date, open, close, high, low, volume] = r;

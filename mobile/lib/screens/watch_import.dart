@@ -268,6 +268,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
             if (verified) ...[
               if (portable == null)
                 DropdownButtonFormField<String>(
+                  menuMaxHeight: compactMenuHeight(context),
                   initialValue: group,
                   decoration: const InputDecoration(labelText: '导入到分组'),
                   items: [

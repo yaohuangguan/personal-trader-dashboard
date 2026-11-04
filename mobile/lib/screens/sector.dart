@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/store.dart';
 import '../widgets/common.dart';
+import '../widgets/compact_picker.dart';
+import '../widgets/sector_heatmap.dart';
 import 'stock.dart';
 
 class StockSectors extends StatefulWidget {
@@ -15,144 +17,151 @@ class StockSectors extends StatefulWidget {
 
 class _StockSectorsState extends State<StockSectors> {
   String? selected;
-  String name = '';
+  String query = '';
+  bool expanded = false;
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AsyncPanel(
-          load: () => s.api.get(
-            '/api/desk/sectors',
-            parameters: {'symbol': widget.symbol},
-          ),
-          builder: (r) => Panel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  s.t('所属板块'),
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: rows(r['boards'])
-                      .map(
-                        (b) => ChoiceChip(
-                          label: Text(
-                            '${b['name']} ${percent(b['changePercent'])}',
-                          ),
-                          selected: selected == b['code'],
-                          onSelected: (_) => setState(() {
-                            selected = str(b['code']);
-                            name = str(b['name']);
-                          }),
-                        ),
-                      )
-                      .toList(),
-                ),
-                SourceLine(r),
-              ],
-            ),
-          ),
-        ),
-        AsyncPanel(
-          load: () => s.api.get(
-            '/api/desk/sector-map',
-            parameters: {'type': 'concept'},
-          ),
-          builder: (r) => Panel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  s.t('独立概念成分'),
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: s.t('选择概念（新浪独立分类）'),
-                    border: const OutlineInputBorder(),
-                  ),
-                  items: rows(r['items'])
-                      .map(
-                        (b) => DropdownMenuItem(
-                          value: str(b['code']),
-                          child: Text(
-                            '${str(b['name'])} ${percent(b['changePercent'])}',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    final b = rows(r['items'])
-                        .where((b) => b['code'] == value)
-                        .firstOrNull;
-                    if (b != null) {
-                      setState(() {
-                        selected = value;
-                        name = str(b['name']);
-                      });
-                    }
-                  },
-                ),
-                Notice(s.t('可直接查看机器人、创新药等概念成分；不同来源分类分别标识。')),
-              ],
-            ),
-          ),
-        ),
-        if (selected != null) SectorMembers(selected!, name),
-        const SizedBox(height: 10),
-        Panel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                s.t('市场行业轮动'),
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              AsyncPanel(
-                load: () => s.api.get('/api/desk/industries'),
-                builder: (r) => Column(
-                  children: [
-                    ...rows(r['items']).map(
-                      (b) => ListTile(
-                        title: Text(str(b['name'])),
-                        subtitle: Text('${s.t('领涨')} ${str(b['leader'])}'),
-                        trailing: Text(
-                          percent(b['changePercent']),
-                          style: TextStyle(color: tone(b['changePercent'])),
-                        ),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                SectorPage(str(b['code']), str(b['name'])),
-                          ),
+    final store = context.watch<AtlasStore>();
+    return AsyncPanel(
+      key: ValueKey('stock-sectors-${widget.symbol}'),
+      load: () => store.api.get(
+        '/api/desk/sectors',
+        parameters: {'symbol': widget.symbol},
+      ),
+      builder: (data) {
+        final boards = rows(data['boards']);
+        final current =
+            boards.where((b) => b['code'] == selected).firstOrNull ??
+            boards.firstOrNull;
+        final matching = boards
+            .where(
+              (b) => str(b['name']).toLowerCase().contains(query.toLowerCase()),
+            )
+            .toList();
+        final visible = expanded ? matching : matching.take(12).toList();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.symbol,
+                              style: TextStyle(fontSize: 12, color: muted),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              store.t('板块联动'),
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      Text(
+                        '${boards.length} ${store.t('个所属板块')}',
+                        style: TextStyle(fontSize: 11, color: muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 18,
+                    runSpacing: 8,
+                    children: [
+                      Text(
+                        '↗ ${boards.where((b) => (numOf(b['changePercent']) ?? 0) > 0).length} ${store.t('上涨')}',
+                        style: TextStyle(color: up, fontSize: 13),
+                      ),
+                      Text(
+                        '↘ ${boards.where((b) => (numOf(b['changePercent']) ?? 0) < 0).length} ${store.t('下跌')}',
+                        style: TextStyle(color: down, fontSize: 13),
+                      ),
+                      Text(
+                        store.t('仅展示该股归属'),
+                        style: TextStyle(color: muted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    onChanged: (value) => setState(() => query = value),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      hintText: store.t('筛选该股所属板块'),
                     ),
-                    SourceLine(r),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          store.t('所属板块热力图'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      Text(
+                        store.t('色深表示涨跌幅'),
+                        style: TextStyle(fontSize: 10, color: muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (visible.isNotEmpty)
+                    SectorHeatmap(
+                      visible,
+                      showAmount: false,
+                      selectedCode: str(current?['code'], ''),
+                      height: (visible.length / 3).ceil() * 92.0,
+                      onSelect: (board) =>
+                          setState(() => selected = str(board['code'])),
+                    )
+                  else
+                    Notice(
+                      store.t(boards.isEmpty ? '来源暂无该股板块归属' : '暂无匹配的所属板块'),
+                    ),
+                  if (matching.length > 12)
+                    TextButton(
+                      onPressed: () => setState(() => expanded = !expanded),
+                      child: Text(store.t(expanded ? '收起板块' : '展开其余板块')),
+                    ),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: Text(
+                      store.t('来源与口径'),
+                      style: TextStyle(fontSize: 11, color: muted),
+                    ),
+                    children: [SourceLine(data)],
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+            if (current != null)
+              SectorMembers(
+                str(current['code']),
+                str(current['name']),
+                currentSymbol: widget.symbol,
+              ),
+          ],
+        );
+      },
     );
   }
 }
 
 class SectorMembers extends StatelessWidget {
-  const SectorMembers(this.code, this.name, {super.key});
+  const SectorMembers(this.code, this.name, {super.key, this.currentSymbol});
+  final String? currentSymbol;
   final String code, name;
   @override
   Widget build(BuildContext context) {
@@ -168,13 +177,16 @@ class SectorMembers extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${str(r['resolvedName'], name)} · ${s.t(r['related'] == true ? '相关分类参考' : '板块成分')}',
+              '$name · ${s.t(r['related'] == true ? '相关分类参考' : '板块成分')}${r['related'] == true ? ' · ${str(r['resolvedName'])}' : ''}',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             ...rows(r['items']).map(
               (b) => ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(str(b['name'])),
+                title: Text(
+                  str(b['name']) +
+                      (b['symbol'] == currentSymbol ? ' · ${s.t('本股')}' : ''),
+                ),
                 subtitle: Text(str(b['symbol'])),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -250,17 +262,13 @@ class _SectorOutlookState extends State<SectorOutlook> {
             load: () => s.api.get('/api/desk/industries'),
             builder: (r) {
               final items = rows(r['items']);
-              return DropdownButtonFormField<String>(
-                initialValue: code,
-                decoration: InputDecoration(labelText: s.t('分析行业')),
-                items: items
-                    .map(
-                      (r) => DropdownMenuItem(
-                        value: str(r['code']),
-                        child: Text(str(r['name'])),
-                      ),
-                    )
-                    .toList(),
+              return CompactPicker(
+                label: '分析行业',
+                value: code,
+                items: {
+                  for (final item in items)
+                    str(item['code']): str(item['name']),
+                },
                 onChanged: (v) => setState(() {
                   code = v;
                   name = str(items.firstWhere((r) => r['code'] == v)['name']);
