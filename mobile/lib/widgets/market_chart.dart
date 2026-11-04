@@ -1292,6 +1292,42 @@ class _MarketChartState extends State<MarketChart> {
       ],
     ),
   );
+  Widget _historyStatusBar() => SizedBox(
+    height: 24,
+    child: Row(
+      children: [
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            tr(
+              context,
+              historyBusy
+                  ? '正在加载更早K线…'
+                  : historyError ??
+                        (historyMore ? '向左查看，自动加载更早K线' : '已到数据源最早历史'),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10, color: muted),
+          ),
+        ),
+        if (!historyBusy && historyMore)
+          TextButton(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(48, 24),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: loadOlder,
+            child: Text(
+              tr(context, historyError == null ? '加载更早' : '重试'),
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1366,44 +1402,7 @@ class _MarketChartState extends State<MarketChart> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.terminal && widget.expanded) _portraitHeader(),
-            if (historyEnabled)
-              SizedBox(
-                height: 24,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        tr(
-                          context,
-                          historyBusy
-                              ? '正在加载更早K线…'
-                              : historyError ??
-                                    (historyMore
-                                        ? '向左查看，自动加载更早K线'
-                                        : '已到数据源最早历史'),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 10, color: muted),
-                      ),
-                    ),
-                    if (!historyBusy && historyMore)
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: const Size(48, 24),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: loadOlder,
-                        child: Text(
-                          tr(context, historyError == null ? '加载更早' : '重试'),
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+            if (historyEnabled && widget.expanded) _historyStatusBar(),
             if (widget.terminal)
               SizedBox(
                 height: 30,
@@ -2031,6 +2030,7 @@ class _MarketChartState extends State<MarketChart> {
                 ),
               ),
             ),
+            if (historyEnabled && !widget.expanded) _historyStatusBar(),
             if (!compact && !widget.terminal)
               Wrap(
                 spacing: 6,

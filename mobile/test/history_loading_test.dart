@@ -24,6 +24,23 @@ Json jsonBar(Bar b) => {
   'volume': b.volume,
 };
 void main() {
+  testWidgets(
+    'history hint stays below the stock chart without moving its first-screen top',
+    (tester) async {
+      final store = await chartStore(), prices = ValueNotifier(chartFixture());
+      await tester.pumpWidget(chartHarness(store, prices));
+      await tester.pumpAndSettle();
+      final chart = tester.getRect(
+        find.byKey(const ValueKey('candlestick-canvas')),
+      );
+      final hint = tester.getRect(find.text('向左查看，自动加载更早K线'));
+      expect(hint.top, greaterThanOrEqualTo(chart.bottom));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      prices.dispose();
+      store.dispose();
+    },
+  );
   test(
     'history merge preserves live quotes and rejects incompatible adjustment',
     () {
