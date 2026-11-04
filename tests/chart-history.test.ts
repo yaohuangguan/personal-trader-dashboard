@@ -8,9 +8,10 @@ const bar=(time:string,close=12)=>({time,open:11,high:13,low:10,close,volume:100
 test('history pages use an exclusive cursor, retain the overlap and keep loading beyond 500 bars',async()=>{
   const original=globalThis.fetch;
   const calls:string[]=[];
-  globalThis.fetch=async input=>{
+  globalThis.fetch=async (input,options)=>{
     const url=String(input);calls.push(url);
     assert.ok(url.includes('sh000001,week,,2020-01-10,501,qfq'));
+    assert.equal(new Headers(options?.headers).get('referer'),'https://gu.qq.com/');
     return Response.json({data:{sh000001:{week:[['2020-01-03','11','12','13','10','100'],['2020-01-10','11','12','13','10','100']]}}});
   };
   try {
@@ -21,6 +22,14 @@ test('history pages use an exclusive cursor, retain the overlap and keep loading
     assert.equal(page.hasMore,true);
     assert.equal(calls.length,1);
   } finally {globalThis.fetch=original;}
+});
+test('an unavailable Tencent host falls back without changing price basis',async()=>{
+  const original=globalThis.fetch,hosts:string[]=[];
+  globalThis.fetch=async input=>{
+    const url=new URL(String(input));hosts.push(url.hostname);
+    return hosts.length===1?new Response('',{status:503}):Response.json({data:{sh000001:{day:[]}}});
+  };
+  try{const page=await historyPage('000001.SH','day','1990-01-01');assert.equal(page.hasMore,false);assert.deepEqual(hosts,['web.ifzq.gtimg.cn','ifzq.gtimg.cn']);}finally{globalThis.fetch=original;}
 });
 test('empty source pages mark the source boundary; errors do not masquerade as exhausted history',async()=>{
   const original=globalThis.fetch;
