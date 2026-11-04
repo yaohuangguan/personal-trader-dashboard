@@ -11,6 +11,8 @@ import {gainers,marketPools,dragon,chips} from './market-overview';
 import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow, fundFlowHistory, flowObservation, flash, stockNews, reports, universe, sectorScenario, industryRanks } from './desk-data';
 import {auction,sectorIntraday,indexEqual} from './intraday-extras';
 import {earnings} from './earnings';
+import {historyPage} from './chart-history';
+import {validHistoryDate} from '../shared/chart-history';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
@@ -68,6 +70,11 @@ export async function deskRoute(request: Request): Promise<Response | null> {
     if (kind === 'history') {
       const period = url.searchParams.get('period') || '';
       if (!['day','week','month','m5','m15','m30','m60','m120'].includes(period)) return respond({ error: '周期须为日、周、月或5/15/30/60/120分钟' }, 400);
+      const before=url.searchParams.get('before');
+      if(before!==null){
+        if(!['day','week','month'].includes(period)||!validHistoryDate(before))return respond({error:'无效历史分页日期或周期'},400);
+        return respond(await memo('history-page:'+symbol+':'+period+':'+before,600,()=>historyPage(symbol,period,before)));
+      }
       const data=await memo(kind + symbol + period, period.startsWith('m')&&period!=='month'?60:600, () => history(symbol, period));
       return respond({...data,patternMarks:period==='day'?patternMarks(data.candles):period==='week'||period==='month'?guidePatternMarks(data.candles,new Date(),period):[]});
     }

@@ -49,6 +49,7 @@ class MultiLineFilters extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: DropdownButtonFormField<String>(
+              menuMaxHeight: compactMenuHeight(context),
               initialValue: str(f[spec.$1]),
               decoration: InputDecoration(labelText: tr(context, spec.$2)),
               items: spec.$3.entries

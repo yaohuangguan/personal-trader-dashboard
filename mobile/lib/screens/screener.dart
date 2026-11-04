@@ -149,6 +149,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                   ),
                   children: [
                     DropdownButtonFormField<String>(
+                      menuMaxHeight: compactMenuHeight(context),
                       initialValue: concentration,
                       decoration: InputDecoration(labelText: s.t('90%筹码集中度上限')),
                       items: [
@@ -161,6 +162,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
+                      menuMaxHeight: compactMenuHeight(context),
                       initialValue: maxCap,
                       decoration: InputDecoration(labelText: s.t('市值上限（亿）')),
                       items: [
@@ -244,6 +246,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     DropdownButtonFormField<String>(
+                      menuMaxHeight: compactMenuHeight(context),
                       isExpanded: true,
                       initialValue: scope,
                       decoration: InputDecoration(labelText: s.t('扫描范围')),
@@ -374,6 +377,7 @@ class _ScreenerPageState extends State<ScreenerPage> {
             title: Text(s.t('筛选与导出'), style: const TextStyle(fontSize: 14)),
             children: [
               DropdownButtonFormField<String>(
+                menuMaxHeight: compactMenuHeight(context),
                 isExpanded: true,
                 initialValue: character,
                 decoration: InputDecoration(labelText: s.t('股性筛选')),

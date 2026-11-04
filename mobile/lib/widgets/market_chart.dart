@@ -14,6 +14,7 @@ import '../core/api.dart';
 import '../core/store.dart';
 import '../core/indicators.dart';
 import '../core/chart_viewport.dart';
+import '../core/chart_history.dart';
 import 'common.dart';
 
 class MarketChart extends StatefulWidget {
@@ -53,6 +54,57 @@ class MarketChart extends StatefulWidget {
 }
 
 class _MarketChartState extends State<MarketChart> {
+  late List<Bar> bars;
+  bool historyBusy = false, historyMore = true;
+  String? historyError;
+  int historyRequest = 0;
+  bool get historyEnabled =>
+      cnStock(widget.symbol) && ['day', 'week', 'month'].contains(widget.unit);
+  Future<void> loadOlder() async {
+    if (!historyEnabled || historyBusy || !historyMore || bars.isEmpty) return;
+    final request = ++historyRequest, before = bars.first.time;
+    setState(() {
+      historyBusy = true;
+      historyError = null;
+    });
+    try {
+      final page = await context.read<AtlasStore>().api.get(
+        '/api/desk/history',
+        parameters: {
+          'symbol': widget.symbol,
+          'period': widget.unit,
+          'before': before,
+        },
+      );
+      if (!mounted || request != historyRequest) return;
+      if (rows(page['candles']).isNotEmpty &&
+          str(page['volumeUnit']) != widget.volumeUnit) {
+        throw StateError('历史来源成交量口径不同，请刷新图表后重试');
+      }
+      final merged = mergeChartHistory(bars, page),
+          added = merged.length - bars.length;
+      setState(() {
+        bars = merged;
+        indicators = IndicatorData(bars, mas);
+        viewport.length = bars.length;
+        if (hover != null) hover = hover! + added;
+        historyMore = page['hasMore'] == true;
+      });
+    } catch (e) {
+      if (mounted && request == historyRequest) {
+        setState(() => historyError = '$e');
+      }
+    } finally {
+      if (mounted && request == historyRequest) {
+        setState(() => historyBusy = false);
+      }
+    }
+  }
+
+  void maybeLoadOlder() {
+    if (start < 24 && historyError == null) loadOlder();
+  }
+
   List<MaLine> mas = List.of(defaultMa);
   late IndicatorData indicators;
   final viewport = ChartViewport();
@@ -85,10 +137,10 @@ class _MarketChartState extends State<MarketChart> {
       final branch = rows(projection?['scenarios'])
           .where((r) => r['id'] == projectionScenario)
           .firstOrNull;
-      final bars = rows(branch?['candles']).map(Bar.fromJson).toList();
-      forecastCache = bars.isEmpty
+      final futureBars = rows(branch?['candles']).map(Bar.fromJson).toList();
+      forecastCache = futureBars.isEmpty
           ? null
-          : IndicatorData([...widget.bars, ...bars], mas);
+          : IndicatorData([...bars, ...futureBars], mas);
       forecastKey = key;
     }
     return forecastCache;
@@ -99,7 +151,7 @@ class _MarketChartState extends State<MarketChart> {
   bool get drawProjection =>
       projectionOn && projection?['available'] == true && offset == 0;
   Future<void> refreshProjection() async {
-    if (!mounted || !projectionOn || widget.bars.isEmpty) return;
+    if (!mounted || !projectionOn || bars.isEmpty) return;
     final key = '$currentStudyKey:$projectionHorizon';
     if (projectionBusy || projectionKey == key) return;
     projectionBusy = true;
@@ -111,7 +163,7 @@ class _MarketChartState extends State<MarketChart> {
         'symbol': widget.symbol,
         'ma': mas.where((m) => m.enabled).map((m) => m.period).toList(),
         'horizon': projectionHorizon,
-        'candles': widget.bars
+        'candles': bars
             .map(
               (b) => {
                 'time': b.time,
@@ -155,135 +207,165 @@ class _MarketChartState extends State<MarketChart> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxWidth: 640,
+        maxHeight: MediaQuery.sizeOf(context).height * .60,
+      ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        tr(ctx, '行情推演'),
-                        style: Theme.of(ctx).textTheme.titleLarge,
-                      ),
+        builder: (ctx, update) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tr(ctx, '推演设置'),
+                      style: Theme.of(ctx).textTheme.titleMedium,
                     ),
-                    Switch(
-                      value: projectionOn,
-                      onChanged: (v) {
-                        setState(() => projectionOn = v);
-                        update(() {});
-                        if (v) refreshProjection();
-                      },
-                    ),
-                  ],
-                ),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final n in [5, 10, 15, 20])
-                      ChoiceChip(
-                        label: Text(
-                          widget.unit == 'day'
-                              ? '约${n ~/ 5}周'
-                              : '$n 根${widget.unit}K',
-                        ),
-                        selected: projectionHorizon == n,
-                        onSelected: (_) async {
-                          setState(() => projectionHorizon = n);
-                          await refreshProjection();
-                          update(() {});
-                        },
-                      ),
-                  ],
-                ),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final entry in [
-                      ('base', '基准'),
-                      ('bull', '偏强'),
-                      ('bear', '偏弱'),
-                    ])
-                      ChoiceChip(
-                        label: Text(entry.$2),
-                        selected: projectionScenario == entry.$1,
-                        onSelected: (_) {
-                          setState(() => projectionScenario = entry.$1);
-                          update(() {});
-                        },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(tr(ctx, '虚线为条件情景，不是实盘或确定预测；随最新量价和MA重新计算。')),
-                if (projectionError != null) Text(projectionError!),
-                if (projection != null) ...[
-                  Text(
-                    '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? '历史相似窗口 ${projection!['sampleCount']} 段' : '样本不足 · 近期量价片段重采样'}',
-                    style: TextStyle(color: muted, fontSize: 12),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    str(obj(projection!['basis'])['regime']),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  for (final fact
-                      in obj(projection!['basis'])['facts'] as List? ?? [])
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        str(fact),
-                        style: const TextStyle(height: 1.5),
-                      ),
-                    ),
-                  for (final scenario in rows(
-                    projection!['scenarios'],
-                  ).where((s) => s['id'] == projectionScenario))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        '本条路径依据：${str(scenario['explanation'])}',
-                        style: const TextStyle(height: 1.6),
-                      ),
-                    ),
-                  for (final r in rows(projection!['conditions']))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        str(r['text']),
-                        style: TextStyle(
-                          height: 1.6,
-                          color: r['side'] == 'bull'
-                              ? up
-                              : r['side'] == 'bear'
-                              ? down
-                              : ink,
-                        ),
-                      ),
-                    ),
-                  for (final text
-                      in obj(projection!['basis'])['limitations'] as List? ??
-                          [])
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        str(text),
-                        style: TextStyle(color: muted, fontSize: 12),
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-                  Text(
-                    str(projection!['notice']),
-                    style: TextStyle(color: muted, fontSize: 12),
+                  IconButton(
+                    tooltip: tr(ctx, '关闭'),
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              tr(ctx, '行情推演'),
+                              style: Theme.of(ctx).textTheme.titleLarge,
+                            ),
+                          ),
+                          Switch(
+                            value: projectionOn,
+                            onChanged: (v) {
+                              setState(() => projectionOn = v);
+                              update(() {});
+                              if (v) refreshProjection();
+                            },
+                          ),
+                        ],
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final n in [5, 10, 15, 20])
+                            ChoiceChip(
+                              label: Text(
+                                widget.unit == 'day'
+                                    ? '约${n ~/ 5}周'
+                                    : '$n 根${widget.unit}K',
+                              ),
+                              selected: projectionHorizon == n,
+                              onSelected: (_) async {
+                                setState(() => projectionHorizon = n);
+                                await refreshProjection();
+                                update(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final entry in [
+                            ('base', '基准'),
+                            ('bull', '偏强'),
+                            ('bear', '偏弱'),
+                          ])
+                            ChoiceChip(
+                              label: Text(entry.$2),
+                              selected: projectionScenario == entry.$1,
+                              onSelected: (_) {
+                                setState(() => projectionScenario = entry.$1);
+                                update(() {});
+                              },
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(tr(ctx, '虚线为条件情景，不是实盘或确定预测；随最新量价和MA重新计算。')),
+                      if (projectionError != null) Text(projectionError!),
+                      if (projection != null) ...[
+                        Text(
+                          '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? '历史相似窗口 ${projection!['sampleCount']} 段' : '样本不足 · 近期量价片段重采样'}',
+                          style: TextStyle(color: muted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          str(obj(projection!['basis'])['regime']),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        for (final fact
+                            in obj(projection!['basis'])['facts'] as List? ??
+                                [])
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              str(fact),
+                              style: const TextStyle(height: 1.5),
+                            ),
+                          ),
+                        for (final scenario in rows(
+                          projection!['scenarios'],
+                        ).where((s) => s['id'] == projectionScenario))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(
+                              '本条路径依据：${str(scenario['explanation'])}',
+                              style: const TextStyle(height: 1.6),
+                            ),
+                          ),
+                        for (final r in rows(projection!['conditions']))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              str(r['text']),
+                              style: TextStyle(
+                                height: 1.6,
+                                color: r['side'] == 'bull'
+                                    ? up
+                                    : r['side'] == 'bear'
+                                    ? down
+                                    : ink,
+                              ),
+                            ),
+                          ),
+                        for (final text
+                            in obj(projection!['basis'])['limitations']
+                                    as List? ??
+                                [])
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(
+                              str(text),
+                              style: TextStyle(color: muted, fontSize: 12),
+                            ),
+                          ),
+                        const SizedBox(height: 14),
+                        Text(
+                          str(projection!['notice']),
+                          style: TextStyle(color: muted, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -301,6 +383,7 @@ class _MarketChartState extends State<MarketChart> {
   @override
   void initState() {
     super.initState();
+    bars = widget.bars;
     final prefs = context.read<AtlasStore>().prefs;
     try {
       final a = obj(
@@ -323,13 +406,13 @@ class _MarketChartState extends State<MarketChart> {
         }
       }
     } catch (_) {}
-    indicators = IndicatorData(widget.bars, mas);
+    indicators = IndicatorData(bars, mas);
     viewport.reset(defaultChartBarCount(widget.unit));
     projection = widget.initialProjection;
     projectionScenario = str(projection?['selectedScenario'], 'base');
     projectionOn = projection != null;
     projectionHorizon = (numOf(projection?['horizon']) ?? 10).toInt();
-    viewport.length = widget.bars.length;
+    viewport.length = bars.length;
     acceptInitialStudy();
     WidgetsBinding.instance.addPostFrameCallback((_) => refreshStudy());
   }
@@ -337,61 +420,47 @@ class _MarketChartState extends State<MarketChart> {
   @override
   void didUpdateWidget(covariant MarketChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (Object.hashAll(
-              oldWidget.bars.map(
-                (b) => Object.hash(
-                  b.time,
-                  b.open,
-                  b.high,
-                  b.low,
-                  b.close,
-                  b.volume,
-                ),
-              ),
-            ) !=
-            Object.hashAll(
-              widget.bars.map(
-                (b) => Object.hash(
-                  b.time,
-                  b.open,
-                  b.high,
-                  b.low,
-                  b.close,
-                  b.volume,
-                ),
-              ),
-            ) ||
-        oldWidget.symbol != widget.symbol ||
-        oldWidget.unit != widget.unit) {
-      final rightDate = oldWidget.bars.isEmpty
-          ? null
-          : oldWidget
-                .bars[(oldWidget.bars.length - offset - 1).clamp(
-                  0,
-                  oldWidget.bars.length - 1,
-                )]
-                .time;
-      final selectedDate = hover == null || oldWidget.bars.isEmpty
-          ? null
-          : oldWidget.bars[hover!.clamp(0, oldWidget.bars.length - 1)].time;
-      indicators = IndicatorData(widget.bars, mas);
-      viewport.length = widget.bars.length;
-      if (offset > 0 && rightDate != null) {
-        final index = widget.bars.indexWhere((b) => b.time == rightDate);
-        if (index >= 0) offset = widget.bars.length - index - 1;
-      }
-      final selectedIndex = selectedDate == null
-          ? -1
-          : widget.bars.indexWhere((b) => b.time == selectedDate);
-      hover = selectedIndex < 0 ? null : selectedIndex;
-      if (oldWidget.unit != widget.unit) {
-        viewport.reset(defaultChartBarCount(widget.unit));
-      }
-      if (oldWidget.symbol != widget.symbol || oldWidget.unit != widget.unit) {
-        offset = 0;
-      }
-      offset = offset.clamp(0, math.max(0, widget.bars.length - 1));
+    final identityChanged =
+        oldWidget.symbol != widget.symbol || oldWidget.unit != widget.unit;
+    final oldBars = bars;
+    final rightDate = oldBars.isEmpty
+        ? null
+        : oldBars[(oldBars.length - offset - 1).clamp(0, oldBars.length - 1)]
+              .time;
+    final selectedDate = hover == null || oldBars.isEmpty
+        ? null
+        : oldBars[hover!.clamp(0, oldBars.length - 1)].time;
+    final first = widget.bars.firstOrNull;
+    final anchor = first == null
+        ? null
+        : oldBars.where((b) => b.time == first.time).firstOrNull;
+    final basisChanged =
+        first != null &&
+        anchor != null &&
+        first.time != widget.bars.last.time &&
+        (first.close - anchor.close).abs() > .011 + first.close.abs() * .0002;
+    if (identityChanged || basisChanged) {
+      historyRequest++;
+      historyBusy = false;
+      historyMore = true;
+      historyError = null;
+      bars = widget.bars;
+      viewport.reset(defaultChartBarCount(widget.unit));
+    } else {
+      bars = {
+        ...{for (final b in oldBars) b.time: b},
+        ...{for (final b in widget.bars) b.time: b},
+      }.values.toList()..sort((a, b) => a.time.compareTo(b.time));
     }
+    indicators = IndicatorData(bars, mas);
+    viewport.length = bars.length;
+    if (!identityChanged && !basisChanged && offset > 0 && rightDate != null) {
+      final index = bars.indexWhere((b) => b.time == rightDate);
+      if (index >= 0) offset = bars.length - index - 1;
+    }
+    final selectedIndex = bars.indexWhere((b) => b.time == selectedDate);
+    hover = selectedIndex < 0 ? null : selectedIndex;
+    offset = offset.clamp(0, math.max(0, bars.length - 1));
     if (oldWidget.initialStudy != widget.initialStudy) acceptInitialStudy();
   }
 
@@ -409,9 +478,9 @@ class _MarketChartState extends State<MarketChart> {
           forecastData != null &&
           forecastHover! < forecastData!.bars.length
       ? forecastData!.bars[forecastHover!]
-      : widget.bars.isEmpty
+      : bars.isEmpty
       ? null
-      : widget.bars[(hover ?? (end - 1)).clamp(0, widget.bars.length - 1)];
+      : bars[(hover ?? (end - 1)).clamp(0, bars.length - 1)];
   void range(int days) => setState(() {
     viewport.reset(days);
     hover = null;
@@ -565,6 +634,7 @@ class _MarketChartState extends State<MarketChart> {
                         ),
                         const SizedBox(width: 12),
                         DropdownButton<Color>(
+                          menuMaxHeight: compactMenuHeight(context),
                           value: colors[i],
                           items: {...defaultMa.map((m) => m.color), colors[i]}
                               .map(
@@ -633,7 +703,7 @@ class _MarketChartState extends State<MarketChart> {
                               8,
                               (i) => MaLine(values[i]!, colors[i], enabled[i]),
                             );
-                            indicators = IndicatorData(widget.bars, mas);
+                            indicators = IndicatorData(bars, mas);
                           });
                           context.read<AtlasStore>().prefs.setString(
                             'ma',
@@ -687,7 +757,7 @@ class _MarketChartState extends State<MarketChart> {
       context,
       MaterialPageRoute(
         builder: (_) => FullscreenChart(
-          bars: widget.bars,
+          bars: bars,
           symbol: widget.symbol,
           name: widget.name,
           unit: widget.unit,
@@ -711,14 +781,14 @@ class _MarketChartState extends State<MarketChart> {
                         .where((m) => m.enabled)
                         .map((m) => m.period)
                         .toList(),
-                    'candleCount': widget.bars.length,
+                    'candleCount': bars.length,
                     'last': {
-                      'time': widget.bars.last.time,
-                      'open': widget.bars.last.open,
-                      'high': widget.bars.last.high,
-                      'low': widget.bars.last.low,
-                      'close': widget.bars.last.close,
-                      'volume': widget.bars.last.volume,
+                      'time': bars.last.time,
+                      'open': bars.last.open,
+                      'high': bars.last.high,
+                      'low': bars.last.low,
+                      'close': bars.last.close,
+                      'volume': bars.last.volume,
                     },
                   },
                 }
@@ -746,7 +816,7 @@ class _MarketChartState extends State<MarketChart> {
           saved.every((m) => m.period >= 1 && m.period <= 500)) {
         setState(() {
           mas = saved;
-          indicators = IndicatorData(widget.bars, mas);
+          indicators = IndicatorData(bars, mas);
         });
       }
     }
@@ -754,15 +824,15 @@ class _MarketChartState extends State<MarketChart> {
 
   String get currentStudyKey {
     final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
-    return '${widget.symbol}:${widget.unit}:$periods:${widget.amount}:${Object.hashAll(widget.bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
+    return '${widget.symbol}:${widget.unit}:$periods:${widget.amount}:${Object.hashAll(bars.map((b) => Object.hash(b.time, b.open, b.high, b.low, b.close, b.volume)))}';
   }
 
   void acceptInitialStudy() {
     final seed = widget.initialStudy;
-    if (seed == null || widget.bars.isEmpty) return;
+    if (seed == null || bars.isEmpty) return;
     final verification = obj(seed['verification']),
         last = obj(verification['last']),
-        bar = widget.bars.last;
+        bar = bars.last;
     final periods = mas.where((m) => m.enabled).map((m) => m.period).toList()
       ..sort();
     final verifiedPeriods =
@@ -772,7 +842,7 @@ class _MarketChartState extends State<MarketChart> {
           ..sort((a, b) => (a ?? 0).compareTo(b ?? 0));
     if (verification['symbol'] != widget.symbol ||
         verification['unit'] != widget.unit ||
-        verification['candleCount'] != widget.bars.length ||
+        verification['candleCount'] != bars.length ||
         jsonEncode(periods) != jsonEncode(verifiedPeriods) ||
         last['time'] != bar.time ||
         numOf(last['open']) != bar.open ||
@@ -796,7 +866,7 @@ class _MarketChartState extends State<MarketChart> {
   }
 
   Future<void> refreshStudy({bool retry = false}) async {
-    if (!mounted || widget.bars.isEmpty) return;
+    if (!mounted || bars.isEmpty) return;
     final periods = mas.where((m) => m.enabled).map((m) => m.period).toList();
     final key = currentStudyKey;
     if (studyBusy || studyKey == key && !retry) return;
@@ -819,9 +889,7 @@ class _MarketChartState extends State<MarketChart> {
           ? studyPatterns.where((m) => m['provisional'] != true).toList()
           : [];
       studyIndicators = sameParameters
-          ? studyIndicators
-                .where((m) => m['time'] != widget.bars.last.time)
-                .toList()
+          ? studyIndicators.where((m) => m['time'] != bars.last.time).toList()
           : [];
       studyStatus = '标注依据当前MA · 核验中';
     });
@@ -831,10 +899,8 @@ class _MarketChartState extends State<MarketChart> {
         'name': widget.name,
         'unit': widget.unit,
         'ma': periods,
-        'amount': widget.amountDate == widget.bars.last.time
-            ? widget.amount
-            : null,
-        'candles': widget.bars
+        'amount': widget.amountDate == bars.last.time ? widget.amount : null,
+        'candles': bars
             .map(
               (b) => {
                 'time': b.time,
@@ -883,12 +949,12 @@ class _MarketChartState extends State<MarketChart> {
       await projectionSettings();
       return;
     }
-    if (widget.bars.isEmpty) return;
-    final index = (hover ?? (widget.bars.length - offset - 1)).clamp(
+    if (bars.isEmpty) return;
+    final index = (hover ?? (bars.length - offset - 1)).clamp(
           0,
-          widget.bars.length - 1,
+          bars.length - 1,
         ),
-        date = widget.bars[index].time;
+        date = bars[index].time;
     final items = [
       ...studyTrades,
       ...studyPatterns,
@@ -910,7 +976,7 @@ class _MarketChartState extends State<MarketChart> {
             Text('$date · 标注依据', style: Theme.of(ctx).textTheme.titleLarge),
             const SizedBox(height: 12),
             Text(studyStatus),
-            if (date == widget.bars.last.time)
+            if (date == bars.last.time)
               for (final r in studyRegimes)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -1234,7 +1300,7 @@ class _MarketChartState extends State<MarketChart> {
         refreshProjection();
       }
     });
-    if (widget.bars.isEmpty) {
+    if (bars.isEmpty) {
       return const SizedBox(
         height: 200,
         child: Center(child: Text('No valid price history')),
@@ -1251,7 +1317,9 @@ class _MarketChartState extends State<MarketChart> {
     final height = widget.terminal
         ? math.max(
             160.0,
-            (widget.viewportHeight ?? 500) - (widget.expanded ? 126 : 94),
+            (widget.viewportHeight ?? 500) -
+                (widget.expanded ? 126 : 94) -
+                (historyEnabled ? 24 : 0),
           )
         : compact
         ? math.max(
@@ -1298,6 +1366,44 @@ class _MarketChartState extends State<MarketChart> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.terminal && widget.expanded) _portraitHeader(),
+            if (historyEnabled)
+              SizedBox(
+                height: 24,
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        tr(
+                          context,
+                          historyBusy
+                              ? '正在加载更早K线…'
+                              : historyError ??
+                                    (historyMore
+                                        ? '向左查看，自动加载更早K线'
+                                        : '已到数据源最早历史'),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, color: muted),
+                      ),
+                    ),
+                    if (!historyBusy && historyMore)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(48, 24),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: loadOlder,
+                        child: Text(
+                          tr(context, historyError == null ? '加载更早' : '重试'),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             if (widget.terminal)
               SizedBox(
                 height: 30,
@@ -1307,6 +1413,7 @@ class _MarketChartState extends State<MarketChart> {
                       width: 64,
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
+                          menuMaxHeight: compactMenuHeight(context),
                           isDense: true,
                           isExpanded: true,
                           iconSize: 16,
@@ -1392,7 +1499,7 @@ class _MarketChartState extends State<MarketChart> {
                                   ? 52
                                   : 264,
                             ),
-                            ('全部', widget.bars.length),
+                            ('全部', bars.length),
                           ])
                             TextButton(
                               onPressed: () => range(item.$2),
@@ -1655,7 +1762,7 @@ class _MarketChartState extends State<MarketChart> {
                                           : m,
                                     )
                                     .toList();
-                                indicators = IndicatorData(widget.bars, mas);
+                                indicators = IndicatorData(bars, mas);
                               });
                               context.read<AtlasStore>().prefs.setString(
                                 'ma',
@@ -1794,8 +1901,10 @@ class _MarketChartState extends State<MarketChart> {
                   }
                 },
                 onPointerUp: (e) {
+                  final wasPinching = pinchDistance != null;
                   pointers.remove(e.pointer);
                   pinchDistance = null;
+                  if (wasPinching) maybeLoadOlder();
                 },
                 onPointerCancel: (e) {
                   pointers.remove(e.pointer);
@@ -1816,6 +1925,7 @@ class _MarketChartState extends State<MarketChart> {
                       );
                     }
                   },
+                  onHorizontalDragEnd: (_) => maybeLoadOlder(),
                   onDoubleTap: () => range(66),
                   onLongPressStart: (e) =>
                       selectAt(e.localPosition, constraints.maxWidth),

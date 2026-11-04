@@ -131,6 +131,7 @@ class _EarningsBoardState extends State<EarningsBoard> {
           ),
           const SizedBox(height: 18),
           DropdownButtonFormField<String>(
+            menuMaxHeight: compactMenuHeight(context),
             initialValue: period,
             key: ValueKey('period-$period'),
             isExpanded: true,
@@ -158,6 +159,7 @@ class _EarningsBoardState extends State<EarningsBoard> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
+                  menuMaxHeight: compactMenuHeight(context),
                   initialValue: sort,
                   key: ValueKey(sort),
                   isExpanded: true,

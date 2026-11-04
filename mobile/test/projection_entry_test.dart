@@ -86,6 +86,16 @@ void main() {
         expect(find.byTooltip('行情推演'), findsOneWidget);
         await tester.tap(find.byTooltip('行情推演'));
         await tester.pumpAndSettle();
+        expect(
+          tester.getSize(find.byType(BottomSheet)).height,
+          lessThanOrEqualTo(
+            tester.view.physicalSize.height /
+                    tester.view.devicePixelRatio *
+                    .60 +
+                1,
+          ),
+        );
+        expect(find.byTooltip('关闭'), findsOneWidget);
         expect(painter(tester).forecast!.bars.length, bars.length + 10);
         expect(painter(tester).data.bars.length, bars.length);
         expect(

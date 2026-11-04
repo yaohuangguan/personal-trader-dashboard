@@ -303,6 +303,7 @@ class _F10PageState extends State<F10Page> {
                     ),
                     if (dates.isNotEmpty)
                       DropdownButton<String>(
+                        menuMaxHeight: compactMenuHeight(context),
                         isExpanded: true,
                         value: str(selected['date']),
                         items: dates

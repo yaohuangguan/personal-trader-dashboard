@@ -473,6 +473,7 @@ class _StockPageState extends State<StockPage> {
                   const SizedBox(height: 12),
                   Notice(tr(ctx, '价格阈值提醒在 App 前台、自选行情有效时检查。全市场信号扫描在服务端独立运行。')),
                   DropdownButtonFormField<String>(
+                    menuMaxHeight: compactMenuHeight(context),
                     initialValue: direction,
                     items: [
                       DropdownMenuItem(

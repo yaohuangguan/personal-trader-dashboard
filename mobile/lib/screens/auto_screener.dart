@@ -370,6 +370,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      menuMaxHeight: compactMenuHeight(context),
                       initialValue: concentration,
                       decoration: InputDecoration(
                         isDense: true,
@@ -385,6 +386,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: DropdownButtonFormField<String>(
+                      menuMaxHeight: compactMenuHeight(context),
                       initialValue: cap,
                       decoration: InputDecoration(
                         isDense: true,

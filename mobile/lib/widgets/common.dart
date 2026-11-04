@@ -16,6 +16,15 @@ Color tone(dynamic value) => numOf(value) == null
     : down;
 String tr(BuildContext c, String key) => c.read<AtlasStore>().t(key);
 
+double compactMenuHeight(BuildContext context) {
+  final height = MediaQuery.sizeOf(context).height;
+  final view = View.of(context);
+  return (height > 0
+          ? height
+          : view.physicalSize.height / view.devicePixelRatio) *
+      .4;
+}
+
 class Panel extends StatelessWidget {
   const Panel({
     super.key,

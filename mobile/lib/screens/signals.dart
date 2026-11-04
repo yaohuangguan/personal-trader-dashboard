@@ -240,6 +240,7 @@ class _SignalsPageState extends State<SignalsPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DropdownButtonFormField<String>(
+                      menuMaxHeight: compactMenuHeight(context),
                       initialValue: scope,
                       style: TextStyle(fontSize: 16, color: ink),
                       decoration: InputDecoration(labelText: s.t('监控范围')),
