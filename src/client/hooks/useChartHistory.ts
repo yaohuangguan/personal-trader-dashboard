@@ -1,10 +1,10 @@
 import {supportedStock} from '../../shared/market-clock';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {Candle} from '../../shared/types';
-import {mergeHistoryPage,type HistoryPage} from '../../shared/chart-history';
+import {mergeHistoryPage,normalizeHistoryPage,historyBasisFor,type HistoryPage} from '../../shared/chart-history';
 
-export function useChartHistory(initial:Candle[],symbol:string|undefined,unit:string,volumeUnit?:string){
-  const key=symbol+':'+unit;
+export function useChartHistory(initial:Candle[],symbol:string|undefined,unit:string,volumeUnit?:string,source?:string){
+  const basis=historyBasisFor(source,symbol),key=symbol+':'+unit+':'+basis+':'+volumeUnit;
   const enabled=!!symbol&&supportedStock(symbol)&&['day','week','month'].includes(unit);
   const [state,setState]=useState<{key:string;older:Candle[];hasMore:boolean;error:string;loading:boolean}>({key,older:[],hasMore:true,error:'',loading:false});
   const active=state.key===key?state:null;
@@ -24,12 +24,12 @@ export function useChartHistory(initial:Candle[],symbol:string|undefined,unit:st
     const deadline=setTimeout(()=>{timedOut=true;controller.abort();},15000);
     setState(old=>({...old,key,loading:true,error:''}));
     try{
-      const response=await fetch('/api/desk/history?'+new URLSearchParams({symbol:symbol!,period:unit,before}),{signal:controller.signal});
+      const response=await fetch('/api/desk/history?'+new URLSearchParams({symbol:symbol!,period:unit,before,basis}),{signal:controller.signal});
       const page=await response.json() as HistoryPage&{error?:string;reason?:string};
       if(!response.ok)throw new Error(page.reason||page.error||'历史行情暂不可用');
       if(current.current.key!==snapshot.key||controller.signal.aborted)return;
-      if(snapshot.volumeUnit&&page.candles.length&&snapshot.volumeUnit!==page.volumeUnit)throw new Error('历史来源成交量口径不同，请刷新图表后重试');
-      const merged=mergeHistoryPage(current.current.candles,page);
+      const normalized=normalizeHistoryPage(page,snapshot.volumeUnit);
+      const merged=mergeHistoryPage(current.current.candles,normalized);
       setState({key,older:merged,hasMore:page.hasMore,error:'',loading:false});
     }catch(error){if(!controller.signal.aborted||timedOut)setState(old=>({...old,loading:false,error:timedOut?'历史加载超时，请重试':error instanceof Error?error.message:'历史加载失败'}));}
     finally{clearTimeout(deadline);if(pending.current===controller)pending.current=null;}

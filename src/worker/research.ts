@@ -198,18 +198,28 @@ export function parseSinaFactors(text:string,wire:string):{date:string;factor:nu
  return rows.sort((a,b)=>a.date.localeCompare(b.date));
 }
 export function applySinaFactors(candles:Candle[],factors:{date:string;factor:number}[]):Candle[] {
- const rows=candles.map(c=>{const factor=[...factors].reverse().find(f=>f.date<=c.time)?.factor;if(!factor)throw new Error('Missing historical adjustment factor');return {...c,open:c.open/factor,high:c.high/factor,low:c.low/factor,close:c.close/factor};});
+ const ordered=[...factors].sort((a,b)=>a.date.localeCompare(b.date));
+ const rows=candles.map(c=>{
+  let lo=0,hi=ordered.length;
+  while(lo<hi){const mid=(lo+hi)>>>1;if(ordered[mid].date<=c.time)lo=mid+1;else hi=mid;}
+  const factor=ordered[lo-1]?.factor;if(!factor)throw new Error('Missing historical adjustment factor');
+  return {...c,open:c.open/factor,high:c.high/factor,low:c.low/factor,close:c.close/factor};
+ });
  return validateDailyBars(rows,candles.length);
 }
 export async function sinaAdjustedDaily(symbol:string,count=500,signal?:AbortSignal):Promise<{candles:Candle[];url:string}> {
  if(!/^\d{6}\.(SH|SZ)$/.test(symbol)||symbol.startsWith('000')&&symbol.endsWith('.SH')||symbol.startsWith('399')&&symbol.endsWith('.SZ'))throw new Error('Sina adjusted adapter supports Chinese equities');
- const raw=await sinaRawDaily(symbol,count,signal),wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6);
+ const raw=await sinaRawDaily(symbol,count,signal),factors=await sinaAdjustmentFactors(symbol,signal),candles=applySinaFactors(raw.candles,factors);
+ if(candles.length!==raw.candles.length)throw new Error('Adjustment produced invalid historical rows');
+ return {candles,url:raw.url};
+}
+export async function sinaAdjustmentFactors(symbol:string,signal?:AbortSignal){
+ if(!/^\d{6}\.(SH|SZ)$/.test(symbol))throw new Error('Invalid factor symbol');
+ const wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6);
  const url='https://finance.sina.com.cn/realstock/company/'+wire+'/qfq.js';
  const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://finance.sina.com.cn/'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(6000)]):AbortSignal.timeout(6000)});
  if(!response.ok)throw new Error('Sina factors HTTP '+response.status);
- const factors=parseSinaFactors(await response.text(),wire),candles=applySinaFactors(raw.candles,factors);
- if(candles.length!==raw.candles.length)throw new Error('Adjustment produced invalid historical rows');
- return {candles,url:raw.url};
+ return parseSinaFactors(await response.text(),wire);
 }
 
 export async function sinaIndexDaily(symbol:string,count=500){if(!/^(?:000(?:001|300|688)\.SH|399(?:001|006)\.SZ)$/.test(symbol))throw new Error('Unsupported index');return sinaRawDaily(symbol,count);}

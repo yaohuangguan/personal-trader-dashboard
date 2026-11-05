@@ -162,7 +162,8 @@ export async function history(raw: string, period: string) {
   }catch {
     const isIndex=/^(?:000(?:001|300|688)\.SH|399(?:001|006)\.SZ)$/.test(symbol);
     const daily=isIndex?await sinaIndexDaily(symbol,1023):symbol.endsWith('.BJ')?await sinaBeijingDaily(symbol,1023):await sinaAdjustedDaily(symbol,1023);
-    const candles=period==='day'?daily.candles:aggregateDaily(daily.candles,period as 'week'|'month');
+    const grouped=period==='day'?daily.candles:aggregateDaily(daily.candles,period as 'week'|'month');
+    const candles=period!=='day'&&daily.candles.length===1023?grouped.slice(1):grouped;
     if(candles.length<2)throw new Error('备用源周期历史不足，请稍后刷新');
     return {...stamp('新浪日线聚合 · '+(isIndex?'指数原值':symbol.endsWith('.BJ')?'未复权':'前复权'),daily.url),symbol,candles,period,volumeUnit:'股',notice:'按实际交易日聚合，日期为周期最后交易日；当前周期可能尚未结束。'};
   }

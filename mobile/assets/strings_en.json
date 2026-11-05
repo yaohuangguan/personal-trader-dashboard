@@ -2149,5 +2149,7 @@
   "当前结构破位": "Current structure broken",
   "等待行情核验": "Awaiting quote verification",
   "MA{n}支撑失守": "MA{n} support lost",
-  "MACD将死不死": "MACD bullish hold near crossover"
+  "MACD将死不死": "MACD bullish hold near crossover",
+  "历史分页成交量异常": "Invalid history volume",
+  "无效历史复权基准": "Invalid history adjustment basis"
 }

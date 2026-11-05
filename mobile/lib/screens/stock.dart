@@ -979,6 +979,7 @@ class _StockPageState extends State<StockPage> {
         name: name,
         symbol: widget.symbol,
         volumeUnit: volumeUnit,
+        historySource: str(chartMarket['provider'], ''),
         initialStudy: historyStudy,
         onLiveAlerts: acceptAlerts,
         events: rows(obj(analysis?['guide'])['events']),
@@ -996,6 +997,7 @@ class _StockPageState extends State<StockPage> {
         parameters: {
           'symbol': widget.symbol,
           if (timeframe != 'intraday') 'period': timeframe,
+          if (timeframe != 'intraday') 'study': 'client',
         },
       ),
       builder: (r) {
@@ -1012,6 +1014,7 @@ class _StockPageState extends State<StockPage> {
                 symbol: widget.symbol,
                 unit: timeframe,
                 volumeUnit: str(r['volumeUnit']),
+                historySource: str(r['source'], ''),
                 patterns: rows(r['patternMarks']),
                 terminal: true,
                 viewportHeight: height,

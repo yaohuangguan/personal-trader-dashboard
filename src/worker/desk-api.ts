@@ -14,7 +14,7 @@ import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow
 import {auction,sectorIntraday,indexEqual} from './intraday-extras';
 import {earnings} from './earnings';
 import {historyPage} from './chart-history';
-import {validHistoryDate} from '../shared/chart-history';
+import {validHistoryDate,type HistoryBasis} from '../shared/chart-history';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
@@ -80,9 +80,12 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       const before=url.searchParams.get('before');
       if(before!==null){
         if(!['day','week','month'].includes(period)||!validHistoryDate(before))return respond({error:'无效历史分页日期或周期'},400);
-        return respond(await memo('history-page:'+symbol+':'+period+':'+before,600,()=>historyPage(symbol,period,before)));
+        const basis=url.searchParams.get('basis')||'tencent';
+        if(!['tencent','sina-qfq','sina-raw'].includes(basis))return respond({error:'无效历史复权基准'},400);
+        return respond(await memo('history-page-v2:'+symbol+':'+period+':'+before+':'+basis,600,()=>historyPage(symbol,period,before,basis as HistoryBasis)));
       }
       const data=await memo(kind + symbol + period, period.startsWith('m')&&period!=='month'?60:600, () => history(symbol, period));
+      if(url.searchParams.get('study')==='client')return respond(data);
       return respond({...data,patternMarks:period==='day'?patternMarks(data.candles):period==='week'||period==='month'?guidePatternMarks(data.candles,new Date(),period):[]});
     }
     if(kind==='f10')return respond(await memo('f10'+symbol,1800,()=>f10(symbol)));
