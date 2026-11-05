@@ -59,7 +59,8 @@ class _MarketChartState extends State<MarketChart> {
   String? historyError;
   int historyRequest = 0;
   bool get historyEnabled =>
-      cnStock(widget.symbol) && ['day', 'week', 'month'].contains(widget.unit);
+      supportedStock(widget.symbol) &&
+      ['day', 'week', 'month'].contains(widget.unit);
   Future<void> loadOlder() async {
     if (!historyEnabled || historyBusy || !historyMore || bars.isEmpty) return;
     final request = ++historyRequest, before = bars.first.time;
@@ -286,7 +287,7 @@ class _MarketChartState extends State<MarketChart> {
                             ('bear', '偏弱'),
                           ])
                             ChoiceChip(
-                              label: Text(entry.$2),
+                              label: Text(tr(ctx, entry.$2)),
                               selected: projectionScenario == entry.$1,
                               onSelected: (_) {
                                 setState(() => projectionScenario = entry.$1);
@@ -297,15 +298,16 @@ class _MarketChartState extends State<MarketChart> {
                       ),
                       const SizedBox(height: 12),
                       Text(tr(ctx, '虚线为条件情景，不是实盘或确定预测；随最新量价和MA重新计算。')),
-                      if (projectionError != null) Text(projectionError!),
+                      if (projectionError != null)
+                        Text(tr(ctx, projectionError!)),
                       if (projection != null) ...[
                         Text(
-                          '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? '历史相似窗口 ${projection!['sampleCount']} 段' : '样本不足 · 近期量价片段重采样'}',
+                          '${str(projection!['asOf'])} · ${projection!['model'] == 'analogs' ? tr(ctx, '历史相似窗口 ${projection!['sampleCount']} 段') : tr(ctx, '样本不足 · 近期量价片段重采样')}',
                           style: TextStyle(color: muted, fontSize: 12),
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          str(obj(projection!['basis'])['regime']),
+                          tr(ctx, str(obj(projection!['basis'])['regime'])),
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         for (final fact
@@ -314,7 +316,7 @@ class _MarketChartState extends State<MarketChart> {
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              str(fact),
+                              tr(ctx, str(fact)),
                               style: const TextStyle(height: 1.5),
                             ),
                           ),
@@ -324,7 +326,7 @@ class _MarketChartState extends State<MarketChart> {
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
                             child: Text(
-                              '本条路径依据：${str(scenario['explanation'])}',
+                              '${tr(ctx, '本条路径依据：')}${tr(ctx, str(scenario['explanation']))}',
                               style: const TextStyle(height: 1.6),
                             ),
                           ),
@@ -332,7 +334,7 @@ class _MarketChartState extends State<MarketChart> {
                           Padding(
                             padding: const EdgeInsets.only(top: 12),
                             child: Text(
-                              str(r['text']),
+                              tr(ctx, str(r['text'])),
                               style: TextStyle(
                                 height: 1.6,
                                 color: r['side'] == 'bull'
@@ -350,13 +352,13 @@ class _MarketChartState extends State<MarketChart> {
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
                             child: Text(
-                              str(text),
+                              tr(ctx, str(text)),
                               style: TextStyle(color: muted, fontSize: 12),
                             ),
                           ),
                         const SizedBox(height: 14),
                         Text(
-                          str(projection!['notice']),
+                          tr(ctx, str(projection!['notice'])),
                           style: TextStyle(color: muted, fontSize: 12),
                         ),
                       ],
@@ -975,7 +977,7 @@ class _MarketChartState extends State<MarketChart> {
           children: [
             Text('$date · 标注依据', style: Theme.of(ctx).textTheme.titleLarge),
             const SizedBox(height: 12),
-            Text(studyStatus),
+            Text(tr(context, studyStatus)),
             if (date == bars.last.time)
               for (final r in studyRegimes)
                 Padding(
@@ -1005,9 +1007,9 @@ class _MarketChartState extends State<MarketChart> {
                   ),
                 ),
             if (items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Text('该根暂无有效形态或买卖条件；长按K线可选择其他日期。'),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Text(tr(context, '该根暂无有效形态或买卖条件；长按K线可选择其他日期。')),
               ),
             for (final m in items)
               Padding(
@@ -1016,16 +1018,17 @@ class _MarketChartState extends State<MarketChart> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      str(m['label']),
+                      tr(context, str(m['label'])),
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 6),
-                    Text(str(m['reason'] ?? m['detail'])),
-                    if (m['provisional'] == true) const Text('盘中预警，收盘前可以失效。'),
+                    Text(tr(context, str(m['reason'] ?? m['detail']))),
+                    if (m['provisional'] == true)
+                      Text(tr(context, '盘中预警，收盘前可以失效。')),
                   ],
                 ),
               ),
-            const Text('买入观察/卖预警是条件提示；已确认买卖点与历史规则跟踪另行区分，不代表账户实际持仓或成交。'),
+            Text(tr(context, '买入观察/卖预警是条件提示；已确认买卖点与历史规则跟踪另行区分，不代表账户实际持仓或成交。')),
           ],
         ),
       ),
@@ -1115,7 +1118,7 @@ class _MarketChartState extends State<MarketChart> {
                   studyRetry?.cancel();
                   refreshStudy();
                 },
-                child: Text(studyStatus),
+                child: Text(tr(context, studyStatus)),
               ),
             ],
           ),
@@ -1160,7 +1163,7 @@ class _MarketChartState extends State<MarketChart> {
                     studyKey = '';
                     refreshStudy();
                   },
-                  child: Text(studyStatus, maxLines: 2),
+                  child: Text(tr(context, studyStatus), maxLines: 2),
                 ),
                 for (final item in [
                   ('VOL', volume),
@@ -1973,6 +1976,8 @@ class _MarketChartState extends State<MarketChart> {
                                   context.watch<AtlasStore>().fontSize * .72,
                                 ),
                                 markers,
+                                translate: context.read<AtlasStore>().t,
+                                locale: context.watch<AtlasStore>().locale,
                                 overlay: overlay,
                                 rsi: rsi,
                                 trades: studyTrades,
@@ -2187,7 +2192,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
   Future<void> refreshQuote() async {
     if (quoteLoading ||
         !mounted ||
-        !cnStock(widget.symbol) ||
+        !supportedStock(widget.symbol) ||
         widget.unit != 'day' ||
         !context.read<AtlasStore>().foreground ||
         !(ModalRoute.of(context)?.isCurrent ?? false)) {
@@ -2229,12 +2234,12 @@ class _FullscreenChartState extends State<FullscreenChart> {
     try {
       final api = context.read<AtlasStore>().api;
       final Json data;
-      if (cnStock(widget.symbol) && widget.unit != 'day') {
+      if (supportedStock(widget.symbol) && widget.unit != 'day') {
         data = await api.get(
           '/api/desk/history',
           parameters: {'symbol': widget.symbol, 'period': widget.unit},
         );
-      } else if (cnStock(widget.symbol)) {
+      } else if (supportedStock(widget.symbol)) {
         data = await api.get(
           '/api/analysis',
           parameters: {'symbol': widget.symbol, 'review': '1'},
@@ -2318,6 +2323,8 @@ class ChartPainter extends CustomPainter {
     this.unit,
     this.font,
     this.showSignals, {
+    this.translate,
+    this.locale = 'zh-CN',
     this.overlay = 'MA',
     this.rsi = false,
     this.trades = const [],
@@ -2328,6 +2335,8 @@ class ChartPainter extends CustomPainter {
     this.projection,
     this.forecast,
   });
+  final String Function(String)? translate;
+  final String locale;
   final IndicatorData data;
   final int start, end;
   final int? hover;
@@ -2351,7 +2360,7 @@ class ChartPainter extends CustomPainter {
   }) {
     final t = TextPainter(
       text: TextSpan(
-        text: text,
+        text: translate?.call(text) ?? text,
         style: TextStyle(fontSize: size ?? font, color: color ?? muted),
       ),
       textDirection: TextDirection.ltr,
@@ -2371,7 +2380,7 @@ class ChartPainter extends CustomPainter {
 
   double textWidth(String text, {double? size}) => (TextPainter(
     text: TextSpan(
-      text: text,
+      text: translate?.call(text) ?? text,
       style: TextStyle(fontSize: size ?? font),
     ),
     textDirection: TextDirection.ltr,
@@ -3096,6 +3105,7 @@ class ChartPainter extends CustomPainter {
       macd != old.macd ||
       kdj != old.kdj ||
       events != old.events ||
+      locale != old.locale ||
       font != old.font ||
       showSignals != old.showSignals ||
       showPatterns != old.showPatterns ||

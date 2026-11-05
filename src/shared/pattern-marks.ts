@@ -1,3 +1,4 @@
+import {marketClock} from './market-clock';
 import type {Candle} from './types';
 import {reusablePatterns,strategyEvidence} from './strategy-evidence';
 import {consolidationMarks} from './consolidation';
@@ -9,14 +10,14 @@ export type PatternMark={direction?:'bullish'|'bearish'|'neutral';time:string;ki
 const avg=(a:number[])=>a.length?a.reduce((n,v)=>n+v,0)/a.length:0;
 /** Shape annotations are observations, not orders. Future candles cannot remove earlier observations. */
 export function patternMarks(input:Candle[],now=new Date(),options:{symbol?:string;name?:string;maPeriods?:number[]}={}):PatternMark[]{
- const clock=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now),part=(k:string)=>clock.find(p=>p.type===k)?.value||'',day=`${part('year')}-${part('month')}-${part('day')}`,minute=Number(part('hour'))*60+Number(part('minute'));
+ const clock=marketClock(now,options.symbol),day=clock.date,minute=clock.minute;
  const bars=input.filter(b=>b.time<=day),out:PatternMark[]=[],sums=[0],vol=[0],lastEmitted=new Map<string,number>();
  if(bars.some((b,i)=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||b.low<=0||b.high<Math.max(b.open,b.close)||b.low>Math.min(b.open,b.close)||b.volume<0||i>0&&b.time<=bars[i-1].time))return [];
  bars.forEach((b,i)=>{sums.push(sums[i]+b.close);vol.push(vol[i]+b.volume);});
  const selected=maPeriods(options.maPeriods),rawMA=(p:number,i:number)=>i+1>=p?(sums[i+1]-sums[i+1-p])/p:NaN,ma=(p:number,i:number)=>rawMA(options.maPeriods?maRole(selected,p):p,i);
  for(let i=64;i<bars.length;i++){
   const b=bars[i],p=bars[i-1],base=(vol[i]-vol[i-20])/20,ratio=base?b.volume/base:0,gain=(b.close/p.close-1)*100,atr=avg(bars.slice(i-20,i).map((v,j)=>Math.max(v.high-v.low,Math.abs(v.high-bars[i-21+j].close),Math.abs(v.low-bars[i-21+j].close))));
-  const location=b.high>b.low?(b.close-b.low)/(b.high-b.low):.5,body=Math.abs(b.close-b.open),provisional=b.time===day&&minute<900;
+  const location=b.high>b.low?(b.close-b.low)/(b.high-b.low):.5,body=Math.abs(b.close-b.open),provisional=b.time===day&&minute<clock.close;
   const add=(kind:string,label:string,detail:string,priority=60,position:'above'|'below'='below',range?:PatternMark['range'],spacing=0)=>{if(i-(lastEmitted.get(kind)??-999)<spacing)return;out.push({time:b.time,kind,label,detail,priority,position,range,provisional,direction:kind==='box'?'neutral':'bullish'});if(!provisional)lastEmitted.set(kind,i);};
   const m5=ma(5,i),m13=ma(13,i),m20=ma(20,i);
   for(const hit of classicShapes(bars,i,rawMA,atr,ratio,options.maPeriods)){
@@ -53,14 +54,14 @@ export function patternMarks(input:Candle[],now=new Date(),options:{symbol?:stri
    }
   }
  }
- return [...out,...guidePatternMarks(bars,now,'day',options.maPeriods)].sort((a,b)=>a.time.localeCompare(b.time)||b.priority-a.priority);
+ return [...out,...guidePatternMarks(bars,now,'day',options.maPeriods,options.symbol)].sort((a,b)=>a.time.localeCompare(b.time)||b.priority-a.priority);
 }
 /** One concise shape label per candle; execution markers take their own visual lane. */
 export function primaryPatternMarks(marks:PatternMark[]):PatternMark[]{const selected=new Map<string,PatternMark>();for(const m of marks){if(m.chartVisible===false)continue;const old=selected.get(m.time);if(!old||m.priority>old.priority)selected.set(m.time,m);}return [...selected.values()].sort((a,b)=>a.time.localeCompare(b.time));}
 
 /** Stage changes remain dated observations, including failures with no simulated holding. */
 export function reviewedPatternMarks(bars:Candle[],strategy:StrategyAnalysis,now=new Date(),options:{symbol?:string;name?:string;maPeriods?:number[]}={}):PatternMark[]{
- const marks=[...(reusablePatterns(strategy,options,now)||patternMarks(bars,now,options)),...(strategyEvidence(strategy)?.trends||[]),...consolidationMarks(bars,now)],phases=new Set(['turning','broken','downward']);
+ const marks=[...(reusablePatterns(strategy,options,now)||patternMarks(bars,now,options)),...(strategyEvidence(strategy)?.trends||[]),...consolidationMarks(bars,now,options.symbol)],phases=new Set(['turning','broken','downward']);
  for(const step of strategy.timeline){if(phases.has(step.phase))marks.push({time:step.date,kind:'stage-'+step.phase,direction:step.phase==='turning'?'bullish':'bearish',label:step.phase==='turning'?'回踩放量转强':step.phase==='broken'?'结构支撑失守':'向下开花',detail:step.reason,position:step.phase==='turning'?'below':'above',priority:step.phase==='turning'?93:98,provisional:false});}
  const p=strategy.plan;
  if(p.provisional&&p.asOf&&phases.has(p.phase))marks.push({time:p.asOf,kind:'stage-'+p.phase,direction:p.phase==='turning'?'bullish':'bearish',label:p.phase==='turning'?'回踩转强预警':'结构风控预警',detail:p.flat.reason,position:p.phase==='turning'?'below':'above',priority:98,provisional:true});

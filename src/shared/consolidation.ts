@@ -1,8 +1,9 @@
+import {marketClock} from './market-clock';
 import type {Candle} from './types';
 import type {PatternMark} from './pattern-marks';
 /** Each dated snapshot uses only its prefix; a later extension never rewrites an earlier box. */
-export function consolidationMarks(bars:Candle[],now=new Date()):PatternMark[]{
- const cn=new Date(now.getTime()+28800000),today=cn.toISOString().slice(0,10),forming=cn.getUTCHours()<15,out:PatternMark[]=[];
+export function consolidationMarks(bars:Candle[],now=new Date(),symbol?:string):PatternMark[]{
+ const clock=marketClock(now,symbol),today=clock.date,forming=clock.minute<clock.close,out:PatternMark[]=[];
  let box:{from:string;high:number;low:number}|null=null,cooldown=0;
  const touches=(rows:Candle[],test:(b:Candle)=>boolean)=>{let count=0,last=-5;rows.forEach((b,i)=>{if(test(b)&&i-last>=3){count++;last=i;}});return count;};
  for(let i=20;i<bars.length&&bars[i].time<=today;i++){

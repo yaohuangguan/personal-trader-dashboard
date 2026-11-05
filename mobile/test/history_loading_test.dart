@@ -65,7 +65,14 @@ void main() {
   testWidgets(
     'drag loads once, preserves date anchors, and refresh retains older candles for day/week/month',
     (tester) async {
-      for (final unit in ['day', 'week', 'month']) {
+      for (final (symbol, unit) in [
+        ('300545.SZ', 'day'),
+        ('300545.SZ', 'week'),
+        ('300545.SZ', 'month'),
+        ('NVDA', 'day'),
+        ('NVDA', 'week'),
+        ('NVDA', 'month'),
+      ]) {
         SharedPreferences.setMockInitialValues({});
         final all = chartFixture(120), prices = ValueNotifier(all.sublist(60));
         final completion = Completer<http.Response>();
@@ -99,7 +106,8 @@ void main() {
                   builder: (_, bars, _) => MarketChart(
                     key: ValueKey(unit),
                     bars: bars,
-                    symbol: '300545.SZ',
+                    symbol: symbol,
+                    volumeUnit: cnStock(symbol) ? '手' : '股',
                     unit: unit,
                     terminal: true,
                     viewportHeight: 600,
@@ -123,7 +131,7 @@ void main() {
               'candles': all.take(60).map(jsonBar).toList(),
               'anchor': jsonBar(all[60]),
               'hasMore': true,
-              'volumeUnit': '手',
+              'volumeUnit': cnStock(symbol) ? '手' : '股',
             }),
             200,
             headers: {'content-type': 'application/json; charset=utf-8'},

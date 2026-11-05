@@ -1,3 +1,5 @@
+import {usHistory} from './us-market';
+import {isUSStock} from '../shared/market-clock';
 import type {Candle} from '../shared/types';
 import {validHistoryDate} from '../shared/chart-history';
 
@@ -5,7 +7,7 @@ import {validHistoryDate} from '../shared/chart-history';
 export async function requestTencentHistory(wire:string,period:string,before='',count=500){
   let failure:unknown;
   for(const host of ['https://web.ifzq.gtimg.cn','https://ifzq.gtimg.cn','https://proxy.finance.qq.com/ifzqgtimg']){
-    const url=host+'/appstock/app/fqkline/get?param='+wire+','+period+',,'+before+','+count+',qfq';
+    const url=host+'/appstock/app/'+(wire.startsWith('us')?'usfqkline':'fqkline')+'/get?param='+wire+','+period+',,'+before+','+count+',qfq';
     try{
       const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0',Referer:'https://gu.qq.com/','Accept':'application/json'},signal:AbortSignal.timeout(4000)});
       if(!response.ok)throw new Error('历史来源 HTTP '+response.status);
@@ -20,6 +22,10 @@ export async function requestTencentHistory(wire:string,period:string,before='',
 
 /** One bounded source request per gesture. End date is inclusive upstream. */
 export async function historyPage(symbol:string,period:string,before:string){
+  if(isUSStock(symbol)){
+    const data=await usHistory(symbol,period,before),candles=data.candles.filter(c=>c.time<before);
+    return {...data,candles,anchor:data.candles.find(c=>c.time===before),hasMore:candles.length>0,nextBefore:candles[0]?.time??null};
+  }
   if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)||!['day','week','month'].includes(period)||!validHistoryDate(before))throw new RangeError('无效历史分页参数');
   const wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6);
   const {node,url}=await requestTencentHistory(wire,period,before,501),raw=node['qfq'+period]??node[period];

@@ -1,3 +1,4 @@
+import {marketClock} from './market-clock';
 import {FIBONACCI_MA,maPeriods,maRole} from './ma-system';
 import type {Candle} from './types';
 import type {PatternMark} from './pattern-marks';
@@ -16,9 +17,9 @@ export const GUIDE_PATTERN_COVERAGE=[
 type Pivot={i:number;value:number};
 const mean=(a:number[])=>a.reduce((s,v)=>s+v,0)/a.length;
 /** Guide observations use a completed prefix. Chart density is a separate rendering concern. */
-export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week'|'month'='day',selectedPeriods?:number[]):PatternMark[]{
- const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(now),minute=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',hour12:false}).format(now))*60+Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',minute:'2-digit'}).format(now));
- const bars=unit==='day'?input.filter(b=>b.time<=day):closedPeriodCandles(input,unit,now),out:PatternMark[]=[];
+export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week'|'month'='day',selectedPeriods?:number[],symbol?:string):PatternMark[]{
+ const clock=marketClock(now,symbol),day=clock.date,minute=clock.minute;
+ const bars=unit==='day'?input.filter(b=>b.time<=day):closedPeriodCandles(input,unit,now,symbol),out:PatternMark[]=[];
  if(bars.some((b,i)=>![b.open,b.high,b.low,b.close,b.volume].every(Number.isFinite)||b.low<=0||b.volume<0||b.high<Math.max(b.open,b.close)||b.low>Math.min(b.open,b.close)||i>0&&b.time<=bars[i-1].time))return [];
  const selected=maPeriods(selectedPeriods),periods=[...new Set([3,5,6,10,12,13,20,24,30,60,120,250,...selected,...FIBONACCI_MA])],mas=new Map(periods.map(n=>[n,new Map(sma(bars,n).map(p=>[p.time,p.value]))]));
  const ma=(p:number,i:number)=>mas.get(selectedPeriods&&[5,10,13,20,30,60,120,250].includes(p)?maRole(selected,p):p)?.get(bars[i]?.time)??NaN,md=new Map(macd(bars).map(p=>[p.time,p])),kd=new Map(kdj(bars).map(p=>[p.time,p])),bb=new Map(bollinger(bars).map(p=>[p.time,p])),rs=new Map(rsi(bars).map(p=>[p.time,p.value])),sar=new Map(parabolicSar(bars).map(p=>[p.time,p.value]));
@@ -30,7 +31,7 @@ export function guidePatternMarks(input:Candle[],now=new Date(),unit:'day'|'week
   if(!(atr>0))continue;
   const body=b.close-b.open,abs=Math.abs(body),range=b.high-b.low,upper=b.high-Math.max(b.open,b.close),lower=Math.min(b.open,b.close)-b.low,location=range?(b.close-b.low)/range:.5,gain=(b.close/p.close-1)*100;
   const prior=bars.slice(i-20,i),priorHigh=Math.max(...prior.map(c=>c.high)),priorLow=Math.min(...prior.map(c=>c.low)),advance=(p.close/bars[i-11].close-1)*100,highContext=(advance>=18||p.close/ma(20,i-1)-1>.12)&&p.close>=priorHigh-atr*1.5,lowContext=advance<=-6&&p.close<=priorLow+atr*1.5;
-  const provisional=unit==='day'&&b.time===day&&minute<900;
+  const provisional=unit==='day'&&b.time===day&&minute<clock.close;
   const emit=(kind:string,label:string,detail:string,bull=true,priority=65,spacing=8,anchorTime?:string,chartVisible=true)=>{if(i-(last.get(kind)??-999)<spacing)return;out.push({time:b.time,kind,label,detail,direction:['braid','boll-squeeze','vp-flat','volume-pile'].includes(kind)?'neutral':bull?'bullish':'bearish',position:bull?'below':'above',priority,provisional,status:'observation',anchorTime,chartVisible});if(!provisional)last.set(kind,i);};
   const small=abs<=atr*.35&&range>=atr*.65,prevBody=p.close-p.open,firstBody=a.close-a.open;
   if(highContext&&small&&upper>=Math.max(abs*2,range*.55)&&lower<range*.2)emit('shooting-star','射击之星','前序上涨后出现小实体长上影；为受阻观察，不把长上影自动解释为仙人指路。',false,80);

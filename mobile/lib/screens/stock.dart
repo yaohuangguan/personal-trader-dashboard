@@ -71,7 +71,7 @@ class _StockPageState extends State<StockPage> {
     chartMARevision.addListener(maChanged);
     final local = context.read<AtlasStore>().chartStudies.isLocal;
     refreshHistory();
-    if (!local || !cnStock(widget.symbol)) {
+    if (!local) {
       refreshQuote();
       refreshAnalysis();
       refreshTrend();
@@ -99,7 +99,7 @@ class _StockPageState extends State<StockPage> {
   }
 
   Future<void> refreshHistory() async {
-    if (!cnStock(widget.symbol)) return;
+    if (!supportedStock(widget.symbol)) return;
     final generation = ++historyGeneration;
     final store = context.read<AtlasStore>(), studies = store.chartStudies;
     final ma = store.chartMAPeriods;
@@ -170,7 +170,7 @@ class _StockPageState extends State<StockPage> {
   Json get chartMarket =>
       historyMarket ?? (cnStock(widget.symbol) ? {} : obj(analysis?['market']));
   Future<void> refreshQuote() async {
-    if (!cnStock(widget.symbol)) return;
+    if (!supportedStock(widget.symbol)) return;
     try {
       final r = await context.read<AtlasStore>().api.get(
         '/api/desk/quotes',
@@ -194,12 +194,14 @@ class _StockPageState extends State<StockPage> {
     try {
       final api = context.read<AtlasStore>().api;
       final store = context.read<AtlasStore>();
-      if (store.chartStudies.isLocal && cnStock(widget.symbol)) {
+      if (store.chartStudies.isLocal && supportedStock(widget.symbol)) {
         if (historyFrame == null) return;
-        final extra = await api.get(
-          '/api/review-context',
-          parameters: {'symbol': widget.symbol},
-        );
+        final extra = cnStock(widget.symbol)
+            ? await api.get(
+                '/api/review-context',
+                parameters: {'symbol': widget.symbol},
+              )
+            : <String, dynamic>{if (quote != null) 'quote': quote};
         if (!mounted || generation != analysisGeneration) return;
         final ma = store.chartMAPeriods;
         final pair = await store.chartStudies.pair(
@@ -215,21 +217,14 @@ class _StockPageState extends State<StockPage> {
         }
         return;
       }
-      final r = cnStock(widget.symbol)
-          ? await api.get(
-              '/api/analysis',
-              parameters: {
-                'symbol': widget.symbol,
-                'review': '1',
-                ...context.read<AtlasStore>().chartMAParameters,
-              },
-            )
-          : {
-              'market': await api.get(
-                '/api/market',
-                parameters: {'symbol': widget.symbol},
-              ),
-            };
+      final r = await api.get(
+        '/api/analysis',
+        parameters: {
+          'symbol': widget.symbol,
+          'review': '1',
+          ...store.chartMAParameters,
+        },
+      );
       if (mounted && generation == analysisGeneration) {
         setState(() {
           if (obj(r['strategy']).isNotEmpty) {
@@ -319,7 +314,8 @@ class _StockPageState extends State<StockPage> {
       };
   String get volumeUnit =>
       historyVolumeUnit ??
-      (str(chartMarket['provider'], '').startsWith('新浪') ||
+      (!cnStock(widget.symbol) ||
+              str(chartMarket['provider'], '').startsWith('新浪') ||
               RegExp(r'^68[89]').hasMatch(widget.symbol)
           ? '股'
           : '手');
@@ -948,25 +944,24 @@ class _StockPageState extends State<StockPage> {
     ],
   );
   Widget _periodBar() => PeriodSelector(
+    intraday: cnStock(widget.symbol),
     value: timeframe,
     onChanged: (v) => setState(() => timeframe = v),
   );
   Widget _waiting() => Center(
     child: Padding(
       padding: const EdgeInsets.all(16),
-      child: (cnStock(widget.symbol) ? historyError : analysisError) == null
+      child: (historyError ?? analysisError) == null
           ? const CircularProgressIndicator(strokeWidth: 1.5)
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  (cnStock(widget.symbol) ? historyError : analysisError)!,
+                  (historyError ?? analysisError)!,
                   style: TextStyle(fontSize: 13, color: muted),
                 ),
                 TextButton(
-                  onPressed: cnStock(widget.symbol)
-                      ? refreshHistory
-                      : refreshAnalysis,
+                  onPressed: refreshHistory,
                   child: Text(tr(context, '重试数据源')),
                 ),
               ],

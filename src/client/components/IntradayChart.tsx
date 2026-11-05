@@ -1,3 +1,4 @@
+import {t as copyText} from '../preferences';
 import {intradayStudy,isMarketIndex} from '../../shared/intraday-study';
 import {t,usePreferences} from '../preferences';
 import {useEffect,useRef,useState} from 'react';
@@ -68,7 +69,7 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
   {(market.error||sector.error)&&<small role="status">{market.error||sector.error}</small>}
   {(marketOn&&market.data&&!valid(market.data)||board&&sector.data&&!valid(sector.data))&&<small>{t('叠加来源交易日或昨收不匹配，已隐藏')}</small>}
   {isMarketIndex(data.symbol)&&<small className="intraday-yellow-note">{yellow.data?.notice||yellow.error||'正在加载黄色成分等权参考线…'}</small>}
-  <small className="intraday-indicator-note">VOL 红：较上一分钟上涨／持平，绿：下跌{macdOn?' · MACD(12,26,9) 分钟价；前33个有效分钟预热':''}</small>
+  <small className="intraday-indicator-note">{copyText("VOL 红：较上一分钟上涨／持平，绿：下跌")}{macdOn?copyText(' · MACD(12,26,9) 分钟价；前33个有效分钟预热'):''}</small>
   <div ref={root} data-testid="intraday-pane"/>
   {auctionOpen&&<section className="auction-panel"><div className="intraday-actions">{(['open','close','after'] as const).map((key,i)=><button type="button" key={key} aria-pressed={segment===key} onClick={()=>setSegment(key)}>{t(['盘前竞价','收盘竞价','盘后定价'][i])}</button>)}</div>{chosen?.points.length?<><AuctionSpark segment={chosen}/><p>{chosen.points.at(-1)!.sourceClock} · {chosen.points.at(-1)!.price.toFixed(2)} · {t(chosen.points.at(-1)!.observation?'分钟观测':chosen.points.at(-1)!.indicative?'虚拟撮合':'撮合成交')} · {chosen.points.at(-1)!.volume}{t('手')} · {chosen.points.at(-1)!.amount??'—'}{t('元')}</p><small>{chosen.notice}</small></>:<p>{auction.error||t(auction.loading?'正在核验竞价数据…':'该时段暂未取得可核验数据')}</p>}<small>{auction.data?.source} · {auction.data?.notice}</small></section>}
  </div>;

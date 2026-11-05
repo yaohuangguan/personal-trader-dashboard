@@ -227,83 +227,95 @@ class _WatchPageState extends State<WatchPage> {
       );
     }
     final headers = <Widget>[
-      PageTitle(
-        '我的自选',
-        '长按股票设置分组，左滑移除',
-        trailing: IconButton(
-          onPressed: () => showStockSearch(context),
-          icon: const Icon(Icons.add),
-        ),
-      ),
-      Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        children: [
-          TextButton.icon(
-            onPressed: s.watchlist.isEmpty
-                ? null
-                : () => shareWatchTransfer(context),
-            icon: const Icon(Icons.ios_share, size: 18),
-            label: Text(s.t('导出自选')),
-          ),
-          TextButton.icon(
-            onPressed: () => showWatchImport(context, pickFile: true),
-            icon: const Icon(Icons.file_open_outlined, size: 18),
-            label: Text(s.t('导入自选文件')),
-          ),
-          TextButton.icon(
-            onPressed: () => showWatchImport(context),
-            icon: const Icon(Icons.playlist_add, size: 18),
-            label: Text(s.t('从其他App导入自选')),
-          ),
-        ],
-      ),
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            ChoiceChip(
-              label: Text(s.t('全部自选')),
-              selected: group == 'all',
-              onSelected: (_) => setState(() => group = 'all'),
-            ),
-            for (final g in s.groups)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: GestureDetector(
-                  onLongPress: () => editGroup(s, existing: g),
-                  child: ChoiceChip(
-                    label: Text(str(g['name'])),
-                    selected: group == g['id'],
-                    onSelected: (_) => setState(() => group = str(g['id'])),
-                  ),
-                ),
-              ),
-            IconButton(
-              tooltip: s.t('创建分组'),
-              onPressed: () => editGroup(s),
-              icon: const Icon(Icons.create_new_folder_outlined, size: 20),
-            ),
-          ],
-        ),
-      ),
       Row(
         children: [
           Expanded(
-            child: Chips(
-              values: const {'all': '全部', 'cn': 'A股', 'us': '美股'},
-              selected: filter,
-              onSelected: (v) => setState(() => filter = v),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ChoiceChip(
+                    label: Text(s.t('全部自选')),
+                    selected: group == 'all',
+                    onSelected: (_) => setState(() => group = 'all'),
+                  ),
+                  for (final g in s.groups)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: GestureDetector(
+                        onLongPress: () => editGroup(s, existing: g),
+                        child: ChoiceChip(
+                          label: Text(str(g['name'])),
+                          selected: group == g['id'],
+                          onSelected: (_) =>
+                              setState(() => group = str(g['id'])),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-          TextButton.icon(
-            onPressed: () =>
-                setState(() => sort = sort == 'manual' ? 'change' : 'manual'),
-            icon: const Icon(Icons.sort, size: 16),
-            label: Text(
-              s.t(sort == 'manual' ? '自定义排序' : '涨幅排序'),
-              style: const TextStyle(fontSize: 12),
+          IconButton(
+            tooltip: s.t('添加自选'),
+            onPressed: () => showStockSearch(context),
+            icon: const Icon(Icons.add),
+          ),
+          PopupMenuButton<String>(
+            tooltip: s.t('自选管理'),
+            icon: const Icon(Icons.more_horiz),
+            constraints: BoxConstraints(
+              maxWidth: 280,
+              maxHeight: MediaQuery.sizeOf(context).height * .62,
             ),
+            onSelected: (action) {
+              switch (action) {
+                case 'export':
+                  shareWatchTransfer(context);
+                case 'file':
+                  showWatchImport(context, pickFile: true);
+                case 'import':
+                  showWatchImport(context);
+                case 'group':
+                  editGroup(s);
+                case 'edit':
+                  editGroup(s, existing: selected);
+                case 'sort':
+                  setState(() => sort = sort == 'manual' ? 'change' : 'manual');
+                case 'all':
+                case 'cn':
+                case 'us':
+                  setState(() => filter = action);
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'group', child: Text(s.t('创建分组'))),
+              if (selected != null)
+                PopupMenuItem(value: 'edit', child: Text(s.t('编辑分组'))),
+              const PopupMenuDivider(),
+              for (final entry in const {
+                'all': '全部市场',
+                'cn': 'A股',
+                'us': '美股',
+              }.entries)
+                CheckedPopupMenuItem(
+                  value: entry.key,
+                  checked: filter == entry.key,
+                  child: Text(s.t(entry.value)),
+                ),
+              PopupMenuItem(
+                value: 'sort',
+                child: Text(s.t(sort == 'manual' ? '按涨幅排序' : '按自定义顺序')),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'export',
+                enabled: s.watchlist.isNotEmpty,
+                child: Text(s.t('导出自选')),
+              ),
+              PopupMenuItem(value: 'file', child: Text(s.t('导入自选文件'))),
+              PopupMenuItem(value: 'import', child: Text(s.t('从其他App导入自选'))),
+            ],
           ),
         ],
       ),
@@ -432,19 +444,29 @@ class _WatchPageState extends State<WatchPage> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Text(
-                                  fixed(q['price']),
-                                  style: TextStyle(
-                                    color: tone(q['changePercent']),
-                                    fontSize: 21,
-                                    fontWeight: FontWeight.w600,
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    fixed(q['price']),
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: tone(q['changePercent']),
+                                      fontSize: 21,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
-                                Text(
-                                  percent(q['changePercent']),
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: tone(q['changePercent']),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    percent(q['changePercent']),
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: tone(q['changePercent']),
+                                    ),
                                   ),
                                 ),
                               ],

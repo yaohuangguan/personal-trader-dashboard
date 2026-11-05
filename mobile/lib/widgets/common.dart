@@ -113,7 +113,7 @@ class LabelValue extends StatelessWidget {
       ),
       const SizedBox(height: 6),
       Text(
-        value,
+        tr(context, value),
         style: TextStyle(
           fontWeight: FontWeight.w600,
           color: color,
@@ -252,7 +252,7 @@ class Notice extends StatelessWidget {
       borderRadius: BorderRadius.circular(7),
     ),
     child: Text(
-      text,
+      tr(context, text),
       style: TextStyle(color: muted, fontSize: 14, height: 1.6),
     ),
   );
@@ -339,7 +339,11 @@ class DataTableView extends StatelessWidget {
           .map((c) => DataColumn(label: Text(tr(context, c))))
           .toList(),
       rows: data
-          .map((r) => DataRow(cells: r.map((v) => DataCell(Text(v))).toList()))
+          .map(
+            (r) => DataRow(
+              cells: r.map((v) => DataCell(Text(tr(context, v)))).toList(),
+            ),
+          )
           .toList(),
     ),
   );
@@ -389,7 +393,9 @@ class PeriodSelector extends StatelessWidget {
     super.key,
     required this.value,
     required this.onChanged,
+    this.intraday = true,
   });
+  final bool intraday;
   final String value;
   final ValueChanged<String> onChanged;
   @override
@@ -398,7 +404,7 @@ class PeriodSelector extends StatelessWidget {
     child: Row(
       children: [
         for (final pair in [
-          ('intraday', '分时'),
+          if (intraday) ('intraday', '分时'),
           ('day', '日 K'),
           ('week', '周 K'),
           ('month', '月 K'),
@@ -426,25 +432,29 @@ class PeriodSelector extends StatelessWidget {
               ),
             ),
           ),
-        Expanded(
-          child: PopupMenuButton<String>(
-            tooltip: tr(context, '分钟周期'),
-            onSelected: onChanged,
-            itemBuilder: (ctx) => [
-              for (final n in [5, 15, 30, 60, 120])
-                PopupMenuItem(value: 'm$n', child: Text('$n ${tr(ctx, '分钟')}')),
-            ],
-            child: Container(
-              alignment: Alignment.center,
-              child: Text(
-                value.startsWith('m') && value != 'month'
-                    ? '${value.substring(1)}m ▾'
-                    : '${tr(context, '周期')} ▾',
-                style: const TextStyle(fontSize: 14),
+        if (intraday)
+          Expanded(
+            child: PopupMenuButton<String>(
+              tooltip: tr(context, '分钟周期'),
+              onSelected: onChanged,
+              itemBuilder: (ctx) => [
+                for (final n in [5, 15, 30, 60, 120])
+                  PopupMenuItem(
+                    value: 'm$n',
+                    child: Text('$n ${tr(ctx, '分钟')}'),
+                  ),
+              ],
+              child: Container(
+                alignment: Alignment.center,
+                child: Text(
+                  value.startsWith('m') && value != 'month'
+                      ? '${value.substring(1)}m ▾'
+                      : '${tr(context, '周期')} ▾',
+                  style: const TextStyle(fontSize: 14),
+                ),
               ),
             ),
           ),
-        ),
       ],
     ),
   );

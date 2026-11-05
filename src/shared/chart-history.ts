@@ -12,5 +12,5 @@ export function mergeHistoryPage(current:Candle[],page:Pick<HistoryPage,'candles
 }
 
 export function validHistoryDate(value:string):boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value)&&value>='1990-01-01'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)&&value>='1900-01-01'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;
 }
