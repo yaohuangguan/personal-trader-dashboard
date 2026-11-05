@@ -1,3 +1,4 @@
+import worker from '../src/worker/index';
 import {chartStudy} from '../src/shared/chart-study';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -5,7 +6,6 @@ import {readFileSync} from 'node:fs';
 import {parseUSQuotes,parseUSHistory,usHistory} from '../src/worker/us-market';
 import {historyPage} from '../src/worker/chart-history';
 import {marketClock,newYorkTimestamp} from '../src/shared/market-clock';
-import {computeJSON} from '../src/shared/local-study';
 import {mergeHistoryPage} from '../src/shared/chart-history';
 
 function quoteText(time='2026-11-04 15:32:04'){
@@ -61,4 +61,21 @@ test('unadjusted, malformed and duplicate US history fails instead of creating s
  assert.throws(()=>parseUSHistory({qfqday:[],day:raw},'day'),/incomplete/);
  assert.throws(()=>parseUSHistory({qfqday:[raw[0],raw[0]]},'day'),/Invalid/);
  assert.throws(()=>parseUSHistory({qfqday:[['2024-06-07','','120','121','119','1']]},'day'),/Invalid/);
+});
+
+test('US analysis returns a verified frame and leaves shared technical studies to the client',async()=>{
+ const original=globalThis.fetch;
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/002472-20261020.json',import.meta.url),'utf8'));
+ globalThis.fetch=async input=>{
+  if(String(input).includes('qt.gtimg.cn'))return new Response(quoteText());
+  assert.ok(String(input).includes('/usfqkline/get'));
+  return Response.json({data:{'usNVDA.OQ':{qfqday:fixture.candles.map((c:{time:string;open:number;close:number;high:number;low:number;volume:number})=>[c.time,...[c.open,c.close,c.high,c.low,c.volume].map(String)])}}});
+ };
+ try{
+  const response=await worker.fetch(new Request('https://atlas/api/analysis?symbol=NVDA&ma=5,13,55'),{});
+  assert.equal(response.status,200);
+  const payload=await response.json() as {calculation:string;market:{symbol:string;candles:unknown[]};strategy?:unknown;maPeriods:number[]};
+  assert.equal(payload.calculation,'client');assert.equal(payload.market.symbol,'NVDA');assert.equal(payload.market.candles.length,Math.min(500,fixture.candles.length));
+  assert.deepEqual(payload.maPeriods,[5,13,55]);assert.equal(payload.strategy,undefined);
+ }finally{globalThis.fetch=original;}
 });
