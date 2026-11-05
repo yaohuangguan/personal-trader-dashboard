@@ -1,10 +1,11 @@
+import {supportedStock} from '../../shared/market-clock';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {Candle} from '../../shared/types';
 import {mergeHistoryPage,type HistoryPage} from '../../shared/chart-history';
 
 export function useChartHistory(initial:Candle[],symbol:string|undefined,unit:string,volumeUnit?:string){
   const key=symbol+':'+unit;
-  const enabled=!!symbol&&/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&['day','week','month'].includes(unit);
+  const enabled=!!symbol&&supportedStock(symbol)&&['day','week','month'].includes(unit);
   const [state,setState]=useState<{key:string;older:Candle[];hasMore:boolean;error:string;loading:boolean}>({key,older:[],hasMore:true,error:'',loading:false});
   const active=state.key===key?state:null;
   const overlap=active?.older.find(c=>c.time===initial[0]?.time);

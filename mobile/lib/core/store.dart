@@ -1,3 +1,5 @@
+import 'ui_translation.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -60,8 +62,8 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  String t(String key) =>
-      locale == 'en' ? (english[key]?.toString() ?? key) : key;
+  late final _translator = UITranslation(english);
+  String t(String key) => locale == 'en' ? _translator(key) : key;
   static Future<AtlasStore> load({
     AtlasApi? api,
     SharedPreferences? prefs,
@@ -96,7 +98,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> refreshQuotes() async {
     if (_running) return;
-    final symbols = watchlist.where(cnStock).toList();
+    final symbols = watchlist.where(supportedStock).toList();
     if (symbols.isEmpty) return;
     _running = true;
     try {

@@ -174,3 +174,7 @@ class ApiException implements Exception {
   @override
   String toString() => message;
 }
+
+bool supportedStock(String symbol) =>
+    cnStock(symbol) ||
+    RegExp(r'^[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)?$').hasMatch(symbol);

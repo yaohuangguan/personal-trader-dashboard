@@ -1,11 +1,12 @@
+import {marketClock} from './market-clock';
 import type {Candle} from './types';
 import {macd,kdj} from './chart-indicators';
 export type IndicatorMark={time:string;pane:'MACD'|'KDJ'|'VOL';kind:'golden'|'death'|'top-divergence'|'bottom-divergence'|'expansion'|'contraction';label:string;detail:string;value:number;bullish:boolean;provisional:boolean;anchorTime?:string};
 /** Swings require two right-hand bars. Divergence is dated at confirmation, never backdated to its pivot. */
-export function indicatorMarks(bars:Candle[],now=new Date()):IndicatorMark[]{
- const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(now),clock=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(now).replace(':',''));
+export function indicatorMarks(bars:Candle[],now=new Date(),symbol?:string):IndicatorMark[]{
+ const session=marketClock(now,symbol),date=session.date,clock=session.minute;
  const rows=bars.filter(b=>b.time.slice(0,10)<=date),out:IndicatorMark[]=[],md=new Map(macd(rows).map(p=>[p.time,p])),kd=new Map(kdj(rows).map(p=>[p.time,p]));
- const mark=(i:number,pane:IndicatorMark['pane'],kind:IndicatorMark['kind'],label:string,detail:string,value:number,bullish:boolean,anchorTime?:string)=>out.push({time:rows[i].time,pane,kind,label,detail,value,bullish,anchorTime,provisional:rows[i].time.length===10&&rows[i].time===date&&clock<1500});
+ const mark=(i:number,pane:IndicatorMark['pane'],kind:IndicatorMark['kind'],label:string,detail:string,value:number,bullish:boolean,anchorTime?:string)=>out.push({time:rows[i].time,pane,kind,label,detail,value,bullish,anchorTime,provisional:rows[i].time.length===10&&rows[i].time===date&&clock<session.close});
  for(const pane of ['MACD','KDJ'] as const){
   let peak=-1,trough=-1;const value=(i:number)=>pane==='MACD'?md.get(rows[i]?.time)?.dif:kd.get(rows[i]?.time)?.k,slow=(i:number)=>pane==='MACD'?md.get(rows[i]?.time)?.dea:kd.get(rows[i]?.time)?.d;
   for(let i=1;i<rows.length;i++){
@@ -26,6 +27,6 @@ export function indicatorMarks(bars:Candle[],now=new Date()):IndicatorMark[]{
   }
  }
  let sum=0,last=-99;
- for(let i=0;i<rows.length;i++){if(i>=20){const base=sum/20,ratio=base?rows[i].volume/base:0,provisional=rows[i].time===date&&clock<1500;if(i-last>=3&&(ratio>=1.5||ratio<=.65&&!provisional)){const up=rows[i].close>=rows[i-1].close,expand=ratio>=1.5;mark(i,'VOL',expand?'expansion':'contraction',(expand?'放量':'缩量')+(up?'上涨':'回落'),`已发生量/此前20根均量=${ratio.toFixed(2)}倍；${provisional?'当前K线未收盘，不能外推全天量。':expand&&!up?'放量回落提示抛压，核验承接。':!expand&&!up?'缩量回落不能单独证明洗盘。':'继续结合收盘位置与支撑。'}`,rows[i].volume,expand&&up||!expand&&!up);last=i;}}if(i>=20)sum-=rows[i-20].volume;sum+=rows[i].volume;}
+ for(let i=0;i<rows.length;i++){if(i>=20){const base=sum/20,ratio=base?rows[i].volume/base:0,provisional=rows[i].time===date&&clock<session.close;if(i-last>=3&&(ratio>=1.5||ratio<=.65&&!provisional)){const up=rows[i].close>=rows[i-1].close,expand=ratio>=1.5;mark(i,'VOL',expand?'expansion':'contraction',(expand?'放量':'缩量')+(up?'上涨':'回落'),`已发生量/此前20根均量=${ratio.toFixed(2)}倍；${provisional?'当前K线未收盘，不能外推全天量。':expand&&!up?'放量回落提示抛压，核验承接。':!expand&&!up?'缩量回落不能单独证明洗盘。':'继续结合收盘位置与支撑。'}`,rows[i].volume,expand&&up||!expand&&!up);last=i;}}if(i>=20)sum-=rows[i-20].volume;sum+=rows[i].volume;}
  return out.sort((a,b)=>a.time.localeCompare(b.time));
 }

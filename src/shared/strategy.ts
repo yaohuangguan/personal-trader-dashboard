@@ -1,3 +1,4 @@
+import {marketClock} from './market-clock';
 import {patternMarks,type PatternMark} from './pattern-marks';
 import {analyzeTrendRegimes} from './trend-regime';
 import {withStrategyEvidence} from './strategy-evidence';
@@ -23,9 +24,9 @@ const clamp=(n:number,lo=0,hi=1)=>Math.max(lo,Math.min(hi,n));
 const blank=(asOf:string|null,provisional:boolean):StrategyPlan=>({kind:'wait',label:'等待有效结构',action:'观望',direction:'neutral',score:0,structureScore:0,exitRisk:0,phase:'base',flat:{action:'观望',reason:'等待有效量价证据。'},holding:{action:'核验支撑',reason:'尚不能建立有效的结构风控计划。'},setup:null,followUp:null,holdingStop:null,metrics:null,patternEvidence:[],maPeriods:[...CLASSIC_MA],parts:[],provisional,asOf,entry:null,stop:null,targets:[],riskPct:null,reasons:[],checks:[],warnings:[]});
 /** Prefix-only observations. A broken plan can be replaced by a separately dated recovery. */
 export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string;amount?:number|null;maPeriods?:number[];name?:string}={}):StrategyAnalysis{
- const now=options.now||new Date(),clock=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now),part=(key:string)=>clock.find(p=>p.type===key)?.value||'',today=`${part('year')}-${part('month')}-${part('day')}`,minute=Number(part('hour'))*60+Number(part('minute'));
+ const now=options.now||new Date(),clock=marketClock(now,options.symbol),today=clock.date,minute=clock.minute;
  const rows=input.filter(c=>c.time<=today).slice().sort((a,b)=>a.time.localeCompare(b.time));
- const provisional=rows.at(-1)?.time===today&&minute<900,signals:StrategySignal[]=[],alerts:TimingAlert[]=[],riskStops:{time:string;price:number}[]=[],timeline:StrategyAnalysis['timeline']=[],episodes:SetupEpisode[]=[];
+ const provisional=rows.at(-1)?.time===today&&minute<clock.close,signals:StrategySignal[]=[],alerts:TimingAlert[]=[],riskStops:{time:string;price:number}[]=[],timeline:StrategyAnalysis['timeline']=[],episodes:SetupEpisode[]=[];
  let plan=blank(rows.at(-1)?.time||null,!!provisional);
  const method='量价结构信号只使用当时已知日线；回踩不等于买点，破位后允许新证据建立修复计划。买点分衡量当前入场条件，结构质量与退出风险单列，均非收益概率。初始失效价参考启动实体半位与ATR，回踩转强参考已发生的回踩低点；2R/3R是风险预算刻度，不能视为预测目标。盘中仅预警，条件失效可撤销。买入观察/卖预警与已确认买卖点分层显示，观察信号不参与历史成交统计。形态识别与量价、动能、位置和风控共用同一因果链，单独形态不代表买卖。历史标记不含未保存的当时板块、资金和情绪，不能冒充完整综合决策或真实持仓。';
  const valid=rows.every((c,i)=>/^\d{4}-\d{2}-\d{2}$/.test(c.time)&&[c.open,c.high,c.low,c.close,c.volume].every(Number.isFinite)&&c.low>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)&&c.volume>=0&&(!i||c.time>rows[i-1].time));
@@ -34,7 +35,7 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
  rows.forEach((c,i)=>{sums.push(sums[i]+c.close);volumes.push(volumes[i]+c.volume);ranges.push(ranges[i]+Math.max(c.high-c.low,Math.abs(c.high-(rows[i-1]?.close??c.open)),Math.abs(c.low-(rows[i-1]?.close??c.open))));});
  const selected=maPeriods(options.maPeriods),decisionPeriod=maRole(selected,60),trendPeriod=maRole(selected,20),rawMA=(p:number,i:number)=>i+1>=p?(sums[i+1]-sums[i+1-p])/p:NaN,ma=(p:number,i:number)=>rawMA(maRole(selected,p),i);
  const shapeMap=new Map<string,PatternMark[]>(),indicatorMap=new Map<string,ReturnType<typeof indicatorMarks>>();
- const shapes=patternMarks(rows,now,{symbol:options.symbol,name:options.name,maPeriods:selected}),oscillatorMarks=indicatorMarks(rows,now);
+ const shapes=patternMarks(rows,now,{symbol:options.symbol,name:options.name,maPeriods:selected}),oscillatorMarks=indicatorMarks(rows,now,options.symbol);
  for(const mark of shapes)shapeMap.set(mark.time,[...(shapeMap.get(mark.time)||[]),mark]);
  for(const mark of oscillatorMarks)indicatorMap.set(mark.time,[...(indicatorMap.get(mark.time)||[]),mark]);
  const entryShapes=new Set(['multi','spider','cannon','pointer-confirmed','double-bottom','head-shoulders-bottom','rounding-bottom','old-duck','bear-trap-reclaim','morning-star','bull-engulf','breakout','reclaim','island-bottom','beauty-breakout']);
@@ -160,6 +161,6 @@ export function analyzeStrategy(input:Candle[],options:{now?:Date;symbol?:string
   }
   if(!localProvisional&&phase!==lastPhase){timeline.push({date:c.time,phase,label,reason:flat.reason});lastPhase=phase;}
  }
- const trends=analyzeTrendRegimes(rows,{now,maPeriods:selected});
+ const trends=analyzeTrendRegimes(rows,{now,maPeriods:selected,symbol:options.symbol});
  return withStrategyEvidence({version:STRATEGY_VERSION,plan,signals,alerts,riskStops,timeline,episodes:episodes.slice(-6),method},shapes,oscillatorMarks,{symbol:options.symbol,name:options.name,maPeriods:selected},now,trends.marks,trends.regimes);
 }

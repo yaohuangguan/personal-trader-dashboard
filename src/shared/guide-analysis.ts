@@ -1,3 +1,4 @@
+import {marketClock} from './market-clock';
 import type { Candle } from './types';
 import { sma, macd, kdj } from './chart-indicators';
 
@@ -32,19 +33,14 @@ export function adhesionCoefficient(values: number[]): number | null {
 export function adhesionLabel(value: number | null) {
   return value === null ? '历史不足' : value < 2 ? '极致粘合' : value < 5 ? '紧密粘合' : value < 10 ? '松散粘合' : '发散状态';
 }
-function beijing(at: Date) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(at);
-  const get = (key: string) => parts.find(p => p.type === key)!.value;
-  return { date: `${get('year')}-${get('month')}-${get('day')}`, minute: Number(get('hour')) * 60 + Number(get('minute')) };
-}
 function validCandles(input: Candle[]) {
   const rows = input.slice().sort((a, b) => a.time.localeCompare(b.time));
   return rows.every((c, i) => /^\d{4}-\d{2}-\d{2}$/.test(c.time) && Number.isFinite(Date.parse(c.time + 'T00:00:00Z')) && (!i || c.time !== rows[i - 1].time) && [c.open, c.high, c.low, c.close, c.volume].every(Number.isFinite) && Math.min(c.open, c.low, c.close) > 0 && c.volume >= 0 && c.low <= Math.min(c.open, c.close) && c.high >= Math.max(c.open, c.close)) ? rows : [];
 }
 
 /** A causal checklist implementing the user's guide; never a calibrated win probability. */
-export function analyzeGuide(input: Candle[], options: { now?: Date; settings?: Partial<GuideSettings> } = {}): GuideAnalysis {
-  const clock = beijing(options.now ?? new Date());
+export function analyzeGuide(input: Candle[], options: { now?: Date; symbol?:string; settings?: Partial<GuideSettings> } = {}): GuideAnalysis {
+  const clock = marketClock(options.now,options.symbol);
   const settings = { ...GUIDE_DEFAULTS, ...options.settings }, candles = validCandles(input).filter(c => c.time <= clock.date), n = candles.length;
   const allPeriods = [3, 5, 6, 10, 12, 20, 24, 30, 60, 90, 120, 250];
   const series = Object.fromEntries(allPeriods.map(p => [p, new Map(sma(candles, p).map(v => [v.time, v.value]))])) as Record<number, Map<string, number>>;
@@ -80,7 +76,7 @@ export function analyzeGuide(input: Candle[], options: { now?: Date; settings?: 
     return { count, ratio, gain, crosses, rules, launch: rules.filter(r => r.required).every(r => r.state === 'pass') };
   }
   const time = clock, last = candles.at(-1);
-  const provisional = !!last && last.time === time.date && time.minute < 900;
+  const provisional = !!last && last.time === time.date && time.minute < clock.close;
   const lastClosed = n - 1 - Number(provisional), events: GuideEvent[] = [];
   for (let i = 64; i <= lastClosed; i++) {
     if (!inspect(i).launch) continue;
@@ -135,14 +131,14 @@ export function analyzeGuide(input: Candle[], options: { now?: Date; settings?: 
   return { currentLaunch:!!current?.launch, ready, available: n, required: 65, asOf: last?.time ?? null, provisional, stage, rules: focus?.rules ?? [], events: events.slice(-12), event, ma, adhesionPct: coefficient(n - 1), adhesionLabel: adhesionLabel(coefficient(n - 1)), priorAdhesionBars: current?.count ?? 0, volumeRatio: current?.ratio ?? null, bias60, launchGainPct: current?.gain ?? null, latestVolume: last?.volume ?? null, pullback, crossedLines: current?.crosses ?? 0, sevenLineCrosses: last && [5, 10, 20, 30, 60, 120, 250].every(p => ma[p] !== null) ? [5, 10, 20, 30, 60, 120, 250].filter(p => last.open <= ma[p]! && last.close >= ma[p]!).length : null, risks, supporting, dimensions, settings, warnings: [ ...(input.length && !n ? ['存在无效或重复OHLCV，停止判断'] : []), ...(!ready ? ['核心至少需65根有效日线；长周期背景另需250根'] : []), ...(provisional ? ['最后一根日线未收盘，盘中形态不计为已确认信号'] : []), '条件命中不代表回测胜率；不把主力意图从价格形态推定为事实。' ] };
 }
 
-export function closedPeriodCandles(input: Candle[], unit: 'week' | 'month', now = new Date()) {
-  const t = beijing(now), date = new Date(t.date + 'T00:00:00Z');
+export function closedPeriodCandles(input: Candle[], unit: 'week' | 'month', now = new Date(),symbol?:string) {
+  const t = marketClock(now,symbol), date = new Date(t.date + 'T00:00:00Z');
   return validCandles(input).filter(c => {
     if (c.time > t.date) return false;
     const d = new Date(c.time + 'T00:00:00Z');
     if (unit === 'month') return c.time.slice(0, 7) < t.date.slice(0, 7);
     const monday = (v: Date) => v.getTime() - ((v.getUTCDay() + 6) % 7) * 86400000;
-    return monday(d) < monday(date) || monday(d) === monday(date) && (date.getUTCDay() === 6 || date.getUTCDay() === 0 || date.getUTCDay() === 5 && t.minute >= 900);
+    return monday(d) < monday(date) || monday(d) === monday(date) && (date.getUTCDay() === 6 || date.getUTCDay() === 0 || date.getUTCDay() === 5 && t.minute >= t.close);
   });
 }
 

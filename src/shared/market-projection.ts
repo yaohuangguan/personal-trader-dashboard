@@ -1,3 +1,4 @@
+import {marketClock,isUSStock} from './market-clock';
 import type {Candle} from './types';
 import {maPeriods,maRole} from './ma-system';
 export type ProjectionScenario={id:'base'|'bull'|'bear';label:string;candles:Candle[];explanation?:string;source?:{from:string;to:string;distance:number|null};endReturn?:number;maxDrawdown?:number};
@@ -11,9 +12,9 @@ type State={id:'breakout'|'up'|'down'|'pullback'|'range';label:string;direction:
 type Neighbor={i:number;distance:number};
 type Path={candles:Candle[];weight:number;source:{from:string;to:string;distance:number|null};end:number;drawdown:number};
 /** Current-session volume is incomplete; estimate activity without treating it as a full trading day. */
-function sessionFraction(now:Date,unit:string){
- const cn=new Date(now.getTime()+480*60000),m=cn.getUTCHours()*60+cn.getUTCMinutes();
- const part=clamp((Math.min(120,Math.max(0,m-570))+Math.min(120,Math.max(0,m-780)))/240,.15,1);
+function sessionFraction(now:Date,unit:string,symbol?:string){
+ const clock=marketClock(now,symbol),cn=new Date(clock.date+'T12:00:00Z'),m=clock.minute;
+ const part=isUSStock(symbol)?clamp((m-570)/390,.15,1):clamp((Math.min(120,Math.max(0,m-570))+Math.min(120,Math.max(0,m-780)))/240,.15,1);
  if(unit==='day')return part;
  if(unit==='week')return clamp((Math.max(0,cn.getUTCDay()-1)+part)/5,.1,1);
  if(unit==='month'){
@@ -25,12 +26,12 @@ function sessionFraction(now:Date,unit:string){
 /** Prefix-only features, whole-path medoids and bounded moving-block fallback. No network or random price jitter. */
 export function projectMarket(input:Candle[],options:{horizon?:number;maPeriods?:number[];now?:Date;unit?:string;symbol?:string;name?:string}={}):MarketProjection{
  const horizon=[5,10,15,20].includes(options.horizon||0)?options.horizon!:10,now=options.now||new Date();
- const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai'}).format(now),unit=options.unit||'day';
- const bars=input.filter(c=>c.time.slice(0,10)<=day),last=bars.at(-1),clock=(now.getUTCHours()*60+now.getUTCMinutes()+480)%1440;
- const provisional=last?.time.slice(0,10)===day&&clock<900;
+ const session=marketClock(now,options.symbol),day=session.date,unit=options.unit||'day';
+ const bars=input.filter(c=>c.time.slice(0,10)<=day),last=bars.at(-1),clock=session.minute;
+ const provisional=last?.time.slice(0,10)===day&&clock<session.close;
  const result:MarketProjection={available:false,asOf:last?.time||null,anchor:last?.close||null,horizon,model:'rules',sampleCount:0,points:[],scenarios:[],unit,support:null,resistance:null,conditions:[],notice,provisional};
  if(bars.length<65||bars.some((b,i)=>![b.open,b.high,b.low,b.close,b.volume].every(Number.isFinite)||b.low<=0||b.volume<0||b.high<Math.max(b.open,b.close)||b.low>Math.min(b.open,b.close)||i>0&&b.time<=bars[i-1].time)){result.reason='需要至少65根同一复权基准的有效K线';return result;}
- const at=bars.length-1,known=provisional?at-1:at,fraction=provisional?sessionFraction(now,unit):1;
+ const at=bars.length-1,known=provisional?at-1:at,fraction=provisional?sessionFraction(now,unit,options.symbol):1;
  const volume=bars.map((b,i)=>b.volume/(i===at?fraction:1)),sums=[0],vol=[0],tr=[0],moves=[0];
  bars.forEach((b,i)=>{sums.push(sums[i]+b.close);vol.push(vol[i]+volume[i]);tr.push(tr[i]+Math.max(b.high-b.low,i?Math.abs(b.high-bars[i-1].close):0,i?Math.abs(b.low-bars[i-1].close):0));moves.push(moves[i]+(i?Math.abs(b.close-bars[i-1].close):0));});
  const periods=maPeriods(options.maPeriods),fast=maRole(periods,5),short=maRole(periods,13),mid=maRole(periods,30),anchorMA=maRole(periods,60);

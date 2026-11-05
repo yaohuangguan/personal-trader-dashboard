@@ -1,3 +1,4 @@
+import {t as copyText} from '../preferences';
 import type {CandidateNow} from '../../shared/candidate-now';
 import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Download,Pause,Play,RefreshCw,Sparkles,SlidersHorizontal,CheckCircle2} from 'lucide-react';
@@ -50,7 +51,7 @@ export default function ScreenerWorkspace({active=true,onOpen,watchlist,onStock,
    {(error||scan.storageError)&&<p className="screen-warning" role="alert">{error||scan.storageError}</p>}
    {manual&&<section className="screen-progress" aria-live="polite"><div><b>{t(state.phase==='complete'?'当前范围处理完毕':state.phase==='universe'?'读取证券池':state.phase==='paused'?'已暂停':'并行核验历史日线')}</b><span>{state.cursor}/{state.targets.length} · {state.candidates.length} {t('个候选')}</span></div><progress max={state.phase==='universe'?state.total||1:state.targets.length||1} value={state.phase==='universe'?state.universe.length:state.cursor}/><small>{t(state.message)} · {t('来源失败')} {state.failed.length}</small></section>}
    <section className="screen-results"><div className="screen-results-heading"><div><h2>{t(auto?'综合排名':'形态候选')} <span>{rows.length}</span></h2><small>{t('不是所有技法同时满足；按各自条件独立识别。')}</small></div><label><SlidersHorizontal size={16}/><input aria-label={t('筛选候选')} placeholder={t('名称或代码')} value={query} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label></div>
-    <p className="screen-source-note">结构分保留收盘日期，价格与涨跌采用当前快照；只更新当前页候选，不重扫全市场。 <button disabled={quoteBusy} onClick={()=>setQuoteVersion(v=>v+1)}>{quoteBusy?'核验当前行情…':'更新当前行情'}</button> {quoteError}</p><div className="screen-candidate-grid">{shown.map((c,i)=><CandidateCard key={c.symbol} row={c} live={currentQuotes[c.symbol]} rank={current*40+i+1} watched={watchlist.includes(c.symbol)} onStock={onStock} onWatch={onWatch}/>)}</div>
+    <p className="screen-source-note">{copyText("结构分保留收盘日期，价格与涨跌采用当前快照；只更新当前页候选，不重扫全市场。")} <button disabled={quoteBusy} onClick={()=>setQuoteVersion(v=>v+1)}>{copyText(quoteBusy?'核验当前行情…':'更新当前行情')}</button> {quoteError}</p><div className="screen-candidate-grid">{shown.map((c,i)=><CandidateCard key={c.symbol} row={c} live={currentQuotes[c.symbol]} rank={current*40+i+1} watched={watchlist.includes(c.symbol)} onStock={onStock} onWatch={onWatch}/>)}</div>
     {!rows.length&&<div className="screen-empty">{t(loading?'正在读取共享收盘报告…':busy?'候选会随核验进度出现。':report||manual?'当前条件没有命中，结果保持为空。':'共享收盘报告尚未生成，可先进行扫描全市场。')}</div>}
     {count>1&&<div className="screen-pagination"><button disabled={current===0} onClick={()=>setPage(current-1)}>{t('上一页')}</button><span>{current+1}/{count}</span><button disabled={current>=count-1} onClick={()=>setPage(current+1)}>{t('下一页')}</button></div>}
    </section>

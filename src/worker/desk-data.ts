@@ -1,3 +1,5 @@
+import {isUSStock} from '../shared/market-clock';
+import {usQuotes} from './us-market';
 import {parseMinuteBars,aggregate120} from '../shared/minute-bars';
 import {observeFlow} from '../shared/flow-observation';
 import type {FlowPayload,FlowPoint} from '../shared/desk-types';
@@ -85,7 +87,14 @@ export function parseQuotes(text: string, now = new Date()): Snapshot[] {
   }
   return result;
 }
-export async function quotes(symbols: string[], signal?:AbortSignal) {
+export async function quotes(symbols: string[], signal?:AbortSignal):Promise<import('../shared/desk-types').QuotesPayload> {
+  const us=symbols.filter(isUSStock),cn=symbols.filter(s=>!isUSStock(s));
+  if(us.length){
+    const results=await Promise.allSettled([cn.length?quotes(cn,signal):Promise.resolve(null),usQuotes(us,signal)]);
+    const feeds=results.flatMap(r=>r.status==='fulfilled'&&r.value?[r.value]:[]),items=feeds.flatMap(f=>f.items);
+    if(!items.length)throw new Error('行情源没有返回有效快照');
+    return {...stamp('腾讯财经公开快照',feeds.map(f=>f.sourceUrl).join(' | ')),items,unavailable:symbols.filter(s=>!items.some(q=>q.symbol===s)),level2:false as const,depth:5 as const};
+  }
   const resolved = symbols.map(chineseSymbol), url = 'https://qt.gtimg.cn/q=' + resolved.map(s => s.wire).join(',');
   const response = await request(url,9000,signal);
   const items = parseQuotes(new TextDecoder('gbk').decode(await response.arrayBuffer()));

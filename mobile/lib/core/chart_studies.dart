@@ -29,9 +29,8 @@ class ChartStudies {
   final _pending = <String, Future<Json>>{}, _results = <String, String>{};
   final _frames = <String, Json>{};
   Future<Json> compute(Json input) async {
-    final cn = DateTime.now().toUtc().add(const Duration(hours: 8));
     final key =
-        '${jsonEncode(input)}:${cn.toIso8601String().substring(0, 10)}:${cn.hour < 15}';
+        '${jsonEncode(input)}:${DateTime.now().toUtc().millisecondsSinceEpoch ~/ 60000}';
     final cached = _results[key];
     if (cached != null) return obj(jsonDecode(cached));
     final pending = _pending[key];

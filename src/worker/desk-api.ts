@@ -1,3 +1,5 @@
+import {isUSStock,supportedStock} from '../shared/market-clock';
+import {usHistory} from './us-market';
 import {candidateNow,type CandidateReference} from '../shared/candidate-now';
 import {sectorMap,sectorDetail,sectorNews} from './sector-map';
 import {loadSessionReview} from './session-review';
@@ -48,7 +50,7 @@ export async function deskRoute(request: Request): Promise<Response | null> {
     if(kind==='screen-batch'){const symbols=[...new Set((url.searchParams.get('symbols')||'').split(','))];if(!symbols.length||symbols.length>4||symbols.some(s=>!/^\d{6}\.(SH|SZ|BJ)$/.test(s)))return respond({error:'请提供1至4个证券代码'},400);return respond(await patternBatch(symbols,url.searchParams));}
     if (kind === 'quotes') {
       const symbols = [...new Set((url.searchParams.get('symbols') || '').split(',').filter(Boolean))].sort();
-      if (!symbols.length || symbols.length > 60 || symbols.some(s => !/^\d{6}\.(SH|SZ|BJ)$/.test(s))) return respond({ error: '请提供1至60个带市场后缀的证券代码' }, 400);
+      if (!symbols.length || symbols.length > 60 || symbols.some(s => !supportedStock(s))) return respond({ error: '请提供1至60个带市场后缀的证券代码' }, 400);
       return respond(await memo('quotes:' + symbols.join(','), 3, () => quotes(symbols)));
     }
     if(kind==='gainers')return respond(await memo('gainers',45,gainers));
@@ -63,6 +65,11 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       if (! /^(?:BK\d{4,6}|SN:new_[a-z0-9]{2,20}|SN:gn_[A-Za-z0-9_]{1,40})$/.test(code)) return respond({ error: '无效板块代码' }, 400);
       const name=(url.searchParams.get('name')||'').slice(0,40);
       return respond(await memo('peers:' + code+':'+name, 45, () => peers(code,name)));
+    }
+    if(kind==='history'&&isUSStock(symbol)){
+      const period=url.searchParams.get('period')||'',before=url.searchParams.get('before');
+      if(!['day','week','month'].includes(period)||before!==null&&!validHistoryDate(before))return respond({error:'Invalid US history period or cursor'},400);
+      return respond(await memo<unknown>('us-history:'+symbol+':'+period+':'+(before||''),600,()=>before?historyPage(symbol,period,before):usHistory(symbol,period)));
     }
     if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) return respond({ available: false, reason: '此公开接口暂只覆盖沪深北市场，其他市场使用原有授权行情源。' }, 400);
     if(kind==='insight')return respond(await memo('insight:'+symbol,30,()=>watchInsight(symbol)));

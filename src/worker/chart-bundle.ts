@@ -1,3 +1,4 @@
+import {isUSStock} from '../shared/market-clock';
 import type {MarketPayload} from '../shared/types';
 import {chartStudy} from '../shared/chart-study';
 import {chartPayload} from './chart-payload';
@@ -7,7 +8,7 @@ import type {Snapshot} from '../shared/desk-types';
 /** First paint has one consistent price/study snapshot; optional review sources are not prerequisites. */
 export async function loadChartFrame(symbol:string,loadMarket:()=>Promise<MarketPayload>,loadQuote:()=>Promise<Snapshot|undefined>,now=new Date()){
  const [original,quote]=await Promise.all([loadMarket(),loadQuote().catch(()=>undefined)]);
- const unit:'股'|'手'=original.provider.includes('新浪')||/^68[89]/.test(symbol)?'股':'手';
+ const unit:'股'|'手'=isUSStock(symbol)||original.provider.includes('新浪')||/^68[89]/.test(symbol)?'股':'手';
  const patched=quote?patchSession({candles:original.candles,provider:original.provider},quote,unit):null;
  const market:MarketPayload=patched&&quote?{...original,candles:patched.candles,last:quote.price,previous:quote.previous,change:quote.change,changePercent:quote.changePercent,asOf:quote.asOf.slice(0,10),name:quote.name}:original;
  // Reject a conflicting quote as a pair, rather than letting the client patch the verified chart again.

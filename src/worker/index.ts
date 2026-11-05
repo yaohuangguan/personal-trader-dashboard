@@ -1,3 +1,6 @@
+import {isUSStock,supportedStock} from '../shared/market-clock';
+import {usHistory} from './us-market';
+import {computeJSON} from '../shared/local-study';
 import {chartStudy} from '../shared/chart-study';
 import {projectMarket} from '../shared/market-projection';
 import {loadChartBundle,loadChartFrame} from './chart-bundle';
@@ -138,6 +141,10 @@ async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  if(!source&&symbol.endsWith('.BJ')){
   try{source=await sinaBeijingDaily(symbol);provider='新浪公开日线（北交所，不复权）';notice='公开日线，不复权；送转和除权可能影响均线结构，需复核。成交量为股。';}
   catch(e){failure+=' Sina BJ: '+(e instanceof Error?e.message:String(e));}
+ }
+ if(!source&&isUSStock(symbol)){
+  try{source=await usHistory(symbol,'day');provider='腾讯财经美股前复权日线';notice='美股前复权OHLC，成交量为原始股数；USD，交易日按纽约时区。公开延迟数据。';}
+  catch(e){failure+=' Tencent US: '+String(e);}
  }
  if(!source){
   try{
@@ -516,15 +523,15 @@ export default {
    const synced=await watchSyncRoute(request,env.MARKET_SCANNER);if(synced)return synced;
    if(new URL(request.url).pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
-    const raw=await request.text();if(raw.length>300000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
-    if(!Array.isArray(body.candles)||body.candles.length>1500||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
+    const raw=await request.text();if(raw.length>2500000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
+    if(!Array.isArray(body.candles)||body.candles.length>20000||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
     const ma=body.ma.length?parseMAPeriods(body.ma.join(',')):[];
     if(body.task==='projection')return computeCache(request,'projection-v2:'+studySession()+':'+raw,60,()=>json({projection:projectMarket(body.candles,{maPeriods:ma,horizon:body.horizon,unit:body.unit,symbol:body.symbol,name:body.name})}));
     return computeCache(request,'chart-study-v6:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
    }
    if(incoming.pathname==='/api/chart-frame'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
-    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
     return computeCache(request,'chart-frame-v1:'+studySession()+symbol,2,async()=>json(await loadChartFrame(symbol,()=>cached('mobile-analysis:'+symbol,60,()=>historicalSnapshot(incoming.origin,symbol,()=>market(symbol,env))),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
    }
    if(incoming.pathname==='/api/review-context'){
@@ -534,7 +541,7 @@ export default {
    }
    if(incoming.pathname==='/api/chart-bundle'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
-    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
     const periods=parseMAPeriods(incoming.searchParams.get('ma'))??CLASSIC_MA;
     return computeCache(request,'chart-bundle-v3:'+studySession()+JSON.stringify([symbol,periods]),3,async()=>json(await loadChartBundle(symbol,periods,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
    }
@@ -567,7 +574,16 @@ export default {
    if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,async()=>await deskRoute(request)||json({error:'Not found'},404));
    const desk=await deskRoute(request);if(desk)return desk;
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
-    const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
+    const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');
+    if(isUSStock(symbol)){
+      const ma=parseMAPeriods(p.get('ma'))??CLASSIC_MA;
+      return computeCache(request,'us-analysis-v1:'+studySession()+JSON.stringify([symbol,ma]),15,async()=>{
+        const frame=await loadChartFrame(symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
+        const study=JSON.parse(computeJSON(JSON.stringify({symbol,ma,candles:frame.market.candles,market:frame.market,quote:frame.quote})));
+        return json(study.analysis);
+      });
+    }
+    if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
     const periods=parseMAPeriods(p.get('ma'));
     return computeCache(request,'analysis-v5:'+studySession()+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,()=>handle(request,env));
    }

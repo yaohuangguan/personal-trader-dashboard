@@ -258,8 +258,9 @@ void main() {
     expect(find.text('市场全景'), findsWidgets);
     await tester.tap(find.byIcon(Icons.star_outline).last);
     await tester.pumpAndSettle();
-    expect(find.text('我的自选'), findsWidgets);
-    final theme = Theme.of(tester.element(find.text('我的自选').first));
+    expect(find.text('全部自选'), findsWidgets);
+    expect(find.text('我的自选'), findsNothing);
+    final theme = Theme.of(tester.element(find.text('全部自选').first));
     expect(theme.textTheme.headlineSmall?.color, const Color(0xffeeeef4));
     expect(theme.textTheme.bodyMedium?.color, const Color(0xffeeeef4));
     await tester.tap(find.text('300545.SZ').first);
@@ -313,8 +314,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.sensors).last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Monitor settings'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Monitor settings'));
     await tester.pumpAndSettle();
+
     expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

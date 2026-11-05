@@ -1,3 +1,4 @@
+import {marketClock} from './market-clock';
 import type {Candle} from './types';
 import type {PatternMark} from './pattern-marks';
 import {maPeriods,maRole} from './ma-system';
@@ -8,8 +9,8 @@ export type TrendRegime={scale:'short'|'swing';label:string;direction:TrendDirec
 type Side=-1|0|1;
 const name=(side:Side)=>side===1?'上涨':side===-1?'下跌':'震荡';
 /** Direction is an observed regime, not a forecast, entry signal or a retrospectively selected extremum. */
-export function analyzeTrendRegimes(input:Candle[],options:{now?:Date;maPeriods?:number[]}={}){
- const cn=new Date((options.now||new Date()).getTime()+28800000),day=cn.toISOString().slice(0,10),forming=cn.getUTCHours()<15;
+export function analyzeTrendRegimes(input:Candle[],options:{now?:Date;maPeriods?:number[];symbol?:string}={}){
+ const clock=marketClock(options.now,options.symbol),day=clock.date,forming=clock.minute<clock.close;
  const bars=input.filter(b=>b.time<=day),marks:PatternMark[]=[],regimes:TrendRegime[]=[],selected=maPeriods(options.maPeriods);
  if(bars.some((b,i)=>![b.open,b.high,b.low,b.close,b.volume].every(Number.isFinite)||b.low<=0||b.high<Math.max(b.open,b.close)||b.low>Math.min(b.open,b.close)||b.volume<0||i>0&&b.time<=bars[i-1].time))return {version:TREND_RULE_VERSION,marks,regimes};
  // Constant-time window statistics. No scan of future bars and no full-strategy reruns.
