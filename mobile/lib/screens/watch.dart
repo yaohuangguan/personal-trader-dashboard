@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../core/api.dart';
 import '../core/store.dart';
+import '../core/watch_insights.dart';
 import '../widgets/common.dart';
 import 'stock.dart';
 
@@ -99,7 +100,36 @@ class WatchPage extends StatefulWidget {
 }
 
 class _WatchPageState extends State<WatchPage> {
-  String filter = 'all', sort = 'manual', group = 'all';
+  String filter = 'all', sort = 'manual', group = 'all', phase = 'all';
+  Timer? insightTimer;
+  bool get preset => group == '@trend' || group == '@five';
+  @override
+  void initState() {
+    super.initState();
+    insightTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      final s = context.read<AtlasStore>();
+      if (preset &&
+          s.foreground &&
+          (ModalRoute.of(context)?.isCurrent ?? true)) {
+        s.watchInsights.loadMany(s.watchlist);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    insightTimer?.cancel();
+    super.dispose();
+  }
+
+  void selectGroup(String value) {
+    setState(() => group = value);
+    if (preset) {
+      final s = context.read<AtlasStore>();
+      s.watchInsights.loadMany(s.watchlist);
+    }
+  }
+
   Future<void> editGroup(AtlasStore s, {Json? existing}) async {
     final c = TextEditingController(text: str(existing?['name'], ''));
     String? error;
@@ -219,12 +249,28 @@ class _WatchPageState extends State<WatchPage> {
               (filter == 'all' || (filter == 'cn' ? cnStock(v) : !cnStock(v))),
         )
         .toList();
-    if (sort == 'change') {
+    if (group == '@trend') {
+      final ranked = rankWatch(list, s.watchInsights.values);
+      list
+        ..clear()
+        ..addAll(ranked);
+    } else if (sort == 'change') {
       list.sort(
         (a, b) => (numOf(s.quotes[b]?['changePercent']) ?? -999).compareTo(
           numOf(s.quotes[a]?['changePercent']) ?? -999,
         ),
       );
+    }
+    final phaseCounts = {
+      for (final key in watchPhases.keys)
+        key: key == 'all'
+            ? list.length
+            : list
+                  .where((v) => watchPhase(s.watchInsights.values[v]) == key)
+                  .length,
+    };
+    if (group == '@five' && phase != 'all') {
+      list.removeWhere((v) => watchPhase(s.watchInsights.values[v]) != phase);
     }
     final headers = <Widget>[
       Row(
@@ -237,8 +283,20 @@ class _WatchPageState extends State<WatchPage> {
                   ChoiceChip(
                     label: Text(s.t('全部自选')),
                     selected: group == 'all',
-                    onSelected: (_) => setState(() => group = 'all'),
+                    onSelected: (_) => selectGroup('all'),
                   ),
+                  for (final entry in const {
+                    '@trend': '今日走势排序',
+                    '@five': '五线量价',
+                  }.entries)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: ChoiceChip(
+                        label: Text(s.t(entry.value)),
+                        selected: group == entry.key,
+                        onSelected: (_) => selectGroup(entry.key),
+                      ),
+                    ),
                   for (final g in s.groups)
                     Padding(
                       padding: const EdgeInsets.only(left: 8),
@@ -247,8 +305,7 @@ class _WatchPageState extends State<WatchPage> {
                         child: ChoiceChip(
                           label: Text(str(g['name'])),
                           selected: group == g['id'],
-                          onSelected: (_) =>
-                              setState(() => group = str(g['id'])),
+                          onSelected: (_) => selectGroup(str(g['id'])),
                         ),
                       ),
                     ),
@@ -319,6 +376,33 @@ class _WatchPageState extends State<WatchPage> {
           ),
         ],
       ),
+      if (preset)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text(
+            s.t(group == '@trend' ? '走势评分从高到低，待更新项置后' : '经典均线 · 按量价研判阶段筛选'),
+            style: TextStyle(color: muted, fontSize: 12),
+          ),
+        ),
+      if (group == '@five')
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final entry in watchPhases.entries)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(
+                      '${s.t(entry.value)} ${phaseCounts[entry.key]}',
+                    ),
+                    selected: phase == entry.key,
+                    onSelected: (_) => setState(() => phase = entry.key),
+                  ),
+                ),
+            ],
+          ),
+        ),
       if (s.quoteError != null) Notice('${s.t('行情源暂时不可用')} · ${s.quoteError}'),
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -356,7 +440,10 @@ class _WatchPageState extends State<WatchPage> {
       ),
     ];
     return RefreshIndicator(
-      onRefresh: s.refreshQuotes,
+      onRefresh: () async {
+        await s.refreshQuotes();
+        await s.watchInsights.loadMany(list, force: true);
+      },
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         itemCount: headers.length + list.length + 1,
@@ -367,7 +454,11 @@ class _WatchPageState extends State<WatchPage> {
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: Notice(
                 s.t(
-                  list.isEmpty ? '分组暂无股票，长按自选股票加入分组' : '分时仅显示来源当日数据；长按股票管理分组。',
+                  list.isEmpty
+                      ? preset
+                            ? '当前筛选暂无自选'
+                            : '分组暂无股票，长按自选股票加入分组'
+                      : '分时仅显示来源当日数据；长按股票管理分组。',
                 ),
               ),
             );
@@ -386,7 +477,7 @@ class _WatchPageState extends State<WatchPage> {
               onTap: () => openStock(context, symbol),
               onLongPress: () => stockActions(s, symbol),
               child: Container(
-                height: cnStock(symbol) ? 112 : 76,
+                height: 112,
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
@@ -475,7 +566,7 @@ class _WatchPageState extends State<WatchPage> {
                         ],
                       ),
                     ),
-                    if (cnStock(symbol)) WatchRowInsight(symbol),
+                    WatchRowInsight(symbol),
                     const SizedBox(height: 6),
                   ],
                 ),
@@ -736,13 +827,12 @@ class WatchRowInsight extends StatefulWidget {
 }
 
 class _WatchRowInsightState extends State<WatchRowInsight> {
-  Json? data;
   Timer? timer;
   @override
   void initState() {
     super.initState();
     load();
-    timer = Timer.periodic(const Duration(seconds: 60), (_) {
+    timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted &&
           context.read<AtlasStore>().foreground &&
           (ModalRoute.of(context)?.isCurrent ?? true)) {
@@ -759,17 +849,14 @@ class _WatchRowInsightState extends State<WatchRowInsight> {
 
   Future<void> load() async {
     try {
-      final r = await context.read<AtlasStore>().api.get(
-        '/api/desk/insight',
-        parameters: {'symbol': widget.symbol},
-      );
-      if (mounted) setState(() => data = r);
+      await context.read<AtlasStore>().watchInsights.load(widget.symbol);
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AtlasStore>(),
+        data = s.watchInsights.values[widget.symbol],
         trend = obj(data?['trend']),
         action = obj(data?['operation']),
         structure = obj(data?['structure']),
@@ -784,7 +871,7 @@ class _WatchRowInsightState extends State<WatchRowInsight> {
               : str(trend['date']).substring(5))} ${score?.toStringAsFixed(0) ?? '—'}',
           style: TextStyle(
             fontSize: 12,
-            color: score == null
+            color: score == null || !insightFresh(data)
                 ? muted
                 : score >= 60
                 ? up
@@ -796,7 +883,7 @@ class _WatchRowInsightState extends State<WatchRowInsight> {
         const SizedBox(width: 10),
         Expanded(
           child: Text(
-            '${s.t(str(action['action'], '五线待核验'))} · ${s.t(str(structure['state'], '—'))}',
+            '${s.t(str(action['action'], '五线待核验'))} · ${s.t(data != null && !insightFresh(data) ? '待更新' : str(structure['state'], '—'))}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: muted),

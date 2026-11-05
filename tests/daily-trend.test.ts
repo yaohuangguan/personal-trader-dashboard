@@ -29,3 +29,11 @@ test('share/lot conversion is invariant and one-price bars do not fabricate loca
  const flat=dailyTrend(history,{symbol:quote.symbol,quote:{...quote,open:104,high:104,low:104},volumeUnit:'手',now});
  assert.equal(flat.dimensions.find(d=>d.key==='日内位置')?.score,null);assert.ok(flat.risks.some(v=>v.includes('流动性')));
 });
+test('US watch scores use the New York session and SPY, including after Shanghai midnight',()=>{
+ const usNow=new Date('2026-10-26T19:00:00Z');
+ const us={...quote,symbol:'NVDA',asOf:'2026-10-26T15:00:00-04:00',session:'trading'} as Snapshot;
+ const result=dailyTrend(history,{symbol:'NVDA',quote:us,benchmark:{...us,symbol:'SPY',changePercent:1},volumeUnit:'手',now:usNow});
+ assert.equal(result.current,true);assert.equal(result.provisional,true);assert.equal(result.date,'2026-10-26');
+ assert.equal(result.coveredWeight,90);assert.equal(result.dimensions.find(d=>d.key==='相对标普500')?.value,3);
+ assert.equal(dailyTrend(history,{symbol:'NVDA',quote:us,benchmark,now:usNow}).coveredWeight,65);
+});

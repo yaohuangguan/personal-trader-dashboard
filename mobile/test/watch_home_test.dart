@@ -30,6 +30,20 @@ void main() {
         AtlasApi(
           client: MockClient((request) async {
             calls.add(request.url.toString());
+            if (request.url.path == '/api/desk/insight') {
+              return http.Response(
+                jsonEncode({
+                  'symbol': 'NVDA',
+                  'generatedAt': DateTime.now().toIso8601String(),
+                  'expiresAt': DateTime.now()
+                      .add(const Duration(seconds: 20))
+                      .toIso8601String(),
+                  'trend': {'score': 78, 'current': true},
+                  'operation': {'phase': 'tracking', 'ready': true},
+                }),
+                200,
+              );
+            }
             expect(request.url.queryParameters['symbols'], 'NVDA');
             return http.Response(
               jsonEncode({
@@ -87,6 +101,61 @@ void main() {
       await tester.tapAt(const Offset(12, 760));
       await tester.pumpAndSettle();
       expect(find.text('Import from another app'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      store.dispose();
+    },
+  );
+  testWidgets(
+    'scrolling a row out and back keeps its score without another request',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final symbols = ['NVDA', for (var i = 0; i < 20; i++) 'A$i'];
+      SharedPreferences.setMockInitialValues({'watchlist': symbols});
+      var firstCalls = 0;
+      final store = AtlasStore(
+        AtlasApi(
+          client: MockClient((request) async {
+            expect(request.url.path, '/api/desk/insight');
+            final symbol = request.url.queryParameters['symbol']!;
+            if (symbol == 'NVDA') firstCalls++;
+            return http.Response(
+              jsonEncode({
+                'symbol': symbol,
+                'generatedAt': DateTime.now().toIso8601String(),
+                'expiresAt': DateTime.now()
+                    .add(const Duration(seconds: 20))
+                    .toIso8601String(),
+                'trend': {'score': symbol == 'NVDA' ? 87 : 12, 'current': true},
+                'operation': {'phase': 'pullback', 'ready': true},
+              }),
+              200,
+            );
+          }),
+        ),
+        await SharedPreferences.getInstance(),
+        {},
+      );
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: store,
+          child: const MaterialApp(home: Scaffold(body: WatchPage())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('今日走势 87'), findsOneWidget);
+      final list = find.byType(ListView).first;
+      await tester.drag(list, const Offset(0, -1600));
+      await tester.pumpAndSettle();
+      expect(find.text('今日走势 87'), findsNothing);
+      await tester.drag(list, const Offset(0, 2000));
+      await tester.pump();
+      expect(find.text('今日走势 87'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(firstCalls, 1);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       store.dispose();

@@ -71,8 +71,8 @@ export async function deskRoute(request: Request): Promise<Response | null> {
       if(!['day','week','month'].includes(period)||before!==null&&!validHistoryDate(before))return respond({error:'Invalid US history period or cursor'},400);
       return respond(await memo<unknown>('us-history:'+symbol+':'+period+':'+(before||''),600,()=>before?historyPage(symbol,period,before):usHistory(symbol,period)));
     }
+    if(kind==='insight'&&supportedStock(symbol))return respond(await watchInsight(symbol));
     if (!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)) return respond({ available: false, reason: '此公开接口暂只覆盖沪深北市场，其他市场使用原有授权行情源。' }, 400);
-    if(kind==='insight')return respond(await memo('insight:'+symbol,30,()=>watchInsight(symbol)));
     if(kind==='screen')return respond(await patternScreen(symbol,url.searchParams));
     if (kind === 'history') {
       const period = url.searchParams.get('period') || '';
