@@ -62,6 +62,38 @@ void main() {
       );
     },
   );
+  test('declared lot/share pages normalize volume and preserve the price-basis guard', () {
+    final bars = chartFixture(3),
+        page = {
+          'candles': [jsonBar(bars[0])],
+          'anchor': jsonBar(bars[1]),
+          'volumeUnit': '手',
+        };
+    final current = bars
+        .sublist(1)
+        .map((b) => Bar(b.time, b.open, b.high, b.low, b.close, b.volume * 100))
+        .toList();
+    final merged = mergeChartHistory(current, page, volumeUnit: '股');
+    expect(merged.first.volume, bars.first.volume * 100);
+    expect(merged.first.close, bars.first.close);
+    expect(numOf(rows(page['candles']).first['volume']), bars.first.volume);
+    expect(
+      () => mergeChartHistory(current, {
+        ...page,
+        'volumeUnit': 'unknown',
+      }, volumeUnit: '股'),
+      throwsStateError,
+    );
+    expect(
+      () => mergeChartHistory(current, {
+        ...page,
+        'anchor': {...jsonBar(bars[1]), 'close': 1},
+      }, volumeUnit: '股'),
+      throwsStateError,
+    );
+    expect(historyBasisFor('新浪日线聚合 · 前复权', '300545.SZ'), 'sina-qfq');
+    expect(historyBasisFor('新浪公开日线（北交所，不复权）', '920982.BJ'), 'sina-raw');
+  });
   testWidgets(
     'drag loads once, preserves date anchors, and refresh retains older candles for day/week/month',
     (tester) async {
@@ -69,10 +101,12 @@ void main() {
         ('300545.SZ', 'day'),
         ('300545.SZ', 'week'),
         ('300545.SZ', 'month'),
+        ('300545.SZ', 'sina-day'),
         ('NVDA', 'day'),
         ('NVDA', 'week'),
         ('NVDA', 'month'),
       ]) {
+        final requestUnit = unit.replaceFirst('sina-', '');
         SharedPreferences.setMockInitialValues({});
         final all = chartFixture(120), prices = ValueNotifier(all.sublist(60));
         final completion = Completer<http.Response>();
@@ -82,7 +116,11 @@ void main() {
             if (request.url.path == '/api/desk/history') {
               calls++;
               expect(request.url.queryParameters['before'], all[60].time);
-              expect(request.url.queryParameters['period'], unit);
+              expect(request.url.queryParameters['period'], requestUnit);
+              expect(
+                request.url.queryParameters['basis'],
+                unit.startsWith('sina-') ? 'sina-qfq' : 'tencent',
+              );
               return completion.future;
             }
             return http.Response(
@@ -107,8 +145,15 @@ void main() {
                     key: ValueKey(unit),
                     bars: bars,
                     symbol: symbol,
-                    volumeUnit: cnStock(symbol) ? '手' : '股',
-                    unit: unit,
+                    volumeUnit: unit.startsWith('sina-')
+                        ? '股'
+                        : cnStock(symbol)
+                        ? '手'
+                        : '股',
+                    historySource: unit.startsWith('sina-')
+                        ? '新浪公开日线（前复权因子校正，成交量为股）'
+                        : '腾讯财经',
+                    unit: requestUnit,
                     terminal: true,
                     viewportHeight: 600,
                   ),

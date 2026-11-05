@@ -29,6 +29,7 @@ class MarketChart extends StatefulWidget {
     this.terminal = false,
     this.viewportHeight,
     this.volumeUnit = '手',
+    this.historySource = '',
     this.events = const [],
     this.trades = const [],
     this.patterns = const [],
@@ -38,7 +39,7 @@ class MarketChart extends StatefulWidget {
     this.initialProjection,
   });
   final List<Bar> bars;
-  final String symbol, unit, volumeUnit;
+  final String symbol, unit, volumeUnit, historySource;
   final String name;
   final List<Json> events, trades, patterns;
   final Json? initialStudy;
@@ -75,14 +76,15 @@ class _MarketChartState extends State<MarketChart> {
           'symbol': widget.symbol,
           'period': widget.unit,
           'before': before,
+          'basis': historyBasisFor(widget.historySource, widget.symbol),
         },
       );
       if (!mounted || request != historyRequest) return;
-      if (rows(page['candles']).isNotEmpty &&
-          str(page['volumeUnit']) != widget.volumeUnit) {
-        throw StateError('历史来源成交量口径不同，请刷新图表后重试');
-      }
-      final merged = mergeChartHistory(bars, page),
+      final merged = mergeChartHistory(
+            bars,
+            page,
+            volumeUnit: widget.volumeUnit,
+          ),
           added = merged.length - bars.length;
       setState(() {
         bars = merged;
@@ -423,7 +425,11 @@ class _MarketChartState extends State<MarketChart> {
   void didUpdateWidget(covariant MarketChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     final identityChanged =
-        oldWidget.symbol != widget.symbol || oldWidget.unit != widget.unit;
+        oldWidget.symbol != widget.symbol ||
+        oldWidget.unit != widget.unit ||
+        oldWidget.volumeUnit != widget.volumeUnit ||
+        historyBasisFor(oldWidget.historySource, oldWidget.symbol) !=
+            historyBasisFor(widget.historySource, widget.symbol);
     final oldBars = bars;
     final rightDate = oldBars.isEmpty
         ? null
@@ -764,6 +770,7 @@ class _MarketChartState extends State<MarketChart> {
           name: widget.name,
           unit: widget.unit,
           volumeUnit: widget.volumeUnit,
+          historySource: widget.historySource,
           events: widget.events,
           trades: widget.trades,
           patterns: widget.patterns,
@@ -2141,6 +2148,7 @@ class FullscreenChart extends StatefulWidget {
     this.name = '',
     required this.unit,
     required this.volumeUnit,
+    this.historySource = '',
     required this.events,
     this.trades = const [],
     this.patterns = const [],
@@ -2150,7 +2158,7 @@ class FullscreenChart extends StatefulWidget {
     this.amountDate,
   });
   final List<Bar> bars;
-  final String symbol, unit, volumeUnit;
+  final String symbol, unit, volumeUnit, historySource;
   final String name;
   final List<Json> events, trades, patterns;
   final Json? initialStudy;
@@ -2163,6 +2171,8 @@ class FullscreenChart extends StatefulWidget {
 
 class _FullscreenChartState extends State<FullscreenChart> {
   late List<Bar> bars = widget.bars;
+  late String historySource = widget.historySource;
+  late String volumeUnit = widget.volumeUnit;
   late List<Json> events = widget.events;
   late List<Json> trades = widget.trades;
   late List<Json> patterns = widget.patterns;
@@ -2208,7 +2218,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
           .where((q) => q['symbol'] == widget.symbol)
           .firstOrNull;
       if (!mounted || quote == null) return;
-      final updated = patchDailyQuote(bars, quote, widget.volumeUnit);
+      final updated = patchDailyQuote(bars, quote, volumeUnit);
       if (!identical(updated, bars)) {
         setState(() {
           bars = updated;
@@ -2237,7 +2247,11 @@ class _FullscreenChartState extends State<FullscreenChart> {
       if (supportedStock(widget.symbol) && widget.unit != 'day') {
         data = await api.get(
           '/api/desk/history',
-          parameters: {'symbol': widget.symbol, 'period': widget.unit},
+          parameters: {
+            'symbol': widget.symbol,
+            'period': widget.unit,
+            'study': 'client',
+          },
         );
       } else if (supportedStock(widget.symbol)) {
         data = await api.get(
@@ -2254,6 +2268,18 @@ class _FullscreenChartState extends State<FullscreenChart> {
       final source = data['market'] == null ? data : obj(data['market']);
       setState(() {
         bars = rows(source['candles']).map(Bar.fromJson).toList();
+        historySource = str(
+          source['provider'] ?? source['source'],
+          historySource,
+        );
+        volumeUnit = str(
+          data['volumeUnit'] ?? source['volumeUnit'],
+          historySource.contains('新浪') ||
+                  !cnStock(widget.symbol) ||
+                  RegExp(r'^68[89]').hasMatch(widget.symbol)
+              ? '股'
+              : '手',
+        );
         if (data['guide'] != null) events = rows(obj(data['guide'])['events']);
         if (data['tradeMarkers'] != null) trades = rows(data['tradeMarkers']);
         if (data['patternMarks'] != null) patterns = rows(data['patternMarks']);
@@ -2293,7 +2319,8 @@ class _FullscreenChartState extends State<FullscreenChart> {
             symbol: widget.symbol,
             name: widget.name,
             unit: widget.unit,
-            volumeUnit: widget.volumeUnit,
+            volumeUnit: volumeUnit,
+            historySource: historySource,
             events: events,
             trades: trades,
             patterns: patterns,

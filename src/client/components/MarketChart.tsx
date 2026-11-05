@@ -43,8 +43,8 @@ function timeKey(time: Time): string {
 }
 const rangeSize = (range: Range, length: number, unit: string) => range === 'ALL' ? length : (unit==='week'?[4,13,26,52]:unit==='month'?[1,3,6,12]:[22,66,132,264])[['1M','3M','6M','1Y'].indexOf(range)];
 
-export default function MarketChart({ candles:initialCandles, compact = false, symbol, volumeUnit, amount,amountDate,guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string;amount?:number|null;amountDate?:string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
-  const history=useChartHistory(initialCandles,compact?undefined:symbol,unit,volumeUnit),candles=history.candles;
+export default function MarketChart({ candles:initialCandles, compact = false, symbol, volumeUnit, historySource, amount,amountDate,guideEvents, tradeMarkers:providedTrades=NO_TRADES,chipFloatShares, unit = 'day' }: { candles: Candle[]; compact?: boolean; symbol?: string; volumeUnit?: string;historySource?:string;amount?:number|null;amountDate?:string; unit?: string;tradeMarkers?:TradeMarker[];patternMarkers?:PatternMark[];chipFloatShares?:number; guideEvents?: GuideEvent[] }) {
+  const history=useChartHistory(initialCandles,compact?undefined:symbol,unit,volumeUnit,historySource),candles=history.candles;
   const historyRef=useRef(history);historyRef.current=history;
   const browsedRef=useRef(false),previousBars=useRef(candles),identityRef=useRef(symbol+':'+unit);
   const display=usePreferences(),light=display.theme==='light';

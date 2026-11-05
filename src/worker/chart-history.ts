@@ -1,19 +1,21 @@
 import {usHistory} from './us-market';
 import {isUSStock} from '../shared/market-clock';
 import type {Candle} from '../shared/types';
-import {validHistoryDate} from '../shared/chart-history';
+import {validHistoryDate,type HistoryBasis} from '../shared/chart-history';
+import {applySinaFactors,sinaAdjustmentFactors} from './research';
+import {aggregateDaily} from '../shared/market-models';
 
 /** Same public Tencent backend, documented alternate hosts; bounded total time. */
-export async function requestTencentHistory(wire:string,period:string,before='',count=500){
+export async function requestTencentHistory(wire:string,period:string,before='',count=500,adjustment:'qfq'|''='qfq'){
   let failure:unknown;
   for(const host of ['https://web.ifzq.gtimg.cn','https://ifzq.gtimg.cn','https://proxy.finance.qq.com/ifzqgtimg']){
-    const url=host+'/appstock/app/'+(wire.startsWith('us')?'usfqkline':'fqkline')+'/get?param='+wire+','+period+',,'+before+','+count+',qfq';
+    const url=host+'/appstock/app/'+(wire.startsWith('us')?'usfqkline':'fqkline')+'/get?param='+wire+','+period+',,'+before+','+count+','+adjustment;
     try{
       const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0',Referer:'https://gu.qq.com/','Accept':'application/json'},signal:AbortSignal.timeout(4000)});
       if(!response.ok)throw new Error('历史来源 HTTP '+response.status);
       const payload=await response.json() as {data?:Record<string,Record<string,string[][]>>};
       const node=payload.data?.[wire];
-      if(!node||!Array.isArray(node['qfq'+period]??node[period]))throw new Error('历史周期响应格式变化');
+      if(!node||!Array.isArray(adjustment?node['qfq'+period]??node[period]:node[period]))throw new Error('历史周期响应格式变化');
       return {node,url};
     }catch(error){failure=error;}
   }
@@ -21,14 +23,21 @@ export async function requestTencentHistory(wire:string,period:string,before='',
 }
 
 /** One bounded source request per gesture. End date is inclusive upstream. */
-export async function historyPage(symbol:string,period:string,before:string){
+export async function historyPage(symbol:string,period:string,before:string,basis:HistoryBasis='tencent'){
+  if(!['tencent','sina-qfq','sina-raw'].includes(basis))throw new RangeError('无效历史复权基准');
   if(isUSStock(symbol)){
+    if(basis!=='tencent')throw new RangeError('无效历史复权基准');
     const data=await usHistory(symbol,period,before),candles=data.candles.filter(c=>c.time<before);
     return {...data,candles,anchor:data.candles.find(c=>c.time===before),hasMore:candles.length>0,nextBefore:candles[0]?.time??null};
   }
   if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)||!['day','week','month'].includes(period)||!validHistoryDate(before))throw new RangeError('无效历史分页参数');
   const wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6);
-  const {node,url}=await requestTencentHistory(wire,period,before,501),raw=node['qfq'+period]??node[period];
+  const sourcePeriod=basis==='tencent'?period:'day';
+  const [{node,url},factors]=await Promise.all([
+    requestTencentHistory(wire,sourcePeriod,before,501,basis==='tencent'?'qfq':''),
+    basis==='sina-qfq'?sinaAdjustmentFactors(symbol):Promise.resolve(null),
+  ]);
+  const raw=basis==='tencent'?node['qfq'+period]??node[period]:node.day;
   if(!Array.isArray(raw)||raw.length>501||raw.length===0&&Array.isArray(node?.[period])&&(node[period] as unknown[]).length>0)throw new Error('历史分页响应格式变化');
   const byDate=new Map<string,Candle>();
   for(const row of raw){
@@ -38,6 +47,15 @@ export async function historyPage(symbol:string,period:string,before:string){
     if(typeof time!=='string'||!validHistoryDate(time)||time>before||values.slice(0,5).some(v=>v===null||v===''||typeof v==='boolean')||![open,close,high,low,volume].every(Number.isFinite)||high<Math.max(open,close)||low>Math.min(open,close)||volume<0||byDate.has(time))throw new Error('历史分页OHLCV或日期异常');
     if(Math.min(open,close,high,low)<=0)throw new Error('来源早期前复权价格非正，暂不能继续拼接该段历史');
     byDate.set(time,{time,open,close,high,low,volume});
+  }
+  if(basis!=='tencent'){
+    const rawDaily=[...byDate.values()].sort((a,b)=>a.time.localeCompare(b.time));
+    const daily=(factors?applySinaFactors(rawDaily,factors):rawDaily).map(c=>({...c,volume:c.volume*(/^68[89]/.test(symbol)?1:100)}));
+    let adjusted=period==='day'?daily:aggregateDaily(daily,period as 'week'|'month');
+    // A full source page can start mid-period. Exclude that incomplete leading bar.
+    if(period!=='day'&&raw.length===501)adjusted=adjusted.slice(1);
+    const candles=adjusted.filter(c=>c.time<before);
+    return {symbol,period,candles,anchor:adjusted.find(c=>c.time===before),hasMore:candles.length>0,nextBefore:candles[0]?.time??null,source:'腾讯原始日线 · '+(factors?'新浪前复权基准':'原值')+'历史分页',sourceUrl:url,fetchedAt:new Date().toISOString(),volumeUnit:'股',basis};
   }
   const candles=[...byDate.values()].filter(c=>c.time<before).sort((a,b)=>a.time.localeCompare(b.time));
   return {symbol,period,candles,anchor:byDate.get(before),hasMore:candles.length>0&&candles[0].time>'1990-01-01',nextBefore:candles[0]?.time??null,source:'腾讯财经'+(node?.['qfq'+period]?'前复权':'未复权')+'历史分页',sourceUrl:url,fetchedAt:new Date().toISOString(),volumeUnit:/^68[89]/.test(symbol)?'股':'手'};

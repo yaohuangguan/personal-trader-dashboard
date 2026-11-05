@@ -179,6 +179,7 @@ class _MarketPageState extends State<MarketPage> {
                     parameters: {
                       'symbol': index,
                       if (timeframe != 'intraday') 'period': timeframe,
+                      if (timeframe != 'intraday') 'study': 'client',
                     },
                   ),
                   builder: (data) {
@@ -197,6 +198,7 @@ class _MarketPageState extends State<MarketPage> {
                             name: indexNames[indexSymbols.indexOf(index)],
                             unit: timeframe,
                             volumeUnit: str(data['volumeUnit']),
+                            historySource: str(data['source'], ''),
                             patterns: rows(data['patternMarks']),
                             terminal: true,
                             viewportHeight: c.maxHeight,
