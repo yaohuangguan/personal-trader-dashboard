@@ -112,7 +112,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   const reportData = useLiveEndpoint<ReportsPayload>(chinese && contextTab === 'reports' ? '/api/desk/reports?symbol=' + symbol : null);
   const analysis = useMemo(() => market ? (() => {const result = analyzeGuide(market.candles,{symbol});if(market.provider.includes('不复权')) result.warnings.push('当前历史不复权，送转与除权可能改变均线形态，需复核。');return result;})() : null, [market]);
   const character=useMemo(()=>analysis?.asOf&&market?stockCharacter(market.candles,analysis.asOf):null,[analysis,market]);
-  const strategy=useMemo(()=>decision.data?.strategy||(market?analyzeStrategy(market.candles,{symbol}):null),[decision.data,market,symbol]);
+  const strategy=useMemo(()=>decision.data?.strategy||(market?analyzeStrategy(market.candles,{symbol,maPeriods:maKey.split(',').map(Number)}):null),[decision.data,market,symbol,maKey]);
   const tradeMarkers=strategy?.signals||[];
   const liveAlerts=useMemo(()=>market&&strategy?splitLiveAlerts(reviewedPatternMarks(market.candles,strategy,new Date(),{symbol,maPeriods:strategy.plan.maPeriods}),[...strategy.signals,...strategy.alerts]).liveAlerts:[],[market,strategy,symbol]);
   const known = CATALOG.find(item => item.symbol === symbol), name = quote?.name || market?.name || known?.name || symbol;

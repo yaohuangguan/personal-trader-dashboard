@@ -1,6 +1,5 @@
 import {isUSStock,supportedStock} from '../shared/market-clock';
 import {usHistory} from './us-market';
-import {computeJSON} from '../shared/local-study';
 import {chartStudy} from '../shared/chart-study';
 import {projectMarket} from '../shared/market-projection';
 import {loadChartBundle,loadChartFrame} from './chart-bundle';
@@ -577,10 +576,11 @@ export default {
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');
     if(isUSStock(symbol)){
       const ma=parseMAPeriods(p.get('ma'))??CLASSIC_MA;
-      return computeCache(request,'us-analysis-v1:'+studySession()+JSON.stringify([symbol,ma]),15,async()=>{
+      return computeCache(request,'us-analysis-v2-client:'+studySession()+JSON.stringify([symbol,ma]),15,async()=>{
         const frame=await loadChartFrame(symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
-        const study=JSON.parse(computeJSON(JSON.stringify({symbol,ma,candles:frame.market.candles,market:frame.market,quote:frame.quote})));
-        return json(study.analysis);
+        // The browser already runs the shared study rules. Repeating the full
+        // study here can exhaust the edge CPU budget on an uncached symbol.
+        return json({...frame,available:true,maPeriods:ma,calculation:'client'});
       });
     }
     if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
