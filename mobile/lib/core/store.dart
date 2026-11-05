@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api.dart';
 import 'chart_studies.dart';
 import 'watch_transfer.dart';
+import 'watch_insights.dart';
 part 'watch_cloud.dart';
 
 class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
@@ -32,9 +33,11 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
         ).join();
     prefs.setString('deviceToken', deviceToken);
     WidgetsBinding.instance.addObserver(this);
+    watchInsights.addListener(notifyListeners);
   }
   final AtlasApi api;
   late final chartStudies = ChartStudies(api, prefs);
+  late final watchInsights = WatchInsights(api);
   final SharedPreferences prefs;
   final Map<String, dynamic> english;
   late List<String> watchlist;
@@ -393,6 +396,8 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     _syncDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     chartRevision.dispose();
+    watchInsights.removeListener(notifyListeners);
+    watchInsights.dispose();
     messages.close();
     api.dispose();
     super.dispose();
