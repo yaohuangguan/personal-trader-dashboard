@@ -1,0 +1,2 @@
+.watch-extended-line{display:flex;align-items:baseline;justify-content:flex-end;flex-wrap:wrap;gap:4px 8px;padding:0 12px 10px;font-size:.7rem;font-variant-numeric:tabular-nums;line-height:1.5;color:var(--atlas-9999aa,#9999aa)}
+.watch-extended-line .extended-session{font-size:.65rem}.watch-extended-line .extended-stale{font-size:.65rem;color:var(--atlas-9999aa,#9999aa)}

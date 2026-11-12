@@ -1,4 +1,6 @@
 import '../core/watch_transfer_share.dart';
+import '../core/extended_quotes.dart';
+import '../widgets/extended_quote.dart';
 import 'watch_import.dart';
 import '../widgets/cloud_sync.dart';
 
@@ -477,7 +479,7 @@ class _WatchPageState extends State<WatchPage> {
               onTap: () => openStock(context, symbol),
               onLongPress: () => stockActions(s, symbol),
               child: Container(
-                height: 112,
+                height: usStock(symbol) ? 140 : 112,
                 decoration: BoxDecoration(
                   border: Border(
                     bottom: BorderSide(
@@ -566,6 +568,7 @@ class _WatchPageState extends State<WatchPage> {
                         ],
                       ),
                     ),
+                    if (usStock(symbol)) ExtendedQuoteLine(symbol),
                     WatchRowInsight(symbol),
                     const SizedBox(height: 6),
                   ],

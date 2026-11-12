@@ -1,4 +1,5 @@
 import 'ui_translation.dart';
+import 'extended_quotes.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -38,6 +39,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   final AtlasApi api;
   late final chartStudies = ChartStudies(api, prefs);
   late final watchInsights = WatchInsights(api);
+  late final extendedQuotes = ExtendedQuotes(api);
   final SharedPreferences prefs;
   final Map<String, dynamic> english;
   late List<String> watchlist;
