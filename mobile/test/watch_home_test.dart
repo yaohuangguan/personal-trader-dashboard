@@ -30,6 +30,10 @@ void main() {
         AtlasApi(
           client: MockClient((request) async {
             calls.add(request.url.toString());
+            if (request.url.path == '/api/desk/extended-quote') {
+              expect(request.url.queryParameters['symbol'], 'NVDA');
+              return http.Response(jsonEncode({'current': null}), 200);
+            }
             if (request.url.path == '/api/desk/insight') {
               return http.Response(
                 jsonEncode({

@@ -2169,5 +2169,14 @@
   "研判代码不匹配": "Insight symbol mismatch",
   "研判暂不可用": "Review temporarily unavailable",
   "当前筛选暂无自选": "No watchlist stocks match this filter",
-  "相对标普500": "Relative to S&P 500"
+  "相对标普500": "Relative to S&P 500",
+  "盘前": "Pre",
+  "盘后": "Post",
+  "夜盘 24h": "Overnight 24h",
+  "盘前 / 盘后 / 24h": "Pre / Post / 24h",
+  "时段涨幅基准": "Session change reference",
+  "扩展时段行情": "Extended-hours quotes",
+  "暂无报价": "No quote",
+  "暂不可用": "Unavailable",
+  "加载中…": "Loading…"
 }

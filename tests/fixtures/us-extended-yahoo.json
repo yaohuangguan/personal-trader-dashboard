@@ -1,0 +1,51 @@
+{
+  "quoteResponse": {
+    "result": [
+      {
+        "symbol": "AAPL",
+        "exchangeDataDelayedBy": 15,
+        "overnightMarketPrice": {
+          "raw": 355.62,
+          "fmt": "355.62"
+        },
+        "postMarketPrice": {
+          "raw": 356.3473,
+          "fmt": "356.35"
+        },
+        "quoteSourceName": "BOATS Real Time Price",
+        "preMarketTime": {
+          "raw": 1794407399,
+          "fmt": "9:29AM EST"
+        },
+        "overnightMarketTime": {
+          "raw": 1794446172,
+          "fmt": "1:16AM UTC"
+        },
+        "regularMarketTime": {
+          "raw": 1794430801,
+          "fmt": "4:00PM EST"
+        },
+        "postMarketTime": {
+          "raw": 1794445193,
+          "fmt": "7:59PM EST"
+        },
+        "preMarketPrice": {
+          "raw": 349.49,
+          "fmt": "349.49"
+        },
+        "currency": "USD",
+        "regularMarketPreviousClose": {
+          "raw": 348.51,
+          "fmt": "348.51"
+        },
+        "exchangeTimezoneName": "America/New_York",
+        "regularMarketPrice": {
+          "raw": 355.63,
+          "fmt": "355.63"
+        },
+        "marketState": "OVERNIGHT"
+      }
+    ],
+    "error": null
+  }
+}

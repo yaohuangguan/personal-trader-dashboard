@@ -1,5 +1,6 @@
 import {isUSStock,supportedStock} from '../shared/market-clock';
 import {usHistory} from './us-market';
+import {extendedQuote} from './us-extended';
 import {candidateNow,type CandidateReference} from '../shared/candidate-now';
 import {sectorMap,sectorDetail,sectorNews} from './sector-map';
 import {loadSessionReview} from './session-review';
@@ -35,6 +36,10 @@ export async function deskRoute(request: Request): Promise<Response | null> {
   const symbol = url.searchParams.get('symbol') || '';
   const kind = url.pathname.slice('/api/desk/'.length);
   try {
+    if(kind==='extended-quote'){
+      if(symbol.length>18||!isUSStock(symbol))return respond({error:'Invalid US stock symbol'},400);
+      return respond(await memo('us-extended:'+symbol,60,()=>extendedQuote(symbol)));
+    }
     if(kind==='earnings'){
       try{return respond(await memo('earnings:'+url.search,300,()=>earnings(url.searchParams)));}
       catch(e){if(e instanceof RangeError)return respond({error:e.message},400);throw e;}
