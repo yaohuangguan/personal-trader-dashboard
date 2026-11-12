@@ -78,12 +78,14 @@ void main() {
           ChangeNotifierProvider.value(
             value: store,
             child: MaterialApp(
-              home: MediaQuery(
-                data: const MediaQueryData(
-                  size: Size(320, 844),
-                  textScaler: TextScaler.linear(22 / 18),
+              home: Scaffold(
+                body: MediaQuery(
+                  data: const MediaQueryData(
+                    size: Size(320, 844),
+                    textScaler: TextScaler.linear(22 / 18),
+                  ),
+                  child: const WatchPage(),
                 ),
-                child: const WatchPage(),
               ),
             ),
           ),
