@@ -7,7 +7,7 @@ import plistlib
 import shutil
 import subprocess
 
-BUNDLE_ID = 'space.ps6.marketAtlas'
+BUNDLE_ID = 'io.github.yaohuangguan.guanlan'
 
 
 def validate_profile(profile, bundle_id=BUNDLE_ID):

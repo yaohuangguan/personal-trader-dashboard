@@ -49,7 +49,7 @@ No Firebase project is included. The default app does not initialize Firebase, r
 
 After creating a Firebase project:
 
-1. Register Android `space.ps6.market_atlas` and iOS `space.ps6.marketAtlas`. Configure the Firebase app and enable Cloud Messaging HTTP v1. For iOS, upload your APNs authentication key to Firebase and enable Push Notifications for the signed app's App ID / Xcode target. Add the matching `aps-environment` entitlement through Xcode signing; no production signing entitlement or account is fabricated here. Background remote-notification mode is already declared.
+1. Register Android `space.ps6.market_atlas` and iOS `io.github.yaohuangguan.guanlan`. Configure the Firebase app and enable Cloud Messaging HTTP v1. For iOS, upload your APNs authentication key to Firebase and enable Push Notifications for the signed app's App ID / Xcode target. Add the matching `aps-environment` entitlement through Xcode signing; no production signing entitlement or account is fabricated here. Background remote-notification mode is already declared.
 2. Build with `--dart-define=FIREBASE_PROJECT_ID=... --dart-define=FIREBASE_APP_ID=... --dart-define=FIREBASE_API_KEY=... --dart-define=FIREBASE_SENDER_ID=...`. Use the platform-specific app ID. Client Firebase identifiers are public app configuration; never put the service-account private key in Dart defines or the app bundle.
 3. Grant a service account only the required Firebase Cloud Messaging sending role. Store its JSON **only** as the Worker secret `FIREBASE_SERVICE_ACCOUNT` using `npx wrangler secret put FIREBASE_SERVICE_ACCOUNT`. The server obtains a short-lived OAuth token and sends FCM HTTP v1 messages. It never returns that secret to the app.
 4. Open Signals and choose Allow app notifications. The app checks server capability before requesting system permission, registers its device token under its random private device capability, handles token refresh, foreground notifications and notification deep links. Test with a real Android/iOS device and a signed APNs-enabled iOS build.
@@ -78,7 +78,7 @@ Fullscreen follows device rotation and has an explicit rotation button. Landscap
 
 The `iOS TestFlight release` workflow is manual. `upload=false` (default) builds and saves a signed IPA for inspection. `upload=true` additionally submits that IPA to App Store Connect; it does not publish to the App Store or invite testers. The normal iOS CI never submits an app.
 
-Register **space.ps6.marketAtlas** and create its Market Atlas app record in your Apple Developer / App Store Connect team. In the GitHub **testflight** environment, configure:
+Register **io.github.yaohuangguan.guanlan** and create its **guanlan** app record in your Apple Developer / App Store Connect team. In the GitHub **testflight** environment, configure:
 
 | Secret | Value |
 | --- | --- |
