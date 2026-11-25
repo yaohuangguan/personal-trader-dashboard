@@ -6,6 +6,8 @@ const json=(v:unknown,status=200)=>Response.json(v,{status,headers:{'cache-contr
 export async function watchVault(req:Request,s:Storage){
  let vault=await s.get<Vault>('watch:v1');
  if(req.method==='POST'&&new URL(req.url).searchParams.has('create')){if(vault)return json({error:'Already exists'},409);vault={revision:0,updatedAt:new Date().toISOString(),state:emptyWatch(),seen:[]};await s.put('watch:v1',vault);return json(vault);}
+ // Account vaults are addressed by a verified account ID, so they are created on first use.
+ if(!vault&&new URL(req.url).searchParams.has('ensure')){vault={revision:0,updatedAt:new Date().toISOString(),state:emptyWatch(),seen:[]};await s.put('watch:v1',vault);}
  if(!vault)return json({error:'同步密钥无效'},404);
  if(req.method==='GET')return json(vault);
  if(req.method!=='POST')return json({error:'Method not allowed'},405);
