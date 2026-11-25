@@ -41,6 +41,8 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 self.addEventListener('fetch',event=>{
  const request=event.request,url=new URL(request.url);
  if(request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/')||['/sw.js','/version.json'].includes(url.pathname))return;
+ // Standalone static pages are served as-is instead of the app shell.
+ if(request.mode==='navigate'&&['/privacy','/privacy.html'].includes(url.pathname))return;
  if(request.mode==='navigate'){
   if(self.location.hostname==='personal-market-atlas.nzs.workers.dev'){event.respondWith(Response.redirect('https://guanlan.nzs.workers.dev'+url.pathname+url.search));return;}
   event.respondWith((async()=>await(await caches.open(CACHE)).match(new URL('/index.html',self.location.origin).href)||fetch(request))());return;

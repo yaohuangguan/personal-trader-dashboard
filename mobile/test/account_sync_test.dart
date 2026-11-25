@@ -57,6 +57,12 @@ class FakeAccountServer {
         return reply(vault);
       case '/api/account/logout':
         return reply({'ok': true});
+      case '/api/account/delete':
+        if (body['password'] != 'correct-pass') {
+          return reply({'error': '密码错误'}, 401);
+        }
+        vault = {'revision': 0, 'updatedAt': '', 'state': {}};
+        return reply({'ok': true});
       case '/api/desk/quotes':
         return reply({'items': []});
     }
@@ -161,6 +167,30 @@ void main() {
     s.dispose();
   });
 
+  test(
+    'deleting the account needs the password and keeps the local watchlist',
+    () async {
+      final (s, server) = await make();
+      await s.loginAccount('Sam', 'correct-pass');
+      await expectLater(
+        s.deleteAccount('wrong-pass'),
+        throwsA(isA<ApiException>()),
+      );
+      expect(
+        s.accountToken,
+        isNotEmpty,
+        reason: 'a wrong password changes nothing',
+      );
+      await s.deleteAccount('correct-pass');
+      expect(s.accountToken, isEmpty);
+      expect(s.cloudConnected, isFalse);
+      expect(s.syncStatus, '账号已删除，本机自选保留');
+      expect(s.watchlist, containsAll(['002472.SZ', 'NVDA', '600519.SH']));
+      expect(server.requests, contains('POST /api/account/delete'));
+      s.dispose();
+    },
+  );
+
   testWidgets('settings panel shows sign-in, then the signed-in account', (
     tester,
   ) async {
@@ -181,6 +211,7 @@ void main() {
     await tester.pump();
     expect(find.text('已登录 · Sam'), findsOneWidget);
     expect(find.text('退出登录'), findsOneWidget);
+    expect(find.text('删除账号'), findsOneWidget);
     expect(find.text('使用同步密钥（无需账号）'), findsNothing);
     s.dispose();
   });

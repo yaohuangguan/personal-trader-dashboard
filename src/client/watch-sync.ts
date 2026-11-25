@@ -19,6 +19,8 @@ async function signIn(path:string,body:object){
 }
 export const registerAccount=(email:string,username:string,password:string)=>signIn('/api/account/register',{email:email.trim(),username:username.trim(),password});
 export const loginAccount=(login:string,password:string)=>signIn('/api/account/login',{login:login.trim(),password});
+/** Permanently deletes the account and its synced watchlist; local stocks stay on this device. */
+export async function deleteAccount(password:string){const a=account();if(!a)throw new Error('请先登录');await request('/api/account/delete',{password},a.token);localStorage.removeItem(ACCOUNT);localStorage.removeItem(BASE);announce('账号已删除，本机自选保留');}
 export async function logoutAccount(){const a=account();localStorage.removeItem(ACCOUNT);localStorage.removeItem(BASE);announce('已退出登录，本机自选保留');if(a)await request('/api/account/logout',{},a.token).catch(()=>undefined);}
 export async function connectSync(token?:string){
  if(busy)throw new Error('正在同步，请稍候');

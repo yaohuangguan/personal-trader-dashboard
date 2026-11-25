@@ -90,3 +90,30 @@ test('registration is rate limited per client address',async()=>{
  for(let i=0;i<11;i++)last=(await call(ns,'/api/account/register',{body:{email:`r${i}@example.com`,username:'rate'+i,password:'rate-pass-1'},ip:'192.0.2.1'})).status;
  assert.equal(last,429);
 });
+
+test('deleting an account needs the password, removes the account and its watchlist, and signs out every device',async()=>{
+ const {ns,objects}=namespace();
+ const {data:{token:phone,account}}=await read(await call(ns,'/api/account/register',{body:{email:'del@example.com',username:'leaver',password:'leave-pass-1'}}));
+ const {data:{token:web}}=await read(await call(ns,'/api/account/login',{body:{login:'leaver',password:'leave-pass-1'}}));
+ await call(ns,'/api/account/watch',{token:phone,body:{id:'upload-before-delete-1',baseRevision:0,ops:[{kind:'add',symbol:'NVDA'}]}});
+ assert.equal(objects.get('watch-account:'+account.id)!.has('watch:v1'),true);
+ assert.equal((await call(ns,'/api/account/delete',{token:phone,body:{password:'wrong-password'}})).status,401);
+ assert.equal((await call(ns,'/api/account/me',{token:phone})).status,200,'a wrong password deletes nothing');
+ assert.equal((await call(ns,'/api/account/delete',{body:{password:'leave-pass-1'}})).status,401,'a session is required');
+ assert.equal((await call(ns,'/api/account/delete',{token:phone,body:{password:'leave-pass-1'}})).status,200);
+ assert.equal(objects.get('watch-account:'+account.id)!.has('watch:v1'),false,'the synced watchlist is purged');
+ const registry=objects.get('accounts:v1')!;
+ assert.ok(![...registry.keys()].some(k=>k.startsWith('acct:')),'no account record or index remains');
+ assert.equal((await call(ns,'/api/account/me',{token:phone})).status,401);
+ assert.equal((await call(ns,'/api/account/me',{token:web})).status,401,'other devices are signed out too');
+ assert.equal((await call(ns,'/api/account/login',{body:{login:'leaver',password:'leave-pass-1'}})).status,401);
+ assert.equal((await call(ns,'/api/account/register',{body:{email:'del@example.com',username:'leaver',password:'new-pass-123'}})).status,200,'the email and username can be reused');
+});
+
+test('public sync routes cannot purge a vault',async()=>{
+ const data=new Map<string,unknown>([['watch:v1',{revision:0,updatedAt:'',state:{watchlist:['NVDA'],groups:[]},seen:[]}]]);
+ const store={get:async<T>(k:string)=>data.get(k) as T|undefined,put:async<T>(k:string,v:T)=>{data.set(k,v);},delete:async(k:string)=>data.delete(k)};
+ assert.equal((await watchVault(new Request('https://internal/cloud-watch',{method:'DELETE'}),store)).status,405);
+ assert.equal((await watchVault(new Request('https://internal/cloud-watch?ensure=1',{method:'DELETE'}),store)).status,405);
+ assert.ok(data.has('watch:v1'));
+});

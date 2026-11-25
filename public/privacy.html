@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>观澜 · 隐私政策 / Privacy Policy</title>
+<style>
+:root{--bg:#0b0b0e;--fg:#eeeef4;--muted:#a3a3b2;--line:#2c2c34;--accent:#c9c9d6}
+@media (prefers-color-scheme:light){:root{--bg:#f6f6f8;--fg:#17171b;--muted:#5d5d6b;--line:#dcdce3;--accent:#33333d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 64px}
+h1{font-size:1.7rem;letter-spacing:.04em;margin:0 0 4px}
+h2{font-size:1.15rem;margin:32px 0 8px}
+p,li{color:var(--fg)}
+.meta{color:var(--muted);font-size:.9rem;margin:0 0 24px}
+ul{padding-left:1.2em}
+li{margin:4px 0}
+hr{border:0;border-top:1px solid var(--line);margin:48px 0}
+a{color:var(--accent)}
+nav{font-size:.9rem;margin-bottom:28px}
+</style>
+</head>
+<body>
+<main>
+<nav><a href="#zh">中文</a> · <a href="#en">English</a></nav>
+
+<section id="zh" lang="zh-CN">
+<h1>观澜 · 隐私政策</h1>
+<p class="meta">适用于观澜 iOS App 与网站 guanlan.nzs.workers.dev · 更新于 2026年11月26日</p>
+<p>观澜是一个个人行情研究工具。我们只保存让功能运作所必需的数据，不投放广告，不使用第三方统计或追踪工具，也不出售或分享你的个人资料。</p>
+
+<h2>我们保存的数据</h2>
+<ul>
+<li><b>账号（可选）</b>：注册时的邮箱和用户名。密码只以加盐哈希（PBKDF2-SHA256）保存，我们无法看到你的密码。登录凭证在服务器上也只保存其哈希值。</li>
+<li><b>云端自选</b>：登录账号或使用同步密钥时，你的自选股票和分组名称会保存在云端，以便在多台设备间同步。</li>
+<li><b>分享码</b>：生成分享码时，会保存当时自选股票和分组名称的一份副本，30 天后自动删除。任何拿到分享码的人都能导入这份副本，请只分享给你信任的人。</li>
+<li><b>信号提醒（可选）</b>：开启提醒时，会保存提醒设置、推送订阅和已触发的提醒记录。它们以随机设备标识保存，不与账号关联。</li>
+<li><b>本机数据</b>：显示设置、收藏、价格提醒等保存在你的设备上，不上传。</li>
+</ul>
+
+<h2>我们不收集的数据</h2>
+<p>不收集姓名、电话、通讯录、位置、照片、交易或券商账户信息。为防止滥用，服务器会短暂在内存中使用请求的 IP 地址做频率限制，不会长期保存。导入截图时的文字识别在你的设备上完成。</p>
+
+<h2>服务提供方</h2>
+<p>服务运行在 Cloudflare（Workers 与 Durable Objects）上，数据存放在 Cloudflare 的基础设施中。行情、新闻与公告来自公开数据源，由服务器代为获取，不会附带你的个人资料。</p>
+
+<h2>删除你的数据</h2>
+<ul>
+<li>在 App 或网站的「设置 → 账号与自选同步」中选择「删除账号」并输入密码，即可永久删除账号、登录信息和云端自选。本机自选会保留。</li>
+<li>断开同步密钥、关闭提醒或删除 App 都会停止相应数据的使用；如需删除同步密钥或提醒的云端数据，请来信。</li>
+</ul>
+
+<h2>联系我们</h2>
+<p>对隐私有任何疑问或删除请求，请发邮件至 <a href="mailto:moviegoer24@gmail.com">moviegoer24@gmail.com</a>。</p>
+<p>观澜提供的分析仅供研究参考，不构成投资建议。</p>
+</section>
+
+<hr>
+
+<section id="en" lang="en">
+<h1>Guanlan · Privacy Policy</h1>
+<p class="meta">Applies to the Guanlan iOS app and guanlan.nzs.workers.dev · Updated 26 November 2026</p>
+<p>Guanlan is a personal market research tool. We keep only the data needed for its features to work. There are no ads, no third-party analytics or tracking, and we do not sell or share your personal information.</p>
+
+<h2>What we store</h2>
+<ul>
+<li><b>Account (optional)</b>: the email address and username you register with. Your password is stored only as a salted hash (PBKDF2-SHA256), so we cannot see it. Sign-in tokens are also stored only as hashes.</li>
+<li><b>Cloud watchlist</b>: when you sign in or use a sync key, your watchlist stocks and group names are stored so they can sync across your devices.</li>
+<li><b>Share codes</b>: creating a share code stores a copy of your stocks and group names at that moment, deleted automatically after 30 days. Anyone with the code can import that copy, so share it only with people you trust.</li>
+<li><b>Signal alerts (optional)</b>: if you turn alerts on, we store your alert settings, push subscription and the alerts that fired, under a random device identifier that is not linked to your account.</li>
+<li><b>On your device</b>: display settings, bookmarks and price reminders stay on your device and are not uploaded.</li>
+</ul>
+
+<h2>What we don't collect</h2>
+<p>We do not collect your name, phone number, contacts, location, photos, or trading or brokerage account details. To prevent abuse, the server briefly uses your IP address in memory for rate limiting and does not keep it. Text recognition for screenshot imports runs on your device.</p>
+
+<h2>Service providers</h2>
+<p>The service runs on Cloudflare (Workers and Durable Objects), and data is stored on Cloudflare's infrastructure. Quotes, news and filings come from public sources, fetched by our server without any of your personal information.</p>
+
+<h2>Deleting your data</h2>
+<ul>
+<li>In the app or on the website, go to Settings → Account &amp; watchlist sync, choose “Delete account” and enter your password. This permanently deletes the account, its sign-in details and the cloud watchlist. Stocks on your device are kept.</li>
+<li>Disconnecting a sync key, turning off alerts or deleting the app stops the related data from being used. To have sync-key or alert data deleted from the cloud, email us.</li>
+</ul>
+
+<h2>Contact</h2>
+<p>For privacy questions or deletion requests, email <a href="mailto:moviegoer24@gmail.com">moviegoer24@gmail.com</a>.</p>
+<p>Guanlan's analysis is for research only and is not investment advice.</p>
+</section>
+</main>
+</body>
+</html>
