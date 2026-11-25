@@ -16,6 +16,7 @@ import 'screens/signals.dart';
 import 'screens/workspace.dart';
 import 'screens/stock.dart';
 import 'widgets/common.dart';
+import 'widgets/splash.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,14 +24,22 @@ Future<void> main() async {
   final store = await AtlasStore.load();
   final native = NativePushService(store.api, store.deviceToken);
   await native.initialize();
-  runApp(AtlasApp(store: store, push: native));
+  runApp(AtlasApp(store: store, push: native, showSplash: true));
   store.start();
 }
 
 class AtlasApp extends StatelessWidget {
-  const AtlasApp({super.key, required this.store, required this.push});
+  const AtlasApp({
+    super.key,
+    required this.store,
+    required this.push,
+    this.showSplash = false,
+  });
   final AtlasStore store;
   final NativePushService push;
+
+  /// Only the real launch shows the splash; tests pump the shell directly.
+  final bool showSplash;
   @override
   Widget build(BuildContext context) => MultiProvider(
     providers: [
@@ -129,7 +138,9 @@ class AtlasApp extends StatelessWidget {
             ),
             child: child!,
           ),
-          home: const AtlasShell(),
+          home: showSplash
+              ? SplashGate(translate: s.t, child: const AtlasShell())
+              : const AtlasShell(),
         );
       },
     ),

@@ -2226,5 +2226,8 @@
   "分享码存储暂不可用": "Share code storage is temporarily unavailable",
   "没有可分享的自选股票": "There are no stocks to share",
   "生成过于频繁，请稍后重试": "Too many codes created, please try again later",
-  "暂时无法生成分享码，请重试": "Could not create a share code, please retry"
+  "暂时无法生成分享码，请重试": "Could not create a share code, please retry",
+  "观澜": "Guanlan",
+  "跳过": "Skip",
+  "观量价之澜，辨市场之势": "Read the tides of price and volume; discern the market's course"
 }
