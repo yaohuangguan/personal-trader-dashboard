@@ -2,3 +2,7 @@
 .sidebar-is-collapsed .sidebar .watch-transfer{display:none}
 
 .watch-transfer-overlay{z-index:1450}
+.watch-transfer-code{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.watch-transfer-code b{font-size:1.35em;letter-spacing:.12em;font-variant-numeric:tabular-nums}
+.watch-transfer-code-input{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.watch-transfer-code-input input{flex:1 1 12em;min-width:0;text-transform:uppercase;letter-spacing:.08em}

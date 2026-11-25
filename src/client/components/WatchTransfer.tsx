@@ -1,13 +1,13 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import {Download,Upload,FileJson,X,Check} from 'lucide-react';
+import {Download,Upload,FileJson,X,Check,KeyRound,Copy} from 'lucide-react';
 import {parseWatchTransfer,serializeWatchTransfer,planWatchImport,WATCH_TRANSFER_MAX_BYTES,type WatchTransfer as Transfer} from '../../shared/watch-transfer';
-import {readLocalWatch,importLocalWatch} from '../watch-transfer';
+import {readLocalWatch,importLocalWatch,createShareCode,readShareCode,SHARE_CODE_PATTERN} from '../watch-transfer';
 import {t} from '../preferences';
 import './WatchTransfer.css';
 const initial=()=>{try{return readLocalWatch();}catch{return {watchlist:[],groups:[]};}};
 export default function WatchTransfer({compact=false}:{compact?:boolean}){
- const [current,setCurrent]=useState(initial),[incoming,setIncoming]=useState<Transfer|null>(null),[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[name,setName]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState('');
+ const [current,setCurrent]=useState(initial),[incoming,setIncoming]=useState<Transfer|null>(null),[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[name,setName]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(''),[shareCode,setShareCode]=useState(''),[codeInput,setCodeInput]=useState('');
  const picker=useRef<HTMLInputElement>(null);
  useEffect(()=>{const update=()=>{try{setCurrent(readLocalWatch());}catch(e){setError(String(e));}};for(const event of ['atlas:watch-cloud','atlas:watch-local','storage'])window.addEventListener(event,update);return()=>{for(const event of ['atlas:watch-cloud','atlas:watch-local','storage'])window.removeEventListener(event,update);};},[]);
  const preview=useMemo(()=>{try{return {plan:incoming?planWatchImport(current,incoming):null,error:''};}catch(e){return {plan:null,error:String(e)};}},[current,incoming]);
@@ -25,10 +25,14 @@ export default function WatchTransfer({compact=false}:{compact?:boolean}){
    setMessage(t('自选文件已导出，可发给其他用户导入。'));
   }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}
  };
+ const makeCode=async()=>{setError('');setMessage('');setBusy(true);try{const made=await createShareCode();setShareCode(made.code);setMessage(t('分享码已生成，30天内有效；对方在“输入分享码”中一键导入。'));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+ const openCode=async()=>{setOpen(true);setBusy(true);setName(t('分享码')+' '+codeInput.trim().toUpperCase());setError('');setMessage('');setIncoming(null);try{const value=await readShareCode(codeInput);setCurrent(readLocalWatch());setIncoming(value);setCodeInput('');}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
  const apply=()=>{if(!incoming)return;try{const result=importLocalWatch(incoming);setCurrent(result.state);setOpen(false);setMessage(t('导入完成')+' · '+t('新增股票')+' '+result.added+' · '+t('新建分组')+' '+result.groupsAdded+(result.skipped||result.groupsSkipped?' · '+t('容量不足跳过')+' '+result.skipped+' / '+result.groupsSkipped:''));}catch(e){setError(e instanceof Error?e.message:String(e));}};
  const plan=preview.plan;
  return <div className={'watch-transfer'+(compact?' is-compact':'')}>
-  <div className="watch-transfer-actions"><button type="button" disabled={busy||!current.watchlist.length} onClick={()=>void exportFile()}><Download size={16}/>{t('导出自选')}</button><button type="button" disabled={busy} onClick={()=>{if(picker.current)picker.current.value='';picker.current?.click();}}><Upload size={16}/>{t('导入自选')}</button></div>
+  <div className="watch-transfer-actions"><button type="button" disabled={busy||!current.watchlist.length} onClick={()=>void exportFile()}><Download size={16}/>{t('导出自选')}</button><button type="button" disabled={busy} onClick={()=>{if(picker.current)picker.current.value='';picker.current?.click();}}><Upload size={16}/>{t('导入自选')}</button><button type="button" disabled={busy||!current.watchlist.length} onClick={()=>void makeCode()}><KeyRound size={16}/>{t('生成分享码')}</button></div>
+  {shareCode&&<p className="watch-transfer-code"><b>{shareCode}</b><button type="button" onClick={()=>void navigator.clipboard.writeText(t('在观澜输入分享码导入我的自选：')+shareCode).then(()=>setMessage(t('分享码已复制')))}><Copy size={15}/>{t('复制')}</button></p>}
+  <form className="watch-transfer-code-input" onSubmit={e=>{e.preventDefault();void openCode();}}><input aria-label={t('输入分享码')} placeholder={t('输入分享码，如 ABCD-2345')} autoComplete="off" autoCapitalize="characters" value={codeInput} onChange={e=>setCodeInput(e.target.value)}/><button type="submit" disabled={busy||!SHARE_CODE_PATTERN.test(codeInput.trim().replace(/\s/g,''))}>{t('导入')}</button></form>
   <input ref={picker} type="file" accept=".json,application/json" aria-label={t('选择自选文件')} className="watch-transfer-file" onChange={e=>void choose(e.target.files?.[0])}/>
   {message&&<p role="status">{message}</p>}{!open&&error&&<p role="alert">{t(error)}</p>}
   <Dialog.Root open={open} onOpenChange={value=>{if(!busy)setOpen(value);}}><Dialog.Portal><Dialog.Overlay className="settings-overlay watch-transfer-overlay"/><Dialog.Content className="watch-transfer-dialog"><header><Dialog.Title><FileJson size={21}/>{t('导入自选')}</Dialog.Title><Dialog.Close asChild><button type="button" className="icon-button" disabled={busy} aria-label={t('关闭')}><X size={22}/></button></Dialog.Close></header><Dialog.Description>{name} · {t('合并到当前自选，原有股票与分组保留。')}</Dialog.Description>
