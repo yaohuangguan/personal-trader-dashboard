@@ -36,6 +36,20 @@ async function openSession(s:Storage,accountId:string){
  return token;
 }
 
+/** Verifies a password with the shared 15-minute lockout; returns an error response or null when it matches. */
+async function checkPassword(s:Storage,record:AccountRecord|undefined,failKey:string,password:string,wrong:string){
+ const fails=await s.get<Failures>(failKey);
+ if(fails&&fails.count>=MAX_FAILURES&&fails.until>Date.now())return json({error:'尝试次数过多，请15分钟后再试',retryAt:new Date(fails.until).toISOString()},429);
+ // Unknown accounts still pay for one derivation so response time does not reveal which logins exist.
+ const hash=await derive(password,record?fromHex(record.salt):new Uint8Array(16),record?.iterations||PBKDF2_ITERATIONS);
+ if(!record||!same(hash,record.hash)){
+  const count=(fails&&fails.until>Date.now()?fails.count:0)+1;await s.put<Failures>(failKey,{count,until:Date.now()+LOCK_MS});
+  return json({error:wrong},401);
+ }
+ if(fails)await s.delete(failKey);
+ return null;
+}
+
 /** Registry Durable Object handler: one serialized store for every account, username/email index and session. */
 export async function accountStore(req:Request,s:Storage):Promise<Response>{
  if(req.method!=='POST')return json({error:'Method not allowed'},405);
@@ -59,16 +73,21 @@ export async function accountStore(req:Request,s:Storage):Promise<Response>{
   if(typeof login!=='string'||!login.trim()||login.length>254||typeof password!=='string'||password.length>128)return json({error:'请输入邮箱或用户名和密码'},400);
   const id=await s.get<string>(login.includes('@')?'acct:email:'+normalizeEmail(login):'acct:user:'+usernameKey(login));
   const record=id?await s.get<AccountRecord>('acct:id:'+id):undefined;
-  const failKey='fail:'+(id||'unknown:'+await sha256(usernameKey(login))),fails=await s.get<Failures>(failKey);
-  if(fails&&fails.count>=MAX_FAILURES&&fails.until>Date.now())return json({error:'尝试次数过多，请15分钟后再试',retryAt:new Date(fails.until).toISOString()},429);
-  // Unknown accounts still pay for one derivation so response time does not reveal which logins exist.
-  const hash=await derive(password,record?fromHex(record.salt):new Uint8Array(16),record?.iterations||PBKDF2_ITERATIONS);
-  if(!record||!same(hash,record.hash)){
-   const count=(fails&&fails.until>Date.now()?fails.count:0)+1;await s.put<Failures>(failKey,{count,until:Date.now()+LOCK_MS});
-   return json({error:'邮箱/用户名或密码错误'},401);
-  }
-  if(fails)await s.delete(failKey);
+  const denied=await checkPassword(s,record,'fail:'+(id||'unknown:'+await sha256(usernameKey(login))),password,'邮箱/用户名或密码错误');
+  if(denied||!record)return denied!;
   return json({token:await openSession(s,record.id),account:publicAccount(record)});
+ }
+ if(op==='delete'){
+  if(typeof body.token!=='string'||!validToken(body.token))return json({error:'请先登录'},401);
+  if(typeof body.password!=='string'||body.password.length>128)return json({error:'请输入密码确认删除'},400);
+  const key='sess:'+await sha256(body.token),session=await s.get<Session>(key);
+  const record=session&&session.expiresAt>Date.now()?await s.get<AccountRecord>('acct:id:'+session.accountId):undefined;
+  if(!record)return json({error:'登录已过期，请重新登录'},401);
+  const denied=await checkPassword(s,record,'fail:'+record.id,body.password,'密码错误');
+  if(denied)return denied;
+  // Other devices' sessions now resolve to a missing account and sign out on their next request.
+  await s.delete('acct:id:'+record.id);await s.delete('acct:email:'+record.email);await s.delete('acct:user:'+usernameKey(record.username));await s.delete(key);
+  return json({ok:true,accountId:record.id});
  }
  // Internal only: accountRoute never forwards an op from client input, so this is reachable solely from operator code.
  if(op==='lookup'){
@@ -95,7 +114,7 @@ function limited(ip:string,kind:string,max:number,windowMs:number){
 }
 const ORIGINS=['https://guanlan.nzs.workers.dev','https://personal-market-atlas.nzs.workers.dev'];
 
-/** /api/account/{register,login,logout,me,watch}. The watchlist vault is one Durable Object per account. */
+/** /api/account/{register,login,logout,me,watch,delete}. The watchlist vault is one Durable Object per account. */
 export async function accountRoute(req:Request,ns?:MonitorNamespace){
  const u=new URL(req.url);if(!u.pathname.startsWith('/api/account/'))return null;
  if(!ns)return json({error:'账号服务暂不可用'},503);
@@ -113,6 +132,16 @@ export async function accountRoute(req:Request,ns?:MonitorNamespace){
  }
  if(!validToken(token))return json({error:'请先登录'},401);
  if(action==='logout'){if(req.method!=='POST')return json({error:'Method not allowed'},405);return registry({op:'logout',token});}
+ if(action==='delete'){
+  if(req.method!=='POST')return json({error:'Method not allowed'},405);
+  const raw=await req.text();if(raw.length>4000)return json({error:'请求过大'},413);
+  let body:Record<string,unknown>;try{body=JSON.parse(raw);}catch{return json({error:'Invalid JSON'},400);}
+  const result=await registry({op:'delete',token,password:body.password});
+  if(!result.ok)return result;
+  const {accountId}=await result.json() as {accountId:string};
+  await ns.get(ns.idFromName('watch-account:'+accountId)).fetch(new Request('https://internal/cloud-watch?purge=1',{method:'DELETE'}));
+  return json({ok:true});
+ }
  const session=await registry({op:'session',token});
  if(action==='me')return session;
  if(action!=='watch')return json({error:'Unknown API path'},404);

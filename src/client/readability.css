@@ -9,3 +9,6 @@ body{font-size:1rem;line-height:1.6}button,input,select,textarea{font-family:inh
 @media(max-width:580px){.desk-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.desk-security-top>.desk-session{width:100%}.desk-security-main{align-items:flex-start}.desk-big-price{flex:1}.desk-company>span:not(.desk-market-tag){font-size:.8rem}.desk-security-main>.desk-live-actions{width:100%}}
 
 @media(max-width:760px){.research-desk .desk-context-tabs,.research-desk .desk-chart-heading .desk-tabs{flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;min-width:0;scrollbar-width:none}.research-desk .desk-context-tabs>button,.research-desk .desk-chart-heading .desk-tabs>button{flex:0 0 auto;min-height:42px;padding:9px 3px}.research-desk .desk-context-tabs{gap:18px}.research-desk .desk-chart-heading{min-width:0}.research-desk .desk-chart-heading>span{display:none}}
+
+.settings-modal button.danger{color:#ff6b6b;border-color:currentColor}
+.settings-modal details summary{cursor:pointer;margin:8px 0}

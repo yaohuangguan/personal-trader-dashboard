@@ -2229,5 +2229,13 @@
   "暂时无法生成分享码，请重试": "Could not create a share code, please retry",
   "观澜": "Guanlan",
   "跳过": "Skip",
-  "观量价之澜，辨市场之势": "Read the tides of price and volume; discern the market's course"
+  "观量价之澜，辨市场之势": "Read the tides of price and volume; discern the market's course",
+  "删除账号": "Delete account",
+  "将永久删除账号、登录信息和云端自选，无法恢复。本机现有自选会保留。": "This permanently deletes the account, its sign-in details and the cloud watchlist. It cannot be undone. Stocks on this device are kept.",
+  "输入密码确认": "Enter your password to confirm",
+  "永久删除": "Delete permanently",
+  "账号已删除，本机自选保留": "Account deleted; the watchlist stays on this device",
+  "请输入密码确认删除": "Enter your password to confirm deletion",
+  "密码错误": "Wrong password",
+  "隐私政策": "Privacy policy"
 }

@@ -38,6 +38,19 @@ extension WatchCloud on AtlasStore {
     await syncCloud();
   }
 
+  /// Permanently deletes the account and its synced watchlist on the server.
+  /// The stocks on this device stay, so nothing visible disappears locally.
+  Future<void> deleteAccount(String password) async {
+    final token = accountToken;
+    if (token.isEmpty) throw const FormatException('请先登录');
+    await api.post('/api/account/delete', {'password': password}, token: token);
+    await prefs.remove('accountToken');
+    await prefs.remove('accountProfile');
+    await prefs.remove('cloudSyncBase');
+    syncStatus = '账号已删除，本机自选保留';
+    notifyListeners();
+  }
+
   Future<void> logoutAccount() async {
     final token = accountToken;
     await prefs.remove('accountToken');

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/store.dart';
 import 'common.dart';
@@ -62,6 +63,45 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
     ),
   );
 
+  Future<void> confirmDelete(AtlasStore s) async {
+    final confirm = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(s.t('删除账号')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(s.t('将永久删除账号、登录信息和云端自选，无法恢复。本机现有自选会保留。')),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirm,
+              obscureText: true,
+              autofocus: true,
+              autofillHints: const [AutofillHints.password],
+              decoration: InputDecoration(labelText: s.t('输入密码确认')),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(),
+            child: Text(s.t('取消')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.of(dialog).pop(confirm.text),
+            child: Text(s.t('永久删除')),
+          ),
+        ],
+      ),
+    );
+    // Not disposed here: the dialog's closing animation still reads it.
+    if (password == null || password.isEmpty) return;
+    await run(() => s.deleteAccount(password));
+  }
+
   Widget accountSection(AtlasStore s) {
     final account = s.account;
     if (s.accountToken.isNotEmpty) {
@@ -89,6 +129,11 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
               TextButton(
                 onPressed: working ? null : () => run(s.logoutAccount),
                 child: Text(s.t('退出登录')),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                onPressed: working ? null : () => confirmDelete(s),
+                child: Text(s.t('删除账号')),
               ),
             ],
           ),
@@ -250,6 +295,16 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
           const SizedBox(height: 12),
           accountSection(s),
           if (s.accountToken.isEmpty) keySection(s),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => launchUrl(
+                Uri.parse('${s.api.base}/privacy'),
+                mode: LaunchMode.inAppBrowserView,
+              ),
+              child: Text(s.t('隐私政策')),
+            ),
+          ),
           if (error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
