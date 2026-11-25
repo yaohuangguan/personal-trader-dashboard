@@ -3,7 +3,8 @@ part of 'store.dart';
 extension WatchCloud on AtlasStore {
   String get syncKey => prefs.getString('cloudSyncKey') ?? '';
   String get accountToken => prefs.getString('accountToken') ?? '';
-  Json get account => obj(AtlasStore._decode(prefs.getString('accountProfile')));
+  Json get account =>
+      obj(AtlasStore._decode(prefs.getString('accountProfile')));
   bool get cloudConnected => accountToken.isNotEmpty || syncKey.isNotEmpty;
   String get _cloudPath =>
       accountToken.isNotEmpty ? '/api/account/watch' : '/api/watch-sync';
@@ -19,8 +20,10 @@ extension WatchCloud on AtlasStore {
     'password': password,
   });
 
-  Future<void> loginAccount(String login, String password) =>
-      _signIn('/api/account/login', {'login': login.trim(), 'password': password});
+  Future<void> loginAccount(String login, String password) => _signIn(
+    '/api/account/login',
+    {'login': login.trim(), 'password': password},
+  );
 
   /// Signing in replaces sync-key mode. The baseline is cleared so the first
   /// sync diffs against an empty list and merges every local stock and group
@@ -50,6 +53,7 @@ extension WatchCloud on AtlasStore {
       }
     }
   }
+
   Json _watchState() => {
     'watchlist': List<String>.from(watchlist),
     'groups': jsonDecode(jsonEncode(groups)),

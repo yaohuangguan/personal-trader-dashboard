@@ -80,7 +80,9 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
-                onPressed: working || s.syncBusy ? null : () => run(s.syncCloud),
+                onPressed: working || s.syncBusy
+                    ? null
+                    : () => run(s.syncCloud),
                 icon: const Icon(Icons.sync),
                 label: Text(s.t('立即同步')),
               ),
@@ -117,12 +119,7 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
               type: TextInputType.emailAddress,
               hints: const [AutofillHints.email],
             ),
-            field(
-              s,
-              username,
-              '用户名',
-              hints: const [AutofillHints.newUsername],
-            ),
+            field(s, username, '用户名', hints: const [AutofillHints.newUsername]),
             field(
               s,
               password,
@@ -198,9 +195,8 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: s.syncKey));
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(s.t('同步密钥已复制'))));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(s.t('同步密钥已复制'))));
                 }
               },
               child: Text(s.t('复制同步密钥')),

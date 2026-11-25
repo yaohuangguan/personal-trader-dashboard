@@ -24,8 +24,11 @@ class FakeAccountServer {
     requests.add('${r.method} ${r.url.path}');
     final auth = r.headers['Authorization'];
     Json body = r.body.isEmpty ? {} : jsonDecode(r.body) as Json;
-    http.Response reply(Object v, [int status = 200]) =>
-        http.Response(jsonEncode(v), status, headers: {'content-type': 'application/json'});
+    http.Response reply(Object v, [int status = 200]) => http.Response(
+      jsonEncode(v),
+      status,
+      headers: {'content-type': 'application/json'},
+    );
     switch (r.url.path) {
       case '/api/account/register':
       case '/api/account/login':
@@ -34,7 +37,11 @@ class FakeAccountServer {
         }
         return reply({
           'token': 'T' * 43,
-          'account': {'id': 'acct-1', 'email': 'sam@example.com', 'username': 'Sam'},
+          'account': {
+            'id': 'acct-1',
+            'email': 'sam@example.com',
+            'username': 'Sam',
+          },
         });
       case '/api/account/watch':
         if (auth != 'Bearer ${'T' * 43}' || expired) {
@@ -66,7 +73,11 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'watchlist': ['002472.SZ', 'NVDA', '600519.SH'],
       'watchGroups': jsonEncode([
-        {'id': 'core', 'name': '核心', 'symbols': ['NVDA']},
+        {
+          'id': 'core',
+          'name': '核心',
+          'symbols': ['NVDA'],
+        },
       ]),
       'cloudSyncKey': ?syncKey,
     });
@@ -86,13 +97,22 @@ void main() {
     expect(s.account['username'], 'Sam');
     expect(s.syncKey, isEmpty);
     expect(s.cloudConnected, isTrue);
-    expect(obj(server.vault['state'])['watchlist'], ['002472.SZ', 'NVDA', '600519.SH']);
-    expect(rows(obj(server.vault['state'])['groups']).single['symbols'], ['NVDA']);
-    expect(server.requests, containsAllInOrder([
-      'POST /api/account/register',
-      'GET /api/account/watch',
-      'POST /api/account/watch',
-    ]));
+    expect(obj(server.vault['state'])['watchlist'], [
+      '002472.SZ',
+      'NVDA',
+      '600519.SH',
+    ]);
+    expect(rows(obj(server.vault['state'])['groups']).single['symbols'], [
+      'NVDA',
+    ]);
+    expect(
+      server.requests,
+      containsAllInOrder([
+        'POST /api/account/register',
+        'GET /api/account/watch',
+        'POST /api/account/watch',
+      ]),
+    );
     expect(s.syncStatus, startsWith('已同步'));
     s.dispose();
   });
@@ -111,7 +131,10 @@ void main() {
 
   test('a wrong password leaves the device signed out', () async {
     final (s, _) = await make();
-    await expectLater(s.loginAccount('Sam', 'wrong-pass'), throwsA(isA<ApiException>()));
+    await expectLater(
+      s.loginAccount('Sam', 'wrong-pass'),
+      throwsA(isA<ApiException>()),
+    );
     expect(s.accountToken, isEmpty);
     s.dispose();
   });
@@ -138,7 +161,9 @@ void main() {
     s.dispose();
   });
 
-  testWidgets('settings panel shows sign-in, then the signed-in account', (tester) async {
+  testWidgets('settings panel shows sign-in, then the signed-in account', (
+    tester,
+  ) async {
     final (s, _) = await make();
     Widget app() => ChangeNotifierProvider.value(
       value: s,
