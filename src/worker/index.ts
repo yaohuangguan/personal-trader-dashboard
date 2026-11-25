@@ -8,6 +8,7 @@ import {chartPayload} from './chart-payload';
 import {computeCache,studySession} from './compute-cache';
 import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
+import {accountRoute} from './account';
 import {indicatorMarks} from '../shared/indicator-marks';
 import {analyzeStrategy} from '../shared/strategy';
 import {loadTradeReview,loadTradeContext} from './trade-review';
@@ -520,6 +521,7 @@ export default {
    if(['/sw.js','/version.json'].includes(incoming.pathname)&&env.ASSETS){const resource=await env.ASSETS.fetch(request),response=new Response(resource.body,resource);response.headers.set('cache-control','no-store, max-age=0');if(incoming.pathname==='/sw.js')response.headers.set('service-worker-allowed','/');return response;}
    const migration=await clientMigrationRoute(request,env.SHARES);if(migration)return migration;
    const synced=await watchSyncRoute(request,env.MARKET_SCANNER);if(synced)return synced;
+   const account=await accountRoute(request,env.MARKET_SCANNER);if(account)return account;
    if(new URL(request.url).pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
     const raw=await request.text();if(raw.length>2500000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};

@@ -2,6 +2,58 @@ part of 'store.dart';
 
 extension WatchCloud on AtlasStore {
   String get syncKey => prefs.getString('cloudSyncKey') ?? '';
+  String get accountToken => prefs.getString('accountToken') ?? '';
+  Json get account =>
+      obj(AtlasStore._decode(prefs.getString('accountProfile')));
+  bool get cloudConnected => accountToken.isNotEmpty || syncKey.isNotEmpty;
+  String get _cloudPath =>
+      accountToken.isNotEmpty ? '/api/account/watch' : '/api/watch-sync';
+  String get _cloudToken => accountToken.isNotEmpty ? accountToken : syncKey;
+
+  Future<void> registerAccount(
+    String email,
+    String username,
+    String password,
+  ) => _signIn('/api/account/register', {
+    'email': email.trim(),
+    'username': username.trim(),
+    'password': password,
+  });
+
+  Future<void> loginAccount(String login, String password) => _signIn(
+    '/api/account/login',
+    {'login': login.trim(), 'password': password},
+  );
+
+  /// Signing in replaces sync-key mode. The baseline is cleared so the first
+  /// sync diffs against an empty list and merges every local stock and group
+  /// into the account instead of overwriting either side.
+  Future<void> _signIn(String path, Json body) async {
+    if (syncBusy) throw const FormatException('正在同步，请稍候');
+    final result = await api.post(path, body);
+    await prefs.setString('accountToken', str(result['token']));
+    await prefs.setString('accountProfile', jsonEncode(obj(result['account'])));
+    await prefs.remove('cloudSyncKey');
+    await prefs.remove('cloudSyncBase');
+    await syncCloud();
+  }
+
+  Future<void> logoutAccount() async {
+    final token = accountToken;
+    await prefs.remove('accountToken');
+    await prefs.remove('accountProfile');
+    await prefs.remove('cloudSyncBase');
+    syncStatus = '已退出登录，本机自选保留';
+    notifyListeners();
+    if (token.isNotEmpty) {
+      try {
+        await api.post('/api/account/logout', {}, token: token);
+      } catch (_) {
+        // The local session is already gone; the server copy expires on its own.
+      }
+    }
+  }
+
   Json _watchState() => {
     'watchlist': List<String>.from(watchlist),
     'groups': jsonDecode(jsonEncode(groups)),
@@ -24,23 +76,24 @@ extension WatchCloud on AtlasStore {
   }
 
   Future<void> syncCloud() async {
-    if (syncBusy || _watchImporting || syncKey.isEmpty || _disposed) return;
+    if (syncBusy || _watchImporting || !cloudConnected || _disposed) return;
     syncBusy = true;
     syncStatus = '正在同步…';
     notifyListeners();
     try {
       final before = _watchState(),
           base = obj(AtlasStore._decode(prefs.getString('cloudSyncBase')));
-      final remote = await api.get('/api/watch-sync', token: syncKey);
+      final path = _cloudPath, token = _cloudToken;
+      final remote = await api.get(path, token: token);
       final ops = watchCloudDiff(obj(base['state']), before);
       final result = ops.isEmpty
           ? remote
-          : await api.post('/api/watch-sync', {
+          : await api.post(path, {
               'id':
                   '${DateTime.now().microsecondsSinceEpoch}_${Random.secure().nextInt(0x7fffffff)}',
               'baseRevision': base['revision'] ?? remote['revision'],
               'ops': ops,
-            }, token: syncKey);
+            }, token: token);
       final pending = watchCloudDiff(before, _watchState());
       final applied = watchCloudApply(obj(result['state']), pending);
       watchlist = List<String>.from(applied['watchlist'] ?? []);
@@ -55,6 +108,15 @@ extension WatchCloud on AtlasStore {
           '已同步 · ${str(result['updatedAt']).replaceFirst('T', ' ').substring(0, 19)} UTC';
       if (pending.isNotEmpty) {
         _syncDebounce = Timer(const Duration(seconds: 1), syncCloud);
+      }
+    } on ApiException catch (e) {
+      if (e.status == 401 && accountToken.isNotEmpty) {
+        await prefs.remove('accountToken');
+        await prefs.remove('accountProfile');
+        await prefs.remove('cloudSyncBase');
+        syncStatus = '登录已过期，请重新登录；本机自选保留';
+      } else {
+        syncStatus = '未同步：$e；本机修改保留';
       }
     } catch (e) {
       syncStatus = '未同步：$e；本机修改保留';

@@ -382,7 +382,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       final state = jsonEncode({'watchlist': watchlist, 'groups': groups});
       if (state != _lastWatchState) {
         _lastWatchState = state;
-        if (syncKey.isNotEmpty) {
+        if (cloudConnected) {
           _syncDebounce?.cancel();
           _syncDebounce = Timer(const Duration(milliseconds: 900), syncCloud);
         }
