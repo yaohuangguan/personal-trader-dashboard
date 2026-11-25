@@ -9,6 +9,8 @@ import {computeCache,studySession} from './compute-cache';
 import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
 import {accountRoute} from './account';
+import {adminRoute} from './admin';
+import {watchShareRoute} from './watch-share';
 import {indicatorMarks} from '../shared/indicator-marks';
 import {analyzeStrategy} from '../shared/strategy';
 import {loadTradeReview,loadTradeContext} from './trade-review';
@@ -36,7 +38,7 @@ import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from 
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env extends Level2Env { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const pending=new Map<string,Promise<unknown>>();
@@ -522,6 +524,8 @@ export default {
    const migration=await clientMigrationRoute(request,env.SHARES);if(migration)return migration;
    const synced=await watchSyncRoute(request,env.MARKET_SCANNER);if(synced)return synced;
    const account=await accountRoute(request,env.MARKET_SCANNER);if(account)return account;
+   const watchShare=await watchShareRoute(request,env.SHARES);if(watchShare)return watchShare;
+   const admin=await adminRoute(request,env);if(admin)return admin;
    if(new URL(request.url).pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
     const raw=await request.text();if(raw.length>2500000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};

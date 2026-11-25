@@ -331,6 +331,10 @@ class _WatchPageState extends State<WatchPage> {
               switch (action) {
                 case 'export':
                   shareWatchTransfer(context);
+                case 'code':
+                  shareWatchCode(context);
+                case 'code-import':
+                  showWatchImport(context, enterCode: true);
                 case 'file':
                   showWatchImport(context, pickFile: true);
                 case 'import':
@@ -372,6 +376,12 @@ class _WatchPageState extends State<WatchPage> {
                 enabled: s.watchlist.isNotEmpty,
                 child: Text(s.t('导出自选')),
               ),
+              PopupMenuItem(
+                value: 'code',
+                enabled: s.watchlist.isNotEmpty,
+                child: Text(s.t('生成分享码')),
+              ),
+              PopupMenuItem(value: 'code-import', child: Text(s.t('输入分享码导入'))),
               PopupMenuItem(value: 'file', child: Text(s.t('导入自选文件'))),
               PopupMenuItem(value: 'import', child: Text(s.t('从其他App导入自选'))),
             ],
@@ -753,6 +763,18 @@ class SettingsPage extends StatelessWidget {
                   onPressed: () => shareWatchTransfer(context),
                   icon: const Icon(Icons.ios_share),
                   label: Text(s.t('导出自选')),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: s.watchlist.isEmpty
+                      ? null
+                      : () => shareWatchCode(context),
+                  icon: const Icon(Icons.key),
+                  label: Text(s.t('生成分享码')),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => showWatchImport(context, enterCode: true),
+                  icon: const Icon(Icons.keyboard),
+                  label: Text(s.t('输入分享码导入')),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => showWatchImport(context, pickFile: true),

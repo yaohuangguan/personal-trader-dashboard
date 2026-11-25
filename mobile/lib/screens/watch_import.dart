@@ -7,16 +7,26 @@ import '../core/api.dart';
 import '../core/store.dart';
 import '../core/watch_import.dart';
 import '../core/watch_transfer.dart';
+import '../core/watch_transfer_share.dart';
 import '../widgets/common.dart';
 
-Future<void> showWatchImport(BuildContext context, {bool pickFile = false}) =>
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => WatchImportPage(pickFile: pickFile)),
-    );
+Future<void> showWatchImport(
+  BuildContext context, {
+  bool pickFile = false,
+  bool enterCode = false,
+}) => Navigator.of(context).push<void>(
+  MaterialPageRoute(
+    builder: (_) => WatchImportPage(pickFile: pickFile, enterCode: enterCode),
+  ),
+);
 
 class WatchImportPage extends StatefulWidget {
-  const WatchImportPage({super.key, this.pickFile = false});
-  final bool pickFile;
+  const WatchImportPage({
+    super.key,
+    this.pickFile = false,
+    this.enterCode = false,
+  });
+  final bool pickFile, enterCode;
   @override
   State<WatchImportPage> createState() => _WatchImportPageState();
 }
@@ -80,9 +90,13 @@ class _WatchImportPageState extends State<WatchImportPage> {
     });
     try {
       portable = null;
-      final raw = text.text.trimLeft();
-      if (raw.startsWith('{') || raw.startsWith('[')) {
-        final packet = WatchTransfer.parse(text.text);
+      final raw = text.text.trimLeft(),
+          code = raw.trim().replaceAll(RegExp(r'\s'), '');
+      final isCode = shareCodePattern.hasMatch(code);
+      if (isCode || raw.startsWith('{') || raw.startsWith('[')) {
+        final packet = isCode
+            ? await readWatchShareCode(context.read<AtlasStore>().api, code)
+            : WatchTransfer.parse(text.text);
         if (packet.watchlist.isEmpty) throw const FormatException('文件中没有自选股票');
         if (!mounted) return;
         setState(() {
@@ -94,7 +108,9 @@ class _WatchImportPageState extends State<WatchImportPage> {
           names.clear();
           verified = true;
           importGroups = true;
-          notice = '已读取自选文件；股票与分组可一起导入，无需等待行情源。';
+          notice = isCode
+              ? '已读取分享码 ${code.toUpperCase()}；股票与分组可一起导入。'
+              : '已读取自选文件；股票与分组可一起导入，无需等待行情源。';
         });
         return;
       }
@@ -232,9 +248,17 @@ class _WatchImportPageState extends State<WatchImportPage> {
                 maxLines: 8,
                 enabled: !busy,
                 onChanged: (_) => setState(() => verified = false),
-                decoration: const InputDecoration(
-                  labelText: '粘贴名单或查看识别原文',
-                  hintText: '300750 宁德时代\n002594 比亚迪\n600036 招商银行',
+                autofocus: widget.enterCode,
+                textCapitalization: widget.enterCode
+                    ? TextCapitalization.characters
+                    : TextCapitalization.none,
+                decoration: InputDecoration(
+                  labelText: widget.enterCode
+                      ? '输入分享码，如 ABCD-2345'
+                      : '粘贴名单、分享码或查看识别原文',
+                  hintText: widget.enterCode
+                      ? 'ABCD-2345'
+                      : '300750 宁德时代\n002594 比亚迪\n600036 招商银行',
                   border: OutlineInputBorder(),
                 ),
               ),

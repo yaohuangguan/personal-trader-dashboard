@@ -70,6 +70,12 @@ export async function accountStore(req:Request,s:Storage):Promise<Response>{
   if(fails)await s.delete(failKey);
   return json({token:await openSession(s,record.id),account:publicAccount(record)});
  }
+ // Internal only: accountRoute never forwards an op from client input, so this is reachable solely from operator code.
+ if(op==='lookup'){
+  if(!validEmail(body.email))return json({error:'Invalid email'},400);
+  const id=await s.get<string>('acct:email:'+normalizeEmail(body.email)),record=id?await s.get<AccountRecord>('acct:id:'+id):undefined;
+  return record?json({account:publicAccount(record)}):json({error:'Account not found'},404);
+ }
  if(op==='session'||op==='logout'){
   if(typeof body.token!=='string'||!validToken(body.token))return json({error:'请先登录'},401);
   const key='sess:'+await sha256(body.token),session=await s.get<Session>(key);
