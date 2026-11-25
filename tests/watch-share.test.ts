@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {watchShareRoute,normalizeShareCode} from '../src/worker/watch-share';
 import {adminRoute} from '../src/worker/admin';
@@ -43,7 +44,8 @@ function namespace(){
  const objects=new Map<string,Map<string,unknown>>();
  const storage=(d:Map<string,unknown>)=>({get:async<T>(k:string)=>d.get(k) as T|undefined,put:async<T>(k:string,v:T)=>{d.set(k,structuredClone(v));},delete:async(k:string)=>d.delete(k)});
  const get=(name:unknown)=>{const key=String(name);if(!objects.has(key))objects.set(key,new Map());const s=storage(objects.get(key)!);return {fetch:async(req:Request)=>new URL(req.url).pathname==='/account'?accountStore(req,s):watchVault(req,s)};};
- return {objects,ns:{idFromName:(n:string)=>n,idFromString:(id:string)=>id,get}};
+ // Like real Durable Object IDs, names map to stable 64-hex IDs.
+ return {objects,ns:{idFromName:(n:string)=>createHash('sha256').update(n).digest('hex'),idFromString:(id:string)=>id,get}};
 }
 test('admin endpoints are off without ADMIN_TOKEN, report counts only, and merge a vault into an account without deleting',async()=>{
  const {ns,objects}=namespace(),token='T'.repeat(40);
@@ -63,6 +65,11 @@ test('admin endpoints are off without ADMIN_TOKEN, report counts only, and merge
  assert.deepEqual([merged.added,merged.total,merged.groups],[5,6,1]);
  const vault=await (await accountRoute(new Request(origin+'/api/account/watch',{headers:{authorization:'Bearer '+session}}),ns as never))!.json() as {state:{watchlist:string[]}};
  assert.deepEqual(vault.state.watchlist,['TSLA','002472.SZ','NVDA','600519.SH','AAPL','300750.SZ'],'existing account stocks are kept first');
+ const me=await (await accountRoute(new Request(origin+'/api/account/me',{headers:{authorization:'Bearer '+session}}),ns as never))!.json() as {account:{id:string}};
+ const own=createHash('sha256').update('watch-account:'+me.account.id).digest('hex');
+ assert.equal((await admin('/api/admin/watch-vaults/merge',{id:own,email:'me@example.com'})).status,400,'an account vault cannot be merged into itself');
+ const flagged=await (await admin('/api/admin/watch-vaults',{ids:[big,own],email:'me@example.com'})).json() as {vaults:{id:string;accountVault?:boolean}[]};
+ assert.deepEqual(flagged.vaults.map(v=>!!v.accountVault),[false,true]);
  const again=await (await admin('/api/admin/watch-vaults/merge',{id:big,email:'me@example.com'})).json() as {added:number;total:number};
  assert.deepEqual([again.added,again.total],[0,6],'re-running the merge is idempotent');
  assert.equal((await admin('/api/admin/watch-vaults/merge',{id:big,email:'nobody@example.com'})).status,404);

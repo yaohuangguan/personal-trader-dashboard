@@ -16,6 +16,12 @@ async function readVault(ns:MonitorNamespace,id:unknown):Promise<Vault|null>{
  if(!r.ok)return null;const v=await r.json() as Vault;return validWatch(v?.state)?v:null;
 }
 
+async function lookupAccount(ns:MonitorNamespace,email:string){
+ const r=await ns.get(ns.idFromName('accounts:v1')).fetch(new Request('https://internal/account',{method:'POST',body:JSON.stringify({op:'lookup',email})}));
+ return r.ok?(await r.json() as {account:{id:string;username:string}}).account:null;
+}
+async function accountVaultId(ns:MonitorNamespace,email:string){const a=await lookupAccount(ns,email);return a?String(ns.idFromName('watch-account:'+a.id)):null;}
+
 export async function adminRoute(req:Request,env:{ADMIN_TOKEN?:string;MARKET_SCANNER?:MonitorNamespace}){
  const u=new URL(req.url);if(!u.pathname.startsWith('/api/admin/'))return null;
  const expected=env.ADMIN_TOKEN||'';
@@ -28,20 +34,22 @@ export async function adminRoute(req:Request,env:{ADMIN_TOKEN?:string;MARKET_SCA
  let body:Record<string,unknown>;try{body=await req.json() as Record<string,unknown>;}catch{return json({error:'Invalid JSON'},400);}
 
  if(u.pathname==='/api/admin/watch-vaults'){
-  // Free-plan Workers allow 50 subrequests, so callers send IDs in batches.
-  const ids=body.ids;if(!Array.isArray(ids)||ids.length>40||!ids.every(id=>typeof id==='string'&&OBJECT_ID.test(id)))return json({error:'ids must be 1-40 object IDs'},400);
+  // Free-plan Workers allow 50 subrequests (one or two go to the account lookup), so callers send IDs in batches.
+  const ids=body.ids;if(!Array.isArray(ids)||ids.length>38||!ids.every(id=>typeof id==='string'&&OBJECT_ID.test(id)))return json({error:'ids must be 1-38 object IDs'},400);
+  // Optionally flag the given account's own vault so it is never picked as a merge source.
+  const own=typeof body.email==='string'?await accountVaultId(ns,body.email):null;
   const vaults=[];
-  for(const id of ids as string[]){const v=await readVault(ns,ns.idFromString(id));if(v)vaults.push({id,symbols:v.state.watchlist.length,groups:v.state.groups.length,revision:v.revision,updatedAt:v.updatedAt});}
+  for(const id of ids as string[]){const v=await readVault(ns,ns.idFromString(id));if(v)vaults.push({id,symbols:v.state.watchlist.length,groups:v.state.groups.length,revision:v.revision,updatedAt:v.updatedAt,...(id===own?{accountVault:true}:{})});}
   return json({vaults});
  }
  if(u.pathname==='/api/admin/watch-vaults/merge'){
   const {id,email}=body;
   if(typeof id!=='string'||!OBJECT_ID.test(id)||typeof email!=='string')return json({error:'id and email required'},400);
   const source=await readVault(ns,ns.idFromString(id));if(!source)return json({error:'Source vault not found'},404);
-  const lookup=await ns.get(ns.idFromName('accounts:v1')).fetch(new Request('https://internal/account',{method:'POST',body:JSON.stringify({op:'lookup',email})}));
-  if(!lookup.ok)return json({error:'Account not found'},404);
-  const {account}=await lookup.json() as {account:{id:string;username:string}};
-  const target=ns.get(ns.idFromName('watch-account:'+account.id));
+  const account=await lookupAccount(ns,email);if(!account)return json({error:'Account not found'},404);
+  const targetId=ns.idFromName('watch-account:'+account.id);
+  if(String(targetId)===id)return json({error:'Source is the account vault itself'},400);
+  const target=ns.get(targetId);
   const current=await (await target.fetch(new Request('https://internal/cloud-watch?ensure=1'))).json() as Vault;
   const before=new Set(current.state.watchlist);
   // Diff from empty = union merge; dropping the order op appends new stocks after the account's existing order.
