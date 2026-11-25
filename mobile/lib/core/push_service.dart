@@ -22,7 +22,7 @@ FirebaseOptions get firebaseOptions => const FirebaseOptions(
   appId: firebaseAppId,
   messagingSenderId: firebaseSender,
   projectId: firebaseProject,
-  iosBundleId: 'space.ps6.marketAtlas',
+  iosBundleId: 'io.github.yaohuangguan.guanlan',
 );
 @pragma('vm:entry-point')
 Future<void> backgroundSignal(RemoteMessage message) async {
