@@ -6,6 +6,10 @@ on:
         description: 'Upload the signed IPA to App Store Connect / TestFlight'
         type: boolean
         default: false
+      external:
+        description: 'After upload, add the build to external groups (public link) and submit Beta App Review'
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
@@ -13,6 +17,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 40
     environment: testflight
+    outputs:
+      build_number: ${{ steps.number.outputs.value }}
     defaults:
       run:
         working-directory: mobile
@@ -50,8 +56,11 @@ jobs:
         env:
           IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
         run: python3 tool/prepare_ios_signing.py
+      - name: Choose build number
+        id: number
+        run: echo "value=$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))" >> "$GITHUB_OUTPUT"
       - name: Build signed IPA
-        run: flutter build ipa --release --build-number "$((GITHUB_RUN_NUMBER * 1000 + GITHUB_RUN_ATTEMPT))" --export-options-plist=ios/ExportOptions.generated.plist
+        run: flutter build ipa --release --build-number "${{ steps.number.outputs.value }}" --export-options-plist=ios/ExportOptions.generated.plist
       - uses: actions/upload-artifact@v4
         with:
           name: market-atlas-testflight-ipa
@@ -74,3 +83,24 @@ jobs:
           api-key-id: ${{ secrets.ASC_KEY_ID }}
           api-private-key: ${{ secrets.ASC_PRIVATE_KEY }}
           wait-for-processing: 'false'
+  external:
+    # Internal groups auto-distribute; external (public link) groups need each build added and reviewed.
+    needs: release
+    if: inputs.upload && inputs.external
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment: testflight
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet 'cryptography>=42,<46'
+      - name: Distribute to external testers
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          BUILD_NUMBER: ${{ needs.release.outputs.build_number }}
+          PROCESSING_TIMEOUT: '2400'
+        run: python3 tool/testflight_distribute.py

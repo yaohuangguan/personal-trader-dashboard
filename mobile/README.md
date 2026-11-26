@@ -91,7 +91,7 @@ Register **io.github.yaohuangguan.guanlan** and create its **guanlan** app recor
 
 The workflow extracts the team ID from the profile, rejects a different bundle ID, expired/development/ad-hoc/enterprise profiles, creates an ephemeral signing keychain, and builds with a unique build number. It never commits signing material to the repository. Configure the secrets through GitHub Settings, not in a chat message. The already connected Mac currently has an Apple Development identity; that is separate from the distribution signing material needed here.
 
-After a successful explicit upload, wait for Apple's processing, then select the build for your internal TestFlight group in App Store Connect. External groups may require beta review. See [Apple upload documentation](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds) and [Flutter's iOS release guide](https://docs.flutter.dev/deployment/ios).
+After an upload, internal groups receive the build automatically. With `external=true` (default) a follow-up Linux job waits for Apple's processing, adds the build to every external group (the public link group) and submits it for Beta App Review (`tool/testflight_distribute.py`). External groups may require beta review. See [Apple upload documentation](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds) and [Flutter's iOS release guide](https://docs.flutter.dev/deployment/ios).
 
 ## Full-width charts and daily trend
 
