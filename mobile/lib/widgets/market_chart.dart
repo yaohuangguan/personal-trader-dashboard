@@ -1476,17 +1476,20 @@ class _MarketChartState extends State<MarketChart> {
       ? {1: 4, 3: 13, 6: 26}[n]!
       : n * 22;
 
-  /// Compact 17pt toolbar glyph with a full 44pt hit area.
+  /// Compact 17pt toolbar glyph with a full 44pt hit area. [lift] keeps the
+  /// glyph centred in a 30pt visual row while the target reaches 14pt into
+  /// the band below it (see [_terminalHeader]).
   Widget _smallIcon(
     IconData icon,
     String title,
     VoidCallback action, {
     double width = 44,
+    double lift = 0,
   }) => SizedBox(
     width: width,
     height: 44,
     child: IconButton(
-      padding: EdgeInsets.zero,
+      padding: EdgeInsets.only(bottom: lift),
       constraints: BoxConstraints.tightFor(width: width, height: 44),
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1504,7 +1507,7 @@ class _MarketChartState extends State<MarketChart> {
       full.rotate();
       return;
     }
-    SystemChrome.setPreferredOrientations(
+    _preferOrientations(
       compact
           ? [DeviceOrientation.portraitUp]
           : [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
@@ -1639,7 +1642,7 @@ class _MarketChartState extends State<MarketChart> {
             PopupMenuItem(value: n, child: Text(tr(context, text(n)))),
         ],
         child: Padding(
-          padding: const EdgeInsets.only(left: 6),
+          padding: const EdgeInsets.only(left: 6, bottom: _toolbarOverlap),
           child: Row(
             children: [
               Expanded(
@@ -1660,6 +1663,40 @@ class _MarketChartState extends State<MarketChart> {
       ),
     );
   }
+
+  /// The terminal toolbar is a 30pt visual row whose 44pt targets extend
+  /// [_toolbarOverlap] into the legend's first row.
+  static const _toolbarOverlap = 14.0;
+
+  /// Toolbar (30pt) over the legend (40pt) in one 70pt band, so the header
+  /// keeps its 94pt budget (with the 24pt OHLC row) while every toolbar
+  /// control has a 44×44 target. Only the buttons' own boxes cover the
+  /// legend; between and beside them, long-press reaches the legend (MA
+  /// sheet) and plain taps on the legend do nothing.
+  Widget _terminalHeader(Listenable liveReadouts) => SizedBox(
+    height: 70,
+    child: Stack(
+      children: [
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 30,
+          height: 40,
+          child: ListenableBuilder(
+            listenable: liveReadouts,
+            builder: (context, _) => _legend(),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          height: 30 + _toolbarOverlap,
+          child: _terminalToolbar(),
+        ),
+      ],
+    ),
+  );
 
   Widget _terminalToolbar() => LayoutBuilder(
     builder: (context, c) {
@@ -1685,7 +1722,13 @@ class _MarketChartState extends State<MarketChart> {
           ),
           const Spacer(),
           for (final (icon, title, action) in actions)
-            _smallIcon(icon, title, action, width: width),
+            _smallIcon(
+              icon,
+              title,
+              action,
+              width: width,
+              lift: _toolbarOverlap,
+            ),
         ],
       );
     },
@@ -2290,13 +2333,13 @@ class _MarketChartState extends State<MarketChart> {
       );
     }
     final projecting = drawProjection;
-    // Terminal header: 44pt toolbar row, 40pt legend, 24pt OHLC readout;
-    // fullscreen adds a 44pt title row.
+    // Terminal header: 30pt toolbar row (44pt targets overlap the legend),
+    // 40pt legend, 24pt OHLC readout; fullscreen adds a 44pt title row.
     final height = widget.terminal
         ? math.max(
             160.0,
             (widget.viewportHeight ?? 500) -
-                (widget.expanded ? 152 : 108) -
+                (widget.expanded ? 138 : 94) -
                 (historyEnabled ? 24 : 0),
           )
         : compact
@@ -2354,13 +2397,9 @@ class _MarketChartState extends State<MarketChart> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.terminal && widget.expanded) _portraitHeader(),
-            if (widget.terminal) ...[
-              SizedBox(height: 44, child: _terminalToolbar()),
-              ListenableBuilder(
-                listenable: liveReadouts,
-                builder: (context, _) => _legend(),
-              ),
-            ] else ...[
+            if (widget.terminal)
+              _terminalHeader(liveReadouts)
+            else ...[
               _wideToolbar(),
               ?summary,
               ListenableBuilder(

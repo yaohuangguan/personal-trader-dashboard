@@ -555,28 +555,73 @@ void main() {
   });
 
   testWidgets(
-    'MA legend taps do not change the setup; controls have 44pt targets',
+    'legend: taps change nothing, long-press opens the MA sheet outside the 44pt toolbar targets',
     (tester) async {
       phone(tester);
       final store = await chartStore(), prices = ValueNotifier(chartFixture());
       await tester.pumpWidget(chartHarness(store, prices));
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('MA5 ').first);
-      await tester.pump();
-      expect(painter(tester).data.mas.first.enabled, isTrue);
-      expect(store.prefs.getString('ma'), isNull);
-      for (final tip in ['图表指标', '均线参数', '行情推演', '标注设置', '标注依据', '展开图表']) {
-        final size = tester.getSize(find.byTooltip(tip));
-        expect(size.width, greaterThanOrEqualTo(44), reason: tip);
-        expect(size.height, greaterThanOrEqualTo(44), reason: tip);
+      final buttons = [
+        for (final tip in [
+          '显示范围',
+          '图表指标',
+          '均线参数',
+          '行情推演',
+          '标注设置',
+          '标注依据',
+          '展开图表',
+        ])
+          tester.getRect(find.byTooltip(tip)),
+      ];
+      for (final r in buttons) {
+        expect(r.width, greaterThanOrEqualTo(44));
+        expect(r.height, greaterThanOrEqualTo(44));
       }
       expect(
         tester.getSize(find.widgetWithText(TextButton, '加载更早')).height,
         greaterThanOrEqualTo(44),
       );
-      await tester.longPress(find.textContaining('MA5 ').first);
-      await tester.pumpAndSettle();
-      expect(find.text('均线参数'), findsWidgets);
+      final row1 = tester.getRect(find.textContaining('MA5 ').first),
+          row2 = tester.getRect(find.textContaining('MA60 ').first),
+          toolbarTop = buttons.first.top;
+      // 30pt visual toolbar: the legend starts 30pt below it and the targets
+      // reach only 14pt into the legend's first row.
+      expect(row1.center.dy - toolbarTop, closeTo(40, 1));
+      for (final r in buttons) {
+        expect(r.bottom, closeTo(toolbarTop + 44, .5));
+      }
+      final width = tester.getSize(find.byType(MaterialApp)).width;
+      final probes = [
+        for (final dy in [
+          row1.center.dy - 6,
+          row1.center.dy,
+          toolbarTop + 46,
+          row2.center.dy,
+        ])
+          for (var x = 10.0; x < width; x += 40) Offset(x, dy),
+      ];
+      var legendProbes = 0;
+      for (final point in probes) {
+        if (buttons.any((r) => r.contains(point))) continue;
+        legendProbes++;
+        await tester.tapAt(point);
+        await tester.pumpAndSettle();
+        expect(find.byType(BottomSheet), findsNothing, reason: 'tap $point');
+        expect(find.byType(PopupMenuItem<int>), findsNothing);
+        await tester.longPressAt(point);
+        await tester.pumpAndSettle();
+        expect(
+          find.byType(BottomSheet),
+          findsOneWidget,
+          reason: 'long-press $point opens the MA sheet',
+        );
+        expect(find.text('均线参数'), findsWidgets);
+        Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+        await tester.pumpAndSettle();
+      }
+      expect(legendProbes, greaterThan(20));
+      expect(painter(tester).data.mas.every((m) => m.enabled), isTrue);
+      expect(store.prefs.getString('ma'), isNull);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       prices.dispose();

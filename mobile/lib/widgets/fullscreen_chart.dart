@@ -1,5 +1,22 @@
 part of 'market_chart.dart';
 
+const _allOrientations = [
+  DeviceOrientation.portraitUp,
+  DeviceOrientation.landscapeLeft,
+  DeviceOrientation.landscapeRight,
+];
+
+/// iOS 16+ rejects a geometry request for orientations the view controller
+/// does not support yet ("Requested: portrait; Supported: landscapeLeft,
+/// landscapeRight") and then does not rotate. Widen the mask to every
+/// orientation first, then narrow it to [target].
+Future<void> _preferOrientations(List<DeviceOrientation> target) async {
+  if (target.length != _allOrientations.length) {
+    await SystemChrome.setPreferredOrientations(_allOrientations);
+  }
+  await SystemChrome.setPreferredOrientations(target);
+}
+
 class FullscreenChart extends StatefulWidget {
   const FullscreenChart({
     super.key,
@@ -46,11 +63,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
   int refreshTick = 0;
   Timer? orientationRestore;
   bool restoreAutoRotate = false;
-  static const autoRotate = [
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ];
+  static const autoRotate = _allOrientations;
 
   /// Rotate button: from portrait it locks landscape (both sides, so the
   /// phone can still be flipped); from landscape it returns to portrait and
@@ -59,13 +72,13 @@ class _FullscreenChartState extends State<FullscreenChart> {
     orientationRestore?.cancel();
     if (MediaQuery.orientationOf(context) == Orientation.portrait) {
       restoreAutoRotate = false;
-      SystemChrome.setPreferredOrientations([
+      _preferOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
     } else {
       restoreAutoRotate = true;
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      _preferOrientations([DeviceOrientation.portraitUp]);
     }
   }
 
@@ -186,7 +199,9 @@ class _FullscreenChartState extends State<FullscreenChart> {
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
     );
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    // Back to the app's portrait-only mask; widened first so the request is
+    // valid while a landscape lock is active.
+    _preferOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
