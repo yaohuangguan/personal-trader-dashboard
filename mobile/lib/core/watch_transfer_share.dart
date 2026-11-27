@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'api.dart';
+import '../widgets/common.dart' show shareOrigin;
 
 import 'store.dart';
 import 'watch_transfer.dart';
@@ -29,9 +30,7 @@ Future<void> shareWatchTransfer(BuildContext context) async {
         ],
         fileNameOverrides: [name],
         subject: store.t('观澜自选'),
-        sharePositionOrigin: box == null
-            ? null
-            : box.localToGlobal(Offset.zero) & box.size,
+        sharePositionOrigin: shareOrigin(box),
       ),
     );
   } catch (e) {
@@ -112,16 +111,34 @@ Future<void> shareWatchCode(BuildContext context) async {
             },
             child: Text(store.t('复制')),
           ),
-          FilledButton(
-            onPressed: () => SharePlus.instance.share(
-              ShareParams(
-                text: message,
-                sharePositionOrigin: box == null
-                    ? null
-                    : box.localToGlobal(Offset.zero) & box.size,
-              ),
+          Builder(
+            builder: (button) => FilledButton(
+              onPressed: () async {
+                try {
+                  await SharePlus.instance.share(
+                    ShareParams(
+                      text: message,
+                      sharePositionOrigin:
+                          shareOrigin(
+                            button.findRenderObject() as RenderBox?,
+                          ) ??
+                          shareOrigin(box),
+                    ),
+                  );
+                } catch (e) {
+                  if (dialog.mounted) {
+                    ScaffoldMessenger.of(dialog).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${store.t('分享失败')}：${store.t(describeError(e))}',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: Text(store.t('分享')),
             ),
-            child: Text(store.t('分享')),
           ),
         ],
       ),

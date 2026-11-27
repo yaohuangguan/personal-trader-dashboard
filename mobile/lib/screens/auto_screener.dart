@@ -4,41 +4,49 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
+import '../core/market_hours.dart';
 import '../core/store.dart';
 import '../core/screener.dart';
 import '../widgets/common.dart';
 import 'stock.dart';
+import 'watch.dart';
 
-class AutomaticScreenPanel extends StatefulWidget {
-  const AutomaticScreenPanel({super.key});
-  @override
-  State<AutomaticScreenPanel> createState() => _AutomaticScreenPanelState();
+/// "收盘报告未更新：最新为 X，应为 Y" when the server says the closing report
+/// is stale (`stale` / `expectedDate`, newer servers only).
+Widget? staleReportBanner(BuildContext context, Json? response) {
+  if (response?['stale'] != true) return null;
+  final latest = str(obj(response?['report'])['date']);
+  final expected = str(response?['expectedDate']);
+  return Notice('收盘报告未更新：最新为 $latest，应为 $expected');
 }
 
-class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
-  Json? report;
+class AutomaticScreenPanel extends StatefulWidget {
+  const AutomaticScreenPanel({super.key, this.asSliver = false});
+
+  /// In the screener tab the cards are built lazily as slivers; elsewhere
+  /// (tests, embedding in a box) a plain column.
+  final bool asSliver;
+  @override
+  State<AutomaticScreenPanel> createState() => AutomaticScreenPanelState();
+}
+
+class AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
+  Json? report, reportResponse;
   String? error;
   bool loading = false, activity = true, recent = false, live = false;
   String concentration = '20', cap = '1000', group = 'all';
   int visible = 30;
   final Map<String, Json> currentQuotes = {};
-  Timer? quoteTimer;
   String quoteKey = '';
   bool quoteBusy = false;
   String? quoteError;
   List<Json> quoteCandidates = [];
-  @override
-  void dispose() {
-    quoteTimer?.cancel();
-    super.dispose();
-  }
 
   Future<void> refreshCandidateQuotes() async {
     if (!mounted ||
         quoteBusy ||
         quoteCandidates.isEmpty ||
-        !context.read<AtlasStore>().foreground ||
-        !TickerMode.valuesOf(context).enabled) {
+        !visibleHere(context)) {
       return;
     }
     final key = quoteKey;
@@ -47,6 +55,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
       final r = await context.read<AtlasStore>().api.post(
         '/api/desk/candidate-check',
         {'candidates': quoteCandidates},
+        timeout: const Duration(seconds: 10),
       );
       if (mounted && quoteKey == key) {
         setState(() {
@@ -91,15 +100,28 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
     });
   }
 
+  Timer? quoteTimer;
   @override
   void initState() {
     super.initState();
     load();
-    quoteTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => refreshCandidateQuotes(),
-    );
+    // Only while A-shares trade and this panel is on screen.
+    quoteTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (cnPhase(DateTime.now()) == MarketPhase.open) refreshCandidateQuotes();
+    });
     context.read<ScreenerController>().connectShared();
+  }
+
+  @override
+  void dispose() {
+    quoteTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Pull-to-refresh: the closing report and the shown candidates' prices.
+  Future<void> refresh() async {
+    setState(() => live = false);
+    await Future.wait([load(), refreshCandidateQuotes()]);
   }
 
   Future<void> load() async {
@@ -110,6 +132,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
       );
       if (mounted) {
         setState(() {
+          reportResponse = r;
           report = r['report'] == null ? null : obj(r['report']);
           error = null;
         });
@@ -129,23 +152,18 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
     'activity': activity ? '1' : '0',
     'recentLimitUp': recent ? '1' : '0',
   };
-  @override
-  Widget build(BuildContext context) {
-    final scan = context.watch<ScreenerController>();
-    final job = obj(scan.state['serverJob']);
-    final manual = live || job.isNotEmpty;
-    final previous = obj(scan.state['previousReport']);
-    final usePrevious =
-        manual &&
-        rows(scan.state['sharedCandidates']).isEmpty &&
-        rows(previous['candidates']).isNotEmpty;
-    final source = usePrevious
-        ? rows(previous['candidates'])
-        : manual
-        ? rows(scan.state['sharedCandidates'] ?? scan.state['candidates'])
-        : rows(report?['candidates']);
+
+  Object? _memoKey;
+  (List<Json>, List<Json>) _memo = (const [], const []);
+
+  /// Filtering and ranking hundreds of candidates runs once per source list
+  /// and filter change, not on every rebuild.
+  (List<Json>, List<Json>) _filtered(Object? raw) {
+    final key = (raw, concentration, cap, activity, recent, group);
+    if (key == _memoKey) return _memo;
+    _memoKey = key;
     final all =
-        source
+        rows(raw)
             .where(
               (c) =>
                   !rows(
@@ -172,7 +190,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
               numOf(obj(a['ranking'])['score']) ?? 0,
             ),
           );
-    final candidates = all
+    final shown = all
         .where(
           (c) =>
               group == 'all' ||
@@ -184,183 +202,140 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
               group == 'retest' && c['bucket'] == '回踩观察',
         )
         .toList();
+    return _memo = (all, shown);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scan = context.watch<ScreenerController>();
+    final job = obj(scan.state['serverJob']);
+    final manual = live || job.isNotEmpty;
+    final previous = obj(scan.state['previousReport']);
+    final usePrevious =
+        manual &&
+        rows(scan.state['sharedCandidates']).isEmpty &&
+        rows(previous['candidates']).isNotEmpty;
+    final raw = usePrevious
+        ? previous['candidates']
+        : manual
+        ? scan.state['sharedCandidates'] ?? scan.state['candidates']
+        : report?['candidates'];
+    final (all, candidates) = _filtered(raw);
     queueCandidateQuotes(candidates);
     final accent = AtlasPalette.light
         ? const Color(0xff6d59ad)
         : const Color(0xffb5a5de);
     final count = (numOf(job['targets']) ?? 0).toInt(),
         processed = (numOf(job['cursor']) ?? 0).toInt();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 10, 4, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      tr(context, '综合优选'),
-                      style: const TextStyle(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${all.length}',
-                    style: TextStyle(
-                      fontSize: 27,
-                      color: accent,
+    final stale = staleReportBanner(context, reportResponse);
+    final header = <Widget>[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    tr(context, '综合优选'),
+                    style: const TextStyle(
+                      fontSize: 25,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    tr(context, '候选'),
-                    style: TextStyle(color: muted, fontSize: 13),
+                ),
+                Text(
+                  '${all.length}',
+                  style: TextStyle(
+                    fontSize: 27,
+                    color: accent,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                tr(context, '量价 · 独立形态 · 股性 · 筹码，综合排列'),
-                style: TextStyle(color: muted, fontSize: 13, height: 1.5),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 44),
-                      ),
-                      onPressed: scan.running
-                          ? scan.pause
-                          : () {
-                              setState(() => live = true);
-                              scan.start('all', true, true, options: options);
-                            },
-                      icon: Icon(
-                        scan.running ? Icons.pause : Icons.radar,
-                        size: 17,
-                      ),
-                      label: Text(tr(context, scan.running ? '暂停查看' : '扫描全市场')),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  tr(context, '候选'),
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              tr(context, '量价 · 独立形态 · 股性 · 筹码，综合排列'),
+              style: TextStyle(color: muted, fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 44),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  IconButton(
-                    tooltip: tr(context, '刷新收盘结果'),
-                    onPressed: loading
-                        ? null
+                    onPressed: scan.running
+                        ? scan.pause
                         : () {
-                            setState(() => live = false);
-                            load();
+                            setState(() => live = true);
+                            scan.start('all', true, true, options: options);
                           },
-                    icon: const Icon(Icons.history, size: 21),
+                    icon: Icon(
+                      scan.running ? Icons.pause : Icons.radar,
+                      size: 17,
+                    ),
+                    label: Text(tr(context, scan.running ? '暂停查看' : '扫描全市场')),
                   ),
-                ],
+                ),
+                const SizedBox(width: 10),
+                IconButton(
+                  tooltip: tr(context, '刷新收盘结果'),
+                  onPressed: loading ? null : refresh,
+                  icon: const Icon(Icons.history, size: 21),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      ?stale,
+      if (scan.state['authRequired'] == true)
+        Panel(
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  tr(context, '登录后可发起全市场扫描；未登录也可查看共享收盘报告。'),
+                  style: const TextStyle(fontSize: 13, height: 1.5),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                ),
+                child: Text(tr(context, '前往登录')),
               ),
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Text(
-            '结构分保留原收盘日期；价格与涨跌按当前快照。只更新已显示候选，不重扫全市场。',
-            style: TextStyle(color: muted, fontSize: 12, height: 1.5),
-          ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Text(
+          tr(context, '结构分保留原收盘日期；价格与涨跌按当前快照。只更新已显示候选，不重扫全市场。'),
+          style: TextStyle(color: muted, fontSize: 12, height: 1.5),
         ),
-        TextButton.icon(
+      ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
           onPressed: quoteBusy ? null : refreshCandidateQuotes,
           icon: const Icon(Icons.refresh, size: 16),
-          label: Text(quoteBusy ? '核验当前行情…' : '更新当前行情'),
+          label: Text(tr(context, quoteBusy ? '核验当前行情…' : '更新当前行情')),
         ),
-        if (quoteError != null) Notice(quoteError!),
-        if (usePrevious) Notice(tr(context, '新任务尚无有效候选，下面保留上一轮快照，非当前实时结果。')),
-        if (manual && job.isNotEmpty)
-          Panel(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      job['phase'] == 'complete'
-                          ? Icons.check_circle_outline
-                          : Icons.cloud_sync_outlined,
-                      size: 17,
-                      color: accent,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        tr(
-                          context,
-                          job['retryOf'] != null
-                              ? '重试未完成标的'
-                              : job['phase'] == 'universe'
-                              ? '读取证券池'
-                              : job['phase'] == 'complete'
-                              ? '本轮结果'
-                              : '服务端核验中',
-                        ),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      job['phase'] == 'universe'
-                          ? '${job['registered'] ?? 0}/${job['total'] ?? '—'}'
-                          : '$processed/$count',
-                      style: TextStyle(color: muted, fontSize: 12),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 9),
-                LinearProgressIndicator(
-                  minHeight: 3,
-                  value: job['phase'] == 'universe'
-                      ? null
-                      : count > 0
-                      ? processed / count
-                      : 0,
-                  color: accent,
-                  backgroundColor: accent.withValues(alpha: .1),
-                ),
-                const SizedBox(height: 9),
-                Text(
-                  '${tr(context, '全市场')} ${job['total'] ?? 0} → ${tr(context, '深度核验')} $count · ${tr(context, '未完成')} ${job['failed'] ?? 0} · ${tr(context, '缓存复用')} ${job['cached'] ?? 0}',
-                  style: TextStyle(color: muted, fontSize: 12, height: 1.5),
-                ),
-                if (scan.state['phase'] == 'paused')
-                  Text(
-                    tr(context, str(scan.state['message'])),
-                    style: const TextStyle(fontSize: 13, height: 1.5),
-                  ),
-                if ((numOf(job['failed']) ?? 0) > 0 && !scan.running)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: scan.retryShared,
-                      child: Text(tr(context, '仅重试未完成标的')),
-                    ),
-                  ),
-                if (scan.state['phase'] == 'paused' && !scan.running)
-                  TextButton(
-                    onPressed: scan.resume,
-                    child: Text(tr(context, '连接并继续任务')),
-                  ),
-              ],
-            ),
-          ),
-        if (manual && job.isEmpty && scan.state['message'] != null)
-          Notice(tr(context, str(scan.state['message']))),
+      ),
+      if (quoteError != null) Notice(quoteError!),
+      if (usePrevious) Notice(tr(context, '新任务尚无有效候选，下面保留上一轮快照，非当前实时结果。')),
+      if (manual && job.isNotEmpty)
         Panel(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -368,166 +343,263 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
             children: [
               Row(
                 children: [
+                  Icon(
+                    job['phase'] == 'complete'
+                        ? Icons.check_circle_outline
+                        : Icons.cloud_sync_outlined,
+                    size: 17,
+                    color: accent,
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      menuMaxHeight: compactMenuHeight(context),
-                      initialValue: concentration,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        labelText: tr(context, '90%集中度上限'),
+                    child: Text(
+                      tr(
+                        context,
+                        job['retryOf'] != null
+                            ? '重试未完成标的'
+                            : job['phase'] == 'universe'
+                            ? '读取证券池'
+                            : job['phase'] == 'complete'
+                            ? '本轮结果'
+                            : scan.state['phase'] == 'paused' && !scan.running
+                            ? '已暂停'
+                            : '服务端核验中',
                       ),
-                      items: [
-                        for (final n in ['10', '15', '20'])
-                          DropdownMenuItem(value: n, child: Text('$n%')),
-                      ],
-                      onChanged: (v) => setState(() => concentration = v!),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      menuMaxHeight: compactMenuHeight(context),
-                      initialValue: cap,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        labelText: tr(context, '市值上限（亿）'),
-                      ),
-                      items: [
-                        for (final n in ['200', '500', '1000', '3000', ''])
-                          DropdownMenuItem(
-                            value: n,
-                            child: Text(n.isEmpty ? tr(context, '不限') : n),
-                          ),
-                      ],
-                      onChanged: (v) => setState(() => cap = v!),
-                    ),
+                  Text(
+                    job['phase'] == 'universe'
+                        ? '${job['registered'] ?? 0}/${job['total'] ?? '—'}'
+                        : '$processed/$count',
+                    style: TextStyle(color: muted, fontSize: 12),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  FilterChip(
-                    label: Text(
-                      tr(context, '排除低弹性'),
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    selected: activity,
-                    onSelected: (v) => setState(() => activity = v),
-                  ),
-                  FilterChip(
-                    label: Text(
-                      tr(context, '近10日涨停'),
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                    selected: recent,
-                    onSelected: (v) => setState(() => recent = v),
-                  ),
-                ],
+              const SizedBox(height: 9),
+              LinearProgressIndicator(
+                minHeight: 3,
+                value: job['phase'] == 'universe'
+                    ? null
+                    : count > 0
+                    ? processed / count
+                    : 0,
+                color: accent,
+                backgroundColor: accent.withValues(alpha: .1),
               ),
+              const SizedBox(height: 9),
               Text(
-                tr(context, '成交额≥2亿；一阳多线集中度<15%，其余<20%。'),
-                style: TextStyle(color: muted, fontSize: 11, height: 1.5),
+                '${tr(context, '全市场')} ${job['total'] ?? 0} → ${tr(context, '深度核验')} $count · ${tr(context, '未完成')} ${job['failed'] ?? 0} · ${tr(context, '缓存复用')} ${job['cached'] ?? 0}',
+                style: TextStyle(color: muted, fontSize: 12, height: 1.5),
               ),
-            ],
-          ),
-        ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              for (final g in [
-                ('all', '全部'),
-                ('prepare', '蓄势观察'),
-                ('launch', '启动候选'),
-                ('retest', '回踩承接'),
-                ('limitup', '近期涨停'),
-              ])
-                Padding(
-                  padding: const EdgeInsets.only(right: 7, bottom: 10),
-                  child: ChoiceChip(
-                    label: Text(tr(context, g.$2)),
-                    selected: group == g.$1,
-                    onSelected: (_) => setState(() => group = g.$1),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (error != null) Notice(tr(context, error!)),
-        if (loading) const LinearProgressIndicator(),
-        if (candidates.isEmpty && !loading)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-            child: Column(
-              children: [
-                Icon(
-                  scan.running
-                      ? Icons.travel_explore
-                      : Icons.filter_alt_outlined,
-                  color: muted,
-                  size: 30,
-                ),
-                const SizedBox(height: 12),
+              if (scan.state['phase'] == 'paused')
                 Text(
-                  tr(
-                    context,
-                    scan.running
-                        ? '符合条件的候选将随进度出现'
-                        : report == null && !manual
-                        ? '还没有收盘报告，点击“扫描全市场”获取当前候选。'
-                        : '本轮没有符合当前条件的候选。',
+                  tr(context, str(scan.state['message'])),
+                  style: const TextStyle(fontSize: 13, height: 1.5),
+                ),
+              if ((numOf(job['failed']) ?? 0) > 0 && !scan.running)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: scan.retryShared,
+                    child: Text(tr(context, '仅重试未完成标的')),
                   ),
-                  style: TextStyle(color: muted, fontSize: 14, height: 1.6),
-                  textAlign: TextAlign.center,
+                ),
+              if (scan.state['phase'] == 'paused' && !scan.running)
+                TextButton(
+                  onPressed: scan.resume,
+                  child: Text(tr(context, '连接并继续任务')),
+                ),
+            ],
+          ),
+        ),
+      if (manual &&
+          job.isEmpty &&
+          scan.state['message'] != null &&
+          scan.state['authRequired'] != true)
+        Notice(tr(context, str(scan.state['message']))),
+      Panel(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    menuMaxHeight: compactMenuHeight(context),
+                    initialValue: concentration,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: tr(context, '90%集中度上限'),
+                    ),
+                    items: [
+                      for (final n in ['10', '15', '20'])
+                        DropdownMenuItem(value: n, child: Text('$n%')),
+                    ],
+                    onChanged: (v) => setState(() => concentration = v!),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    menuMaxHeight: compactMenuHeight(context),
+                    initialValue: cap,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: tr(context, '市值上限（亿）'),
+                    ),
+                    items: [
+                      for (final n in ['200', '500', '1000', '3000', ''])
+                        DropdownMenuItem(
+                          value: n,
+                          child: Text(n.isEmpty ? tr(context, '不限') : n),
+                        ),
+                    ],
+                    onChanged: (v) => setState(() => cap = v!),
+                  ),
                 ),
               ],
             ),
-          ),
-        for (var i = 0; i < candidates.length && i < visible; i++)
-          _card(context, candidates[i], i + 1, accent),
-        if (candidates.length > visible)
-          TextButton(
-            onPressed: () => setState(() => visible += 30),
-            child: Text(tr(context, '加载更多')),
-          ),
-        if (manual && rows(job['failureSample']).isNotEmpty)
-          OpenSection(
-            title: Text(tr(context, '未完成标的与原因')),
-            children: [
-              for (final f in rows(job['failureSample']))
-                Text(
-                  '${f['symbol']} · ${tr(context, str(f['reason']))}',
-                  style: TextStyle(color: muted, fontSize: 13, height: 1.7),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                FilterChip(
+                  label: Text(
+                    tr(context, '排除低弹性'),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  selected: activity,
+                  onSelected: (v) => setState(() => activity = v),
                 ),
-            ],
-          ),
-        OpenSection(
-          title: Text(tr(context, '本轮过滤统计')),
+                FilterChip(
+                  label: Text(
+                    tr(context, '近10日涨停'),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  selected: recent,
+                  onSelected: (v) => setState(() => recent = v),
+                ),
+              ],
+            ),
+            Text(
+              tr(context, '成交额≥2亿；一阳多线集中度<15%，其余<20%。'),
+              style: TextStyle(color: muted, fontSize: 11, height: 1.5),
+            ),
+          ],
+        ),
+      ),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
           children: [
-            for (final e in obj(
-              manual ? job['rejected'] : report?['rejected'],
-            ).entries)
+            for (final g in [
+              ('all', '全部'),
+              ('prepare', '蓄势观察'),
+              ('launch', '启动候选'),
+              ('retest', '回踩承接'),
+              ('limitup', '近期涨停'),
+            ])
               Padding(
-                padding: const EdgeInsets.only(bottom: 7),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        tr(context, e.key),
-                        style: TextStyle(color: muted, fontSize: 13),
-                      ),
-                    ),
-                    Text('${e.value}', style: const TextStyle(fontSize: 13)),
-                  ],
+                padding: const EdgeInsets.only(right: 7, bottom: 10),
+                child: ChoiceChip(
+                  label: Text(tr(context, g.$2)),
+                  selected: group == g.$1,
+                  onSelected: (_) => setState(() => group = g.$1),
                 ),
               ),
           ],
         ),
-        Notice(tr(context, '综合分表示复核优先级，不是上涨概率。筹码为量价换手模型，盘中形态须等收盘确认。')),
-      ],
+      ),
+      if (error != null) Notice(tr(context, error!)),
+      if (loading) const LinearProgressIndicator(),
+      if (candidates.isEmpty && !loading)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+          child: Column(
+            children: [
+              Icon(
+                scan.running ? Icons.travel_explore : Icons.filter_alt_outlined,
+                color: muted,
+                size: 30,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                tr(
+                  context,
+                  scan.running
+                      ? '符合条件的候选将随进度出现'
+                      : report == null && !manual
+                      ? '还没有收盘报告，点击“扫描全市场”获取当前候选。'
+                      : '本轮没有符合当前条件的候选。',
+                ),
+                style: TextStyle(color: muted, fontSize: 14, height: 1.6),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+    ];
+    final shown = candidates.length < visible ? candidates.length : visible;
+    final footer = <Widget>[
+      if (candidates.length > visible)
+        TextButton(
+          onPressed: () => setState(() => visible += 30),
+          child: Text(tr(context, '加载更多')),
+        ),
+      if (manual && rows(job['failureSample']).isNotEmpty)
+        OpenSection(
+          title: Text(tr(context, '未完成标的与原因')),
+          children: [
+            for (final f in rows(job['failureSample']))
+              Text(
+                '${f['symbol']} · ${tr(context, str(f['reason']))}',
+                style: TextStyle(color: muted, fontSize: 13, height: 1.7),
+              ),
+          ],
+        ),
+      OpenSection(
+        title: Text(tr(context, '本轮过滤统计')),
+        children: [
+          for (final e in obj(
+            manual ? job['rejected'] : report?['rejected'],
+          ).entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tr(context, e.key),
+                      style: TextStyle(color: muted, fontSize: 13),
+                    ),
+                  ),
+                  Text('${e.value}', style: const TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+        ],
+      ),
+      Notice(tr(context, '综合分表示复核优先级，不是上涨概率。筹码为量价换手模型，盘中形态须等收盘确认。')),
+    ];
+    Widget card(int i) => _card(context, candidates[i], i + 1, accent);
+    if (widget.asSliver) {
+      return SliverMainAxisGroup(
+        slivers: [
+          SliverList.list(children: header),
+          SliverList.builder(itemCount: shown, itemBuilder: (_, i) => card(i)),
+          SliverList.list(children: footer),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [...header, for (var i = 0; i < shown; i++) card(i), ...footer],
     );
   }
 
@@ -574,13 +646,17 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
                 ),
               ),
               IconButton(
+                tooltip: tr(
+                  context,
+                  s.watchlist.contains(c['symbol']) ? '移除自选' : '加入自选',
+                ),
                 onPressed: () => s.toggleWatch(str(c['symbol'])),
                 icon: Icon(
                   s.watchlist.contains(c['symbol'])
                       ? Icons.star
                       : Icons.star_border,
                   size: 20,
-                  color: muted,
+                  color: s.watchlist.contains(c['symbol']) ? favorite : muted,
                 ),
               ),
             ],
@@ -623,14 +699,17 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
           ),
           const SizedBox(height: 8),
           Text(
-            live?['asOf'] != null
-                ? '报价 ${str(live?['asOf']).replaceFirst('T', ' ')} · 结构分 ${c['asOf']}'
-                : '历史价格 · ${c['asOf']}（当前报价待核验）',
+            tr(
+              context,
+              live?['asOf'] != null
+                  ? '报价 ${str(live?['asOf']).replaceFirst('T', ' ')} · 结构分 ${c['asOf']}'
+                  : '历史价格 · ${c['asOf']}（当前报价待核验）',
+            ),
             style: TextStyle(color: muted, fontSize: 11),
           ),
           const SizedBox(height: 8),
           Text(
-            str(live?['label'], '当前行情待核验'),
+            tr(context, str(live?['label'], '当前行情待核验')),
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -642,7 +721,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
             ),
           ),
           Text(
-            str(live?['reason'], '保留收盘候选结构，当前买点需核验。'),
+            tr(context, str(live?['reason'], '保留收盘候选结构，当前买点需核验。')),
             style: TextStyle(fontSize: 13, color: muted, height: 1.5),
           ),
           const SizedBox(height: 13),
@@ -669,7 +748,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
           ),
           const SizedBox(height: 12),
           Text(
-            '结构参考：${tr(context, str(a['action'], '观望'))} · ${tr(context, str(c['bucket']))}',
+            '${tr(context, '结构参考：')}${tr(context, str(a['action'], '观望'))} · ${tr(context, str(c['bucket']))}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
@@ -743,11 +822,7 @@ class _AutomaticScreenPanelState extends State<AutomaticScreenPanel> {
               padding: const EdgeInsets.only(top: 5),
               child: Text(
                 '• ${tr(context, '$risk')}',
-                style: const TextStyle(
-                  color: Color(0xffb58f53),
-                  fontSize: 13,
-                  height: 1.5,
-                ),
+                style: TextStyle(color: warning, fontSize: 13, height: 1.5),
               ),
             ),
           const SizedBox(height: 8),

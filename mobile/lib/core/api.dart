@@ -313,6 +313,14 @@ String describeError(Object? error) {
   if (error is ApiException) {
     if (error.code == 'AUTH_REQUIRED') return '登录后可发起全市场扫描';
     if (error.kind != ApiFailure.http) return error.message;
+    if (error.code == 'DELETE_INCOMPLETE') return '账号删除未完成，请重试';
+    if (error.code == 'DELETE_NOT_CONFIRMED') return '请输入密码确认删除';
+    if (error.status == 429 || error.code == 'RATE_LIMITED') {
+      final wait = error.retryAfter;
+      return wait == null || wait <= Duration.zero
+          ? '请求过于频繁，请稍后重试'
+          : '请${(wait.inMilliseconds / 1000).ceil()}秒后再试';
+    }
     if (error.status == 401 && error.message == '数据暂不可用') {
       return '登录已过期，请重新登录';
     }

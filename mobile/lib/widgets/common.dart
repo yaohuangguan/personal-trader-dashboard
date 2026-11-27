@@ -16,6 +16,15 @@ Color tone(dynamic value) => numOf(value) == null
     : down;
 String tr(BuildContext c, String key) => c.read<AtlasStore>().t(key);
 
+/// Anchor for the iOS share sheet. iPad presents it as a popover and fails
+/// without a non-empty source rectangle.
+Rect? shareOrigin(RenderBox? box) {
+  if (box == null || !box.attached || !box.hasSize || box.size.isEmpty) {
+    return null;
+  }
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
 /// True when periodic work for this widget is worth doing: the app is in the
 /// foreground, its tab is on stage ([TickerMode]) and no route covers it.
 bool visibleHere(BuildContext context) =>
@@ -283,6 +292,8 @@ class SourceLine extends StatelessWidget {
       [
         str(data['source'] ?? data['provider'], ''),
         str(data['date'] ?? data['asOf'] ?? data['fetchedAt'], ''),
+        // The server fell back to its last good snapshot.
+        if (data['cacheSource'] == 'last-good') tr(context, '上次成功快照'),
         ?extra,
       ].where((s) => s.isNotEmpty).join(' · '),
       style: TextStyle(color: muted, fontSize: 13, height: 1.6),

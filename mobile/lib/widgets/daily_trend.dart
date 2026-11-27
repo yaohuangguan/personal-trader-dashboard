@@ -58,7 +58,11 @@ class DailyTrendPanel extends StatelessWidget {
                       child: InkWell(
                         onTap: () => openNews(context, item),
                         child: Text(
-                          '${item['title']} · ${item['source']} · ${item['publishedAt']}',
+                          [
+                            str(item['title'], ''),
+                            str(item['source'], ''),
+                            str(item['publishedAt'], ''),
+                          ].where((v) => v.isNotEmpty).join(' · '),
                           style: const TextStyle(fontSize: 13, height: 1.7),
                         ),
                       ),

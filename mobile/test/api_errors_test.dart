@@ -112,6 +112,30 @@ void main() {
     offline.dispose();
   });
 
+  test('throttling and account deletion codes read as guidance', () {
+    expect(
+      describeError(
+        ApiException(
+          '请30秒后再试',
+          429,
+          code: 'RATE_LIMITED',
+          retryAfter: const Duration(seconds: 30),
+        ),
+      ),
+      '请30秒后再试',
+    );
+    expect(
+      describeError(ApiException('x', 429, code: 'RATE_LIMITED')),
+      '请求过于频繁，请稍后重试',
+    );
+    expect(
+      describeError(ApiException('x', 503, code: 'DELETE_INCOMPLETE')),
+      '账号删除未完成，请重试',
+    );
+    expect(english['请{n}秒后再试'], isNotNull);
+    expect(english['账号删除未完成，请重试'], isNotNull);
+  });
+
   test('polling endpoints use short timeouts', () {
     expect(AtlasApi.timeoutFor('/api/desk/quotes').inSeconds, lessThan(11));
     expect(AtlasApi.timeoutFor('/api/desk/insight').inSeconds, lessThan(11));

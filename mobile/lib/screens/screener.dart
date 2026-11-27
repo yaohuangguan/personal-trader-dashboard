@@ -41,12 +41,17 @@ class _ScreenerPageState extends State<ScreenerPage> {
     'activity': activity ? '1' : '0',
   };
   bool excludeSt = true, minAmount = true, riskOnly = false;
-  @override
-  Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>(),
-        scan = context.watch<ScreenerController>(),
-        state = scan.state;
-    var candidates = scan.candidates.where((r) {
+  final _autoKey = GlobalKey<AutomaticScreenPanelState>();
+  Object? _memoKey;
+  List<Json> _memo = const [];
+
+  /// Filtered and ranked once per scan update or filter change, not on
+  /// every rebuild.
+  List<Json> _ranked(ScreenerController scan) {
+    final key = (scan.candidates, stage, query, riskOnly, character);
+    if (key == _memoKey) return _memo;
+    _memoKey = key;
+    final candidates = scan.candidates.where((r) {
       final c = obj(r['character']);
       return (stage == 'all' || r['bucket'] == stage) &&
           (query.isEmpty ||
@@ -74,421 +79,456 @@ class _ScreenerPageState extends State<ScreenerPage> {
               numOf(obj(a['character'])['score']) ?? -1,
             );
     });
+    return _memo = candidates;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AtlasStore>(),
+        scan = context.watch<ScreenerController>(),
+        state = scan.state,
+        candidates = _ranked(scan);
     final cursor = (numOf(state['cursor']) ?? 0).toInt(),
         targets = rows(state['targets']),
         universe = rows(state['universe']);
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      children: [
-        if (tab != 'auto')
-          PageTitle('五线开花选股器', '寻找值得看图的候选。按你的指南逐项核验，显示形成阶段、缺项和失效条件。'),
-        Chips(
-          values: const {'auto': '综合优选', 'scan': '独立形态', 'sector': '板块研判'},
-          selected: tab,
-          onSelected: (v) => setState(() => tab = v),
-        ),
-        if (tab == 'sector')
-          const SectorOutlook()
-        else if (tab == 'auto')
-          const AutomaticScreenPanel()
-        else ...[
-          Panel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  s.t('形态模式'),
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(s.t('各形态独立筛选；可单选，多选时命中任意一种即可。')),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    for (final e in const {
-                      'bloom': '五线开花',
-                      'bullish': '多头排列',
-                      'multi': '一阳多线',
-                      'strongmulti': '强力一阳多线',
-                      'beauty': '美人肩',
-                      'spider': '金蜘蛛',
-                      'cannon': '多方炮',
-                      'limitup': '近10日涨停',
-                    }.entries)
-                      FilterChip(
-                        label: Text(
-                          s.t(e.value),
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        selected: modes.contains(e.key),
-                        onSelected: scan.running
-                            ? null
-                            : (v) => setState(() {
-                                if (v) {
-                                  modes.add(e.key);
-                                } else if (modes.length > 1) {
-                                  modes.remove(e.key);
-                                }
-                              }),
+    final top = <Widget>[
+      if (tab != 'auto')
+        PageTitle('五线开花选股器', '寻找值得看图的候选。按你的指南逐项核验，显示形成阶段、缺项和失效条件。'),
+      Chips(
+        values: const {'auto': '综合优选', 'scan': '独立形态', 'sector': '板块研判'},
+        selected: tab,
+        onSelected: (v) => setState(() => tab = v),
+      ),
+      if (tab == 'sector') const SectorOutlook(),
+      if (tab == 'scan') ...[
+        Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(s.t('形态模式'), style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(s.t('各形态独立筛选；可单选，多选时命中任意一种即可。')),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final e in const {
+                    'bloom': '五线开花',
+                    'bullish': '多头排列',
+                    'multi': '一阳多线',
+                    'strongmulti': '强力一阳多线',
+                    'beauty': '美人肩',
+                    'spider': '金蜘蛛',
+                    'cannon': '多方炮',
+                    'limitup': '近10日涨停',
+                  }.entries)
+                    FilterChip(
+                      label: Text(
+                        s.t(e.value),
+                        style: const TextStyle(fontSize: 14),
                       ),
-                  ],
-                ),
-                if (modes.contains('multi') || modes.contains('strongmulti'))
-                  MultiLineFilters(
-                    values: multiOptions,
-                    disabled: scan.running,
-                    onChanged: (v) => setState(() => multiOptions = v),
-                  ),
-                OpenSection(
-                  tilePadding: EdgeInsets.zero,
-                  title: Text(
-                    s.t('成交额与筹码条件'),
-                    style: const TextStyle(fontSize: 15),
-                  ),
-                  children: [
-                    DropdownButtonFormField<String>(
-                      menuMaxHeight: compactMenuHeight(context),
-                      initialValue: concentration,
-                      decoration: InputDecoration(labelText: s.t('90%筹码集中度上限')),
-                      items: [
-                        for (final n in ['10', '15', '20'])
-                          DropdownMenuItem(value: n, child: Text('$n%')),
-                      ],
-                      onChanged: scan.running
-                          ? null
-                          : (v) => setState(() => concentration = v!),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      menuMaxHeight: compactMenuHeight(context),
-                      initialValue: maxCap,
-                      decoration: InputDecoration(labelText: s.t('市值上限（亿）')),
-                      items: [
-                        for (final n in ['200', '500', '1000', '3000', ''])
-                          DropdownMenuItem(
-                            value: n,
-                            child: Text(n.isEmpty ? s.t('不限') : n),
-                          ),
-                      ],
-                      onChanged: scan.running
-                          ? null
-                          : (v) => setState(() => maxCap = v!),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        s.t('所有形态加筛近10日涨停'),
-                        style: const TextStyle(fontSize: 15),
-                      ),
-                      value: recentLimitUp,
-                      onChanged: scan.running
-                          ? null
-                          : (v) => setState(() => recentLimitUp = v),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        s.t('排除低弹性与弱延续'),
-                        style: const TextStyle(fontSize: 15),
-                      ),
-                      value: activity,
-                      onChanged: scan.running
+                      selected: modes.contains(e.key),
+                      onSelected: scan.running
                           ? null
                           : (v) => setState(() {
-                              activity = v;
-                              character = v ? 'potential' : 'all';
+                              if (v) {
+                                modes.add(e.key);
+                              } else if (modes.length > 1) {
+                                modes.remove(e.key);
+                              }
                             }),
                     ),
-                  ],
-                ),
-                Notice(
-                  s.t(
-                    '一阳多线至少实体穿过四条核心线；强力另需含MA60、密集线束居中、大阳倍量收近高点。两种模式90%集中度均<15%；其余模式<20%。筹码按量价与换手模型估算；涨停按近10根已收盘未复权日线规则估算，不含未收盘当天。',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  s.t(
-                    scope == 'all'
-                        ? '全市场'
-                        : scope == 'watchlist'
-                        ? '我的自选'
-                        : '快速抽样 · 最多200只',
-                  ),
-                  style: TextStyle(fontSize: 13, color: muted),
-                ),
+                ],
               ),
-              FilledButton.icon(
-                onPressed: () => scan.running
-                    ? scan.pause()
-                    : scan.start(scope, excludeSt, true, options: options),
-                icon: Icon(
-                  scan.running ? Icons.pause : Icons.play_arrow,
-                  size: 16,
+              if (modes.contains('multi') || modes.contains('strongmulti'))
+                MultiLineFilters(
+                  values: multiOptions,
+                  disabled: scan.running,
+                  onChanged: (v) => setState(() => multiOptions = v),
                 ),
-                label: Text(s.t(scan.running ? '暂停扫描' : '开始扫描')),
-              ),
-            ],
-          ),
-          OpenSection(
-            tilePadding: EdgeInsets.zero,
-            title: Text(s.t('扫描设置'), style: const TextStyle(fontSize: 14)),
-            children: [
-              Panel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      menuMaxHeight: compactMenuHeight(context),
-                      isExpanded: true,
-                      initialValue: scope,
-                      decoration: InputDecoration(labelText: s.t('扫描范围')),
-                      items:
-                          const {
-                                'quick': '快速抽样 · 最多200只',
-                                'all': '深度扫描 · 全市场',
-                                'watchlist': '我的自选 · 沪深北',
-                              }.entries
-                              .map(
-                                (e) => DropdownMenuItem(
-                                  value: e.key,
-                                  child: Text(s.t(e.value)),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: scan.running
-                          ? null
-                          : (v) => setState(() => scope = v!),
-                    ),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: excludeSt,
-                      onChanged: scan.running
-                          ? null
-                          : (v) => setState(() => excludeSt = v!),
-                      title: Text(s.t('排除ST与退市名称')),
-                    ),
-                    Notice(s.t('全部模式：成交额≥2亿、筹码集中')),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: () => scan.running
-                              ? scan.pause()
-                              : scan.start(
-                                  scope,
-                                  excludeSt,
-                                  true,
-                                  options: options,
-                                ),
-                          icon: Icon(
-                            scan.running ? Icons.pause : Icons.play_arrow,
-                          ),
-                          label: Text(s.t(scan.running ? '暂停扫描' : '开始扫描')),
-                        ),
-                        if (state['phase'] == 'paused')
-                          OutlinedButton(
-                            onPressed: scan.resume,
-                            child: Text(s.t('继续上次扫描')),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      s.t('扫描在本页打开时运行，站内查看个股时继续扫描；隐藏浏览器窗口或离线会暂停。'),
-                      style: TextStyle(color: muted, fontSize: 13, height: 1.7),
-                    ),
-                  ],
+              OpenSection(
+                tilePadding: EdgeInsets.zero,
+                title: Text(
+                  s.t('成交额与筹码条件'),
+                  style: const TextStyle(fontSize: 15),
                 ),
-              ),
-            ],
-          ),
-          Panel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  s.t(
-                    state['phase'] == 'universe'
-                        ? '读取证券池'
-                        : state['phase'] == 'scanning'
-                        ? '核验历史日线'
-                        : state['phase'] == 'complete'
-                        ? '当前范围处理完毕'
-                        : state['phase'] == 'paused'
-                        ? '已暂停'
-                        : '等待开始',
-                  ),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 12),
-                LinearProgressIndicator(
-                  value: state['phase'] == 'universe'
-                      ? ((numOf(state['total']) ?? 0) > 0
-                            ? (numOf(obj(state['serverJob'])['registered']) ??
-                                      universe.length) /
-                                  numOf(state['total'])!
-                            : 0)
-                      : (numOf(obj(state['serverJob'])['targets']) ??
-                                targets.length) <=
-                            0
-                      ? 0
-                      : cursor /
-                            (numOf(obj(state['serverJob'])['targets']) ??
-                                targets.length),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '${state['phase'] == 'universe' ? (obj(state['serverJob'])['registered'] ?? universe.length) : cursor} / ${state['phase'] == 'universe' ? state['total'] : obj(state['serverJob'])['targets'] ?? targets.length} · ${s.t('候选')} ${scan.candidates.length}',
-                ),
-                Text(
-                  '${s.t('来源失败')} ${rows(state['failed']).length} · ${s.t('历史不足')} ${state['insufficient']}',
-                  style: TextStyle(color: muted, fontSize: 13),
-                ),
-                if (state['message'] != null) Notice(str(state['message'])),
-                if (state['universeComplete'] == true &&
-                    universe.length != (numOf(state['total']) ?? 0))
-                  Notice(s.t('来源登记与实际数量不同，覆盖仍待核对。')),
-              ],
-            ),
-          ),
-          Chips(
-            values: const {
-              'all': '全部',
-              '粘合蓄势': '粘合蓄势',
-              '启动待确认': '启动待确认',
-              '开花确认': '开花确认',
-              '回踩观察': '回踩观察',
-              '形态候选': '形态候选',
-            },
-            selected: stage,
-            onSelected: (v) => setState(() => stage = v),
-          ),
-          OpenSection(
-            tilePadding: EdgeInsets.zero,
-            title: Text(s.t('筛选与导出'), style: const TextStyle(fontSize: 14)),
-            children: [
-              DropdownButtonFormField<String>(
-                menuMaxHeight: compactMenuHeight(context),
-                isExpanded: true,
-                initialValue: character,
-                decoration: InputDecoration(labelText: s.t('股性筛选')),
-                items:
-                    const {
-                          'potential': '活性优先 · 排除低弹性与弱延续',
-                          'active': '只看历史活跃',
-                          'all': '全部形态 · 包括横盘粘合',
-                        }.entries
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e.key,
-                            child: Text(
-                              s.t(e.value),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                onChanged: (v) => setState(() => character = v!),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search),
-                  hintText: s.t('筛选名称或代码'),
-                ),
-                onChanged: (v) => setState(() => query = v),
-              ),
-              CheckboxListTile(
-                value: riskOnly,
-                onChanged: (v) => setState(() => riskOnly = v!),
-                title: Text(s.t('只看未命中现有风险条件')),
-                contentPadding: EdgeInsets.zero,
-              ),
-              Wrap(
-                spacing: 12,
-                runSpacing: 10,
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: candidates.isEmpty
+                  DropdownButtonFormField<String>(
+                    menuMaxHeight: compactMenuHeight(context),
+                    initialValue: concentration,
+                    decoration: InputDecoration(labelText: s.t('90%筹码集中度上限')),
+                    items: [
+                      for (final n in ['10', '15', '20'])
+                        DropdownMenuItem(value: n, child: Text('$n%')),
+                    ],
+                    onChanged: scan.running
                         ? null
-                        : () => _export(candidates),
-                    icon: const Icon(Icons.download),
-                    label: Text(s.t('导出候选')),
+                        : (v) => setState(() => concentration = v!),
                   ),
-                  OutlinedButton(
-                    onPressed: candidates.isEmpty
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    menuMaxHeight: compactMenuHeight(context),
+                    initialValue: maxCap,
+                    decoration: InputDecoration(labelText: s.t('市值上限（亿）')),
+                    items: [
+                      for (final n in ['200', '500', '1000', '3000', ''])
+                        DropdownMenuItem(
+                          value: n,
+                          child: Text(n.isEmpty ? s.t('不限') : n),
+                        ),
+                    ],
+                    onChanged: scan.running
                         ? null
-                        : () {
-                            s.prefs.setStringList(
-                              'monitorPool',
-                              candidates
-                                  .take(60)
-                                  .map((r) => str(r['symbol']))
-                                  .toList(),
-                            );
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const Scaffold(
-                                  appBar: _SignalsAppBar(),
-                                  body: SignalsPage(imported: true),
-                                ),
-                              ),
-                            );
-                          },
-                    child: Text(s.t('加入收盘推送')),
+                        : (v) => setState(() => maxCap = v!),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      s.t('所有形态加筛近10日涨停'),
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                    value: recentLimitUp,
+                    onChanged: scan.running
+                        ? null
+                        : (v) => setState(() => recentLimitUp = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      s.t('排除低弹性与弱延续'),
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                    value: activity,
+                    onChanged: scan.running
+                        ? null
+                        : (v) => setState(() {
+                            activity = v;
+                            character = v ? 'potential' : 'all';
+                          }),
                   ),
                 ],
               ),
+              Notice(
+                s.t(
+                  '一阳多线至少实体穿过四条核心线；强力另需含MA60、密集线束居中、大阳倍量收近高点。两种模式90%集中度均<15%；其余模式<20%。筹码按量价与换手模型估算；涨停按近10根已收盘未复权日线规则估算，不含未收盘当天。',
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
-          Notice(s.t('均线粘合不是启动信号，股性、量能、突破延续与板块需要共同核验。收盘后共享精选请使用收盘信号中心。')),
-          if (candidates.isEmpty)
-            Notice(
-              s.t(
-                scan.running ? '正在扫描，命中候选后会逐步出现。' : '当前已处理范围没有命中此筛选条件，结果保持为空。',
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                s.t(
+                  scope == 'all'
+                      ? '全市场'
+                      : scope == 'watchlist'
+                      ? '我的自选'
+                      : '快速抽样 · 最多200只',
+                ),
+                style: TextStyle(fontSize: 13, color: muted),
               ),
             ),
-          ...candidates.map((c) => _candidate(context, c)),
-          if (obj(state['rejected']).isNotEmpty)
-            OpenSection(
-              title: Text(s.t('过滤原因统计')),
-              children: obj(state['rejected']).entries
-                  .map(
-                    (r) => ListTile(
-                      title: Text(
-                        s.t(r.key),
-                        style: const TextStyle(fontSize: 14),
+            FilledButton.icon(
+              onPressed: () => scan.running
+                  ? scan.pause()
+                  : scan.start(scope, excludeSt, true, options: options),
+              icon: Icon(
+                scan.running ? Icons.pause : Icons.play_arrow,
+                size: 16,
+              ),
+              label: Text(s.t(scan.running ? '暂停扫描' : '开始扫描')),
+            ),
+          ],
+        ),
+        OpenSection(
+          tilePadding: EdgeInsets.zero,
+          title: Text(s.t('扫描设置'), style: const TextStyle(fontSize: 14)),
+          children: [
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    menuMaxHeight: compactMenuHeight(context),
+                    isExpanded: true,
+                    initialValue: scope,
+                    decoration: InputDecoration(labelText: s.t('扫描范围')),
+                    items:
+                        const {
+                              'quick': '快速抽样 · 最多200只',
+                              'all': '深度扫描 · 全市场',
+                              'watchlist': '我的自选 · 沪深北',
+                            }.entries
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e.key,
+                                child: Text(s.t(e.value)),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: scan.running
+                        ? null
+                        : (v) => setState(() => scope = v!),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: excludeSt,
+                    onChanged: scan.running
+                        ? null
+                        : (v) => setState(() => excludeSt = v!),
+                    title: Text(s.t('排除ST与退市名称')),
+                  ),
+                  Notice(s.t('全部模式：成交额≥2亿、筹码集中')),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () => scan.running
+                            ? scan.pause()
+                            : scan.start(
+                                scope,
+                                excludeSt,
+                                true,
+                                options: options,
+                              ),
+                        icon: Icon(
+                          scan.running ? Icons.pause : Icons.play_arrow,
+                        ),
+                        label: Text(s.t(scan.running ? '暂停扫描' : '开始扫描')),
                       ),
-                      trailing: Text(fixed(r.value, 0)),
-                    ),
-                  )
-                  .toList(),
+                      if (state['phase'] == 'paused')
+                        OutlinedButton(
+                          onPressed: scan.resume,
+                          child: Text(s.t('继续上次扫描')),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    s.t('扫描在本页打开时运行，站内查看个股时继续扫描；隐藏浏览器窗口或离线会暂停。'),
+                    style: TextStyle(color: muted, fontSize: 13, height: 1.7),
+                  ),
+                ],
+              ),
             ),
-          if (rows(state['failed']).isNotEmpty)
-            OpenSection(
-              title: Text('${s.t('未完成标的')} ${rows(state['failed']).length}'),
-              children: rows(state['failed'])
-                  .map(
-                    (r) => ListTile(
-                      title: Text(str(r['symbol'])),
-                      subtitle: Text(str(r['reason'])),
-                    ),
-                  )
-                  .toList(),
+          ],
+        ),
+        Panel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                s.t(
+                  state['phase'] == 'universe'
+                      ? '读取证券池'
+                      : state['phase'] == 'scanning'
+                      ? '核验历史日线'
+                      : state['phase'] == 'complete'
+                      ? '当前范围处理完毕'
+                      : state['phase'] == 'paused'
+                      ? '已暂停'
+                      : '等待开始',
+                ),
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: state['phase'] == 'universe'
+                    ? ((numOf(state['total']) ?? 0) > 0
+                          ? (numOf(obj(state['serverJob'])['registered']) ??
+                                    universe.length) /
+                                numOf(state['total'])!
+                          : 0)
+                    : (numOf(obj(state['serverJob'])['targets']) ??
+                              targets.length) <=
+                          0
+                    ? 0
+                    : cursor /
+                          (numOf(obj(state['serverJob'])['targets']) ??
+                              targets.length),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${state['phase'] == 'universe' ? (obj(state['serverJob'])['registered'] ?? universe.length) : cursor} / ${state['phase'] == 'universe' ? state['total'] : obj(state['serverJob'])['targets'] ?? targets.length} · ${s.t('候选')} ${scan.candidates.length}',
+              ),
+              Text(
+                '${s.t('来源失败')} ${rows(state['failed']).length} · ${s.t('历史不足')} ${state['insufficient']}',
+                style: TextStyle(color: muted, fontSize: 13),
+              ),
+              if (state['message'] != null) Notice(str(state['message'])),
+              if (state['universeComplete'] == true &&
+                  universe.length != (numOf(state['total']) ?? 0))
+                Notice(s.t('来源登记与实际数量不同，覆盖仍待核对。')),
+            ],
+          ),
+        ),
+        Chips(
+          values: const {
+            'all': '全部',
+            '粘合蓄势': '粘合蓄势',
+            '启动待确认': '启动待确认',
+            '开花确认': '开花确认',
+            '回踩观察': '回踩观察',
+            '形态候选': '形态候选',
+          },
+          selected: stage,
+          onSelected: (v) => setState(() => stage = v),
+        ),
+        OpenSection(
+          tilePadding: EdgeInsets.zero,
+          title: Text(s.t('筛选与导出'), style: const TextStyle(fontSize: 14)),
+          children: [
+            DropdownButtonFormField<String>(
+              menuMaxHeight: compactMenuHeight(context),
+              isExpanded: true,
+              initialValue: character,
+              decoration: InputDecoration(labelText: s.t('股性筛选')),
+              items:
+                  const {
+                        'potential': '活性优先 · 排除低弹性与弱延续',
+                        'active': '只看历史活跃',
+                        'all': '全部形态 · 包括横盘粘合',
+                      }.entries
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text(
+                            s.t(e.value),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+              onChanged: (v) => setState(() => character = v!),
             ),
-        ],
+            const SizedBox(height: 12),
+            TextField(
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: s.t('筛选名称或代码'),
+              ),
+              onChanged: (v) => setState(() => query = v),
+            ),
+            CheckboxListTile(
+              value: riskOnly,
+              onChanged: (v) => setState(() => riskOnly = v!),
+              title: Text(s.t('只看未命中现有风险条件')),
+              contentPadding: EdgeInsets.zero,
+            ),
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              children: [
+                Builder(
+                  builder: (button) => OutlinedButton.icon(
+                    onPressed: candidates.isEmpty
+                        ? null
+                        : () => _export(button, candidates),
+                    icon: const Icon(Icons.download),
+                    label: Text(s.t('导出候选')),
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: candidates.isEmpty
+                      ? null
+                      : () {
+                          s.prefs.setStringList(
+                            'monitorPool',
+                            candidates
+                                .take(60)
+                                .map((r) => str(r['symbol']))
+                                .toList(),
+                          );
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const Scaffold(
+                                appBar: _SignalsAppBar(),
+                                body: SignalsPage(imported: true),
+                              ),
+                            ),
+                          );
+                        },
+                  child: Text(s.t('加入收盘推送')),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Notice(s.t('均线粘合不是启动信号，股性、量能、突破延续与板块需要共同核验。收盘后共享精选请使用收盘信号中心。')),
+        if (candidates.isEmpty)
+          Notice(
+            s.t(scan.running ? '正在扫描，命中候选后会逐步出现。' : '当前已处理范围没有命中此筛选条件，结果保持为空。'),
+          ),
       ],
+    ];
+    final bottom = <Widget>[
+      if (tab == 'scan') ...[
+        if (obj(state['rejected']).isNotEmpty)
+          OpenSection(
+            title: Text(s.t('过滤原因统计')),
+            children: obj(state['rejected']).entries
+                .map(
+                  (r) => ListTile(
+                    title: Text(
+                      s.t(r.key),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    trailing: Text(fixed(r.value, 0)),
+                  ),
+                )
+                .toList(),
+          ),
+        if (rows(state['failed']).isNotEmpty)
+          OpenSection(
+            title: Text('${s.t('未完成标的')} ${rows(state['failed']).length}'),
+            children: rows(state['failed'])
+                .map(
+                  (r) => ListTile(
+                    title: Text(str(r['symbol'])),
+                    subtitle: Text(str(r['reason'])),
+                  ),
+                )
+                .toList(),
+          ),
+      ],
+    ];
+    const pad = EdgeInsets.symmetric(horizontal: 12);
+    return RefreshIndicator(
+      onRefresh: () async {
+        if (tab == 'auto') await _autoKey.currentState?.refresh();
+      },
+      child: CustomScrollView(
+        key: const PageStorageKey('screener'),
+        slivers: [
+          SliverPadding(
+            padding: pad.copyWith(top: 4),
+            sliver: SliverList.list(children: top),
+          ),
+          if (tab == 'auto')
+            SliverPadding(
+              padding: pad,
+              sliver: AutomaticScreenPanel(key: _autoKey, asSliver: true),
+            ),
+          if (tab == 'scan')
+            SliverPadding(
+              padding: pad,
+              sliver: SliverList.builder(
+                itemCount: candidates.length,
+                itemBuilder: (context, i) => _candidate(context, candidates[i]),
+              ),
+            ),
+          SliverPadding(
+            padding: pad.copyWith(bottom: 16),
+            sliver: SliverList.list(children: bottom),
+          ),
+        ],
+      ),
     );
   }
 
@@ -506,11 +546,13 @@ class _ScreenerPageState extends State<ScreenerPage> {
             ),
             subtitle: Text('${c['symbol']} · ${c['asOf']}'),
             trailing: IconButton(
+              tooltip: s.t(s.watchlist.contains(c['symbol']) ? '移除自选' : '加入自选'),
               onPressed: () => s.toggleWatch(str(c['symbol'])),
               icon: Icon(
                 s.watchlist.contains(c['symbol'])
                     ? Icons.star
                     : Icons.star_border,
+                color: s.watchlist.contains(c['symbol']) ? favorite : null,
               ),
             ),
             onTap: () => openStock(context, str(c['symbol'])),
@@ -591,7 +633,9 @@ class _ScreenerPageState extends State<ScreenerPage> {
     );
   }
 
-  Future<void> _export(List<Json> data) async {
+  /// CSV through the share sheet. iPad needs an anchor rectangle for the
+  /// popover; failures are reported instead of failing silently.
+  Future<void> _export(BuildContext button, List<Json> data) async {
     String safe(dynamic value) {
       var s = str(value, '');
       if (RegExp(r'^[=+\-@]').hasMatch(s)) s = "'$s";
@@ -632,17 +676,31 @@ class _ScreenerPageState extends State<ScreenerPage> {
         ],
       ),
     ].map((r) => r.map(safe).join(',')).join('\r\n');
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile.fromData(
-            utf8.encode('\ufeff$content'),
-            mimeType: 'text/csv',
-            name: 'market-atlas-candidates.csv',
+    final store = context.read<AtlasStore>();
+    final box = button.findRenderObject() as RenderBox?;
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              utf8.encode('\ufeff$content'),
+              mimeType: 'text/csv',
+              name: 'market-atlas-candidates.csv',
+            ),
+          ],
+          fileNameOverrides: const ['market-atlas-candidates.csv'],
+          sharePositionOrigin: shareOrigin(box),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${store.t('导出失败')}：${store.t(describeError(e))}'),
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 }
 

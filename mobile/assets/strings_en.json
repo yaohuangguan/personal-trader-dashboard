@@ -2253,5 +2253,14 @@
   "移出分组": "Remove from group",
   "跟随系统": "Match system",
   "删除提醒": "Delete alert",
-  "已同步": "Synced"
+  "已同步": "Synced",
+  "上次成功快照": "Last good snapshot",
+  "账号删除未完成，请重试": "Account deletion did not finish. Please try again",
+  "请{n}秒后再试": "Please try again in {n} s",
+  "收盘报告未更新：最新为 {latest}，应为 {expected}": "Closing report is out of date: latest {latest}, expected {expected}",
+  "登录后可发起全市场扫描；未登录也可查看共享收盘报告。": "Sign in to start a full-market scan. The shared closing report stays available without an account.",
+  "前往登录": "Sign in",
+  "报价 {time} · 结构分 {date}": "Quote {time} · structure {date}",
+  "历史价格 · {date}（当前报价待核验）": "Historical price · {date} (current quote pending)",
+  "刷新": "Refresh"
 }

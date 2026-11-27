@@ -178,9 +178,7 @@ class ReaderPage extends StatelessWidget {
                 await SharePlus.instance.share(
                   ShareParams(
                     text: '${str(item['title'])}\n${str(result['url'])}',
-                    sharePositionOrigin: box == null
-                        ? null
-                        : box.localToGlobal(Offset.zero) & box.size,
+                    sharePositionOrigin: shareOrigin(box),
                   ),
                 );
               } catch (e) {
