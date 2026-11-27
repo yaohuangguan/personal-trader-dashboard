@@ -7,3 +7,10 @@ export function isClosingSnapshot(q:Snapshot|undefined,date:string){return !!q&&
 export function filterReport(report:Pick<CloseReport,'candidates'>,options:ScreenOptions){
  return report.candidates.filter(c=>(!c.patterns?.some(p=>['multi','strongmulti'].includes(p.mode))||c.multiLine?.version===3)&&c.amount!==null&&c.amount>=2e8&&c.chip&&c.chip.concentration90<options.concentration&&(!options.activity||!!c.character&&!c.character.quiet&&!c.character.weakFollow)&&(options.maxMarketCap===null||c.marketCap!=null&&c.marketCap<=options.maxMarketCap)&&(!options.recentLimitUp||!!c.limitUpDates?.length)&&(options.auto||c.patterns?.some(p=>options.modes.includes(p.mode as never)&&(!['multi','strongmulti'].includes(p.mode)||passesMulti(c.multiLine,p.mode,options.multi))&&c.chip!.concentration90<(['multi','strongmulti'].includes(p.mode)?15:20)))).sort((a,b)=>(b.ranking?.score??0)-(a.ranking?.score??0)||(a.chip?.concentration90??99)-(b.chip?.concentration90??99));
 }
+/** Lighter list form (`?view=list`): candidate advice keeps its verdict but drops long explanatory text. Filtering fields are untouched. */
+export function listCandidate(c:ScreenCandidate):ScreenCandidate{
+ if(!c.advice)return c;
+ const a=c.advice as Record<string,unknown>,keep:Record<string,unknown>={};
+ for(const k of ['kind','label','action','direction','score','phase','asOf','provisional'])if(k in a)keep[k]=a[k];
+ return {...c,advice:keep as ScreenCandidate['advice']};
+}

@@ -18,7 +18,9 @@ import {reviewedPatternMarks} from '../shared/pattern-marks';
 import {GUIDE_PATTERN_COVERAGE} from '../shared/guide-patterns';
 import {evaluateStrategyHistory} from '../shared/strategy-backtest';
 import {marketContext} from '../shared/market-context';
-import {scannerCall} from './full-market-scanner';
+import {scannerCall,scannerFetch} from './full-market-scanner';
+import {closeReportRoute} from './close-report-route';
+import {timingSafeEqual,bearer,type WaitUntil} from './http';
 import {level2,type Level2Env} from './level2';
 import {shareRoute,type ShareStore} from './shares';
 import {clientMigrationRoute} from './client-migration';
@@ -518,7 +520,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
  return json({error:'Unknown API path'},404);
 }
 export default {
- async fetch(request:Request,env:Env):Promise<Response>{
+ async fetch(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
   try {
    const incoming=new URL(request.url);
    if(['/sw.js','/version.json'].includes(incoming.pathname)&&env.ASSETS){const resource=await env.ASSETS.fetch(request),response=new Response(resource.body,resource);response.headers.set('cache-control','no-store, max-age=0');if(incoming.pathname==='/sw.js')response.headers.set('service-worker-allowed','/');return response;}
@@ -566,8 +568,8 @@ export default {
     if(request.method==='POST'){const body=await request.json() as {retry?:boolean};const response=json(await scannerCall(env.MARKET_SCANNER,'research-start',{retry:body.retry===true}));response.headers.set('cache-control','no-store');return response;}
     return json({error:'Method not allowed'},405);
    }
-   if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET'){if(!env.MARKET_SCANNER)return json({report:null});return json(await scannerCall(env.MARKET_SCANNER,'results'));}
-   if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||request.headers.get('Authorization')!=='Bearer '+env.SCREEN_JOB_TOKEN)return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);return json(await scannerCall(env.MARKET_SCANNER,action!,JSON.parse(raw)));}
+   if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET')return closeReportRoute(request,env.MARKET_SCANNER,ctx);
+   if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||!await timingSafeEqual(bearer(request),env.SCREEN_JOB_TOKEN))return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);let body:unknown;try{body=JSON.parse(raw);}catch{return json({error:'Invalid JSON',code:'BAD_JSON'},400);}const result=await scannerFetch(env.MARKET_SCANNER,action!,body);return new Response(result.body,{status:result.status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
    if(['/api/desk/insight','/api/desk/trend'].includes(incoming.pathname)&&request.method==='GET'){
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(incoming.pathname.endsWith('/insight')?!supportedStock(symbol):!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({available:false,reason:'Invalid stock symbol'},400);
     return computeCache(request,'desk-view-v3:'+incoming.pathname+':'+studySession()+':'+symbol,incoming.pathname.endsWith('/insight')?5:15,async()=>await deskRoute(request)||json({error:'Not found'},404));

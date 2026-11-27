@@ -15,7 +15,9 @@ type Baseline={candles:Candle[];unit:'股'|'手';loaded:number;attemptDay?:strin
 type Report={index:number;revision:string;total:number;ready:number;checked:number;lastRun:number;lastQuoteAt:string|null;failures:{symbol:string;reason:string}[];events:SignalEvent[]};
 export const FULL_MARKET_MASTER='market-all-v1';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
-export async function scannerCall(ns:MonitorNamespace,path:string,body?:unknown){const stub=ns.get(ns.idFromName(FULL_MARKET_MASTER));const r=await stub.fetch(new Request('https://scanner/'+path,{method:body===undefined?'GET':'POST',body:body===undefined?undefined:JSON.stringify(body)}));if(!r.ok)throw new Error('全市场扫描服务暂不可用');return r.json();}
+/** Raw coordinator response, for pass-through without parsing (large close reports). */
+export function scannerFetch(ns:MonitorNamespace,path:string,body?:unknown,headers?:HeadersInit){const stub=ns.get(ns.idFromName(FULL_MARKET_MASTER));return stub.fetch(new Request('https://scanner/'+path,{method:body===undefined?'GET':'POST',headers,body:body===undefined?undefined:JSON.stringify(body)}));}
+export async function scannerCall(ns:MonitorNamespace,path:string,body?:unknown){const r=await scannerFetch(ns,path,body);if(!r.ok)throw new Error('全市场扫描服务暂不可用');return r.json();}
 export class MarketScanner {
  private busy=false;
  constructor(private state:State,private env:Env){}
