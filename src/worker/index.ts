@@ -32,13 +32,14 @@ export {CloseCoordinator as MarketScanner} from './close-coordinator';
 import {monitorRoute,type MonitorNamespace} from './signal-monitor';
 export {CloseSignalMonitor as SignalMonitor} from './close-monitor';
 import { deskRoute } from './desk-api';
+import {CLOSE_DISPATCH_CRON,dispatchCloseWorkflow,type DispatchEnv} from './close-dispatch';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env extends Level2Env { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env, DispatchEnv { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const pending=new Map<string,Promise<unknown>>();
@@ -598,7 +599,9 @@ export default {
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
   }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details))return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:new Date(new Date().setUTCHours(24,0,0,0)).toISOString()},503);return json({error:'Unexpected server error',details},500);}
  },
- async scheduled(_controller:unknown,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
+ async scheduled(controller:{cron?:string}|undefined,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
+  // The close cron only dispatches the GitHub closing workflow; it is a no-op without GITHUB_DISPATCH_TOKEN.
+  if(controller?.cron===CLOSE_DISPATCH_CRON){ctx.waitUntil(dispatchCloseWorkflow(env).then(r=>console.log('Close workflow dispatch:',JSON.stringify(r))));return;}
   if(env.DB)ctx.waitUntil(scanOnce(env).catch(err=>console.error('Scheduled intelligence scan failed:',String(err))));
  }
 };
