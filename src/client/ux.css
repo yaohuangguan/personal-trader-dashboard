@@ -132,3 +132,15 @@ html[data-theme="light"]{--chart-label-bg:#ffffffeb}
  .research-desk .desk-quote-head .desk-company{min-width:0;flex:1 1 auto}
  .research-desk .desk-quote-head .desk-session{flex:none;width:auto}
 }
+
+/* ---- Semantic theme tokens: every light-theme fix below reads these instead of hard-coded dark values ---- */
+:root{--foreground:var(--fg);--heat-up:#df4b5b;--heat-down:#168b76;--heat-base:#191b21;--heat-empty:#2b2e35;--heat-scale:1;--heat-text:#fff;--heat-muted:#ffffffa8;--heat-border:#ffffff0a;--heat-outline:#f4dde1}
+html[data-theme="light"]{--foreground:var(--fg);--heat-up:#d0394b;--heat-down:#0b8a71;--heat-base:#ffffff;--heat-empty:#eceef2;--heat-scale:.5;--heat-text:#141417;--heat-muted:#55555a;--heat-border:#0000000f;--heat-outline:#7a1f2b}
+.stock-sector-tiles button[aria-pressed=true]{outline-color:var(--heat-outline)}
+/* Price colours: the old #28cdb6 on white was ~2:1. */
+.terminal-up{color:var(--up)!important}.terminal-down{color:var(--down)!important}
+/* Dropdown menus used an undefined --foreground (light text on a light menu). */
+.compact-select-menu{background:var(--surface);color:var(--foreground);border-color:var(--stroke)}
+.compact-select>button{background:var(--surface);color:var(--fg);border-color:var(--stroke)}
+html[data-theme="light"] .compact-select-menu{box-shadow:0 8px 30px #0002}
+html[data-theme="light"] .desk-chart-card .terminal-tools>button,html[data-theme="light"] .desk-chart-card .terminal-toolbar,html[data-theme="light"] .desk-chart-card .terminal-panel-controls{background:var(--panel)}
