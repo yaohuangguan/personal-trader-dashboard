@@ -16,5 +16,19 @@
   "关键指标": "Key figures",
   "图表引擎": "Charts by",
   "K线图表": "K-line chart",
-  "正在刷新…": "Refreshing…"
+  "正在刷新…": "Refreshing…",
+  "收盘报告未更新：最新为 {latest}，应为 {expected}": "Closing report not updated: latest is {latest}, expected {expected}",
+  "查看共享收盘结果": "View shared closing result",
+  "登录后可发起全市场扫描；未登录也可查看共享的收盘结果。": "Sign in to start a full-market scan; the shared closing result stays available without an account.",
+  "登录后可发起全市场扫描": "Sign in to start a full-market scan",
+  "请{n}秒后再试": "Try again in {n}s",
+  "快速抽样扫描": "Quick sample scan",
+  "扫描自选": "Scan watchlist",
+  "缓存日线，可能延迟": "cached daily data, may be delayed",
+  "数据源暂不可用，显示最近一次成功的日线": "Sources are unavailable; showing the last successful daily data",
+  "服务繁忙，请稍后重试": "Service busy, please try again later",
+  "请求过于频繁，请稍后重试": "Too many requests, please try again later",
+  "网络连接失败，请检查网络后重试": "Network error, please check your connection and retry",
+  "数据源返回异常响应，请稍后重试": "The data source returned an invalid response, please retry later",
+  "数据暂不可用（HTTP {status}）": "Data unavailable (HTTP {status})"
 }

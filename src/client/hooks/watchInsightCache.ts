@@ -24,7 +24,7 @@ export class WatchInsightCache{
  }
 }
 export const watchInsightCache=new WatchInsightCache(async symbol=>{
- const response=await fetch('/api/desk/insight?symbol='+encodeURIComponent(symbol),{cache:'no-store',signal:AbortSignal.timeout(30000)});
+ const response=await fetch('/api/desk/insight?symbol='+encodeURIComponent(symbol),{signal:AbortSignal.timeout(30000)});
  const data=await readJson<any>(response);
  if(data.available===false)throw new Error(data.reason||data.error||'研判暂不可用');
  return data as WatchInsightData;

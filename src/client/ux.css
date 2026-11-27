@@ -144,3 +144,9 @@ html[data-theme="light"]{--foreground:var(--fg);--heat-up:#d0394b;--heat-down:#0
 .compact-select>button{background:var(--surface);color:var(--fg);border-color:var(--stroke)}
 html[data-theme="light"] .compact-select-menu{box-shadow:0 8px 30px #0002}
 html[data-theme="light"] .desk-chart-card .terminal-tools>button,html[data-theme="light"] .desk-chart-card .terminal-toolbar,html[data-theme="light"] .desk-chart-card .terminal-panel-controls{background:var(--panel)}
+
+/* ---- Screener / signals notices ---- */
+.screen-stale-banner{margin:10px 0;padding:10px 14px;border:1px solid color-mix(in srgb,var(--warm) 55%,transparent);border-left-width:3px;border-radius:7px;background:color-mix(in srgb,var(--warm) 10%,var(--panel));color:var(--fg);font-size:.9rem}
+.screen-notice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0;padding:10px 14px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel);color:var(--text)}
+.screen-notice button{min-height:36px;padding:4px 12px;border:1px solid var(--stroke);border-radius:6px;background:var(--panel-raised);color:var(--fg);font:inherit}
+.desk-stale-tag{font-style:normal;color:var(--warm)}

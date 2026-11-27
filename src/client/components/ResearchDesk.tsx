@@ -188,6 +188,8 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
     {chinese && <div id="desk-trend"><ErrorBoundary compact label="当日走势分析" resetKey={symbol}><DailyTrendPanel feed={trend} /></ErrorBoundary></div>}
     {analysis && <div id="desk-guide-summary"><ErrorBoundary compact label="五线量价研判" resetKey={symbol}><GuideSummary strategy={strategy} review={review} candles={analysisCandles} character={character} data={analysis} onOpen={() => openContext('guide')} /></ErrorBoundary></div>}
   </section>;
+  // /api/market may answer from the last good snapshot when every source fails.
+  const marketStale = (market as (MarketPayload & { stale?: boolean }) | undefined)?.stale === true;
   const chartSource = mode === 'daily' ? market?.provider || '等待日线数据' : mode === 'intraday' ? dayData.data?.source || '公开分钟分时' : periodData.data?.source || '等待周期历史';
   const chartDate = mode === 'daily' ? market?.asOf : mode === 'intraday' ? dayData.data?.date : periodData.data?.candles.at(-1)?.time;
   return <Tooltip.Provider delayDuration={250}><div className="research-desk" data-testid="research-desk">
@@ -205,7 +207,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
           {(['week','month','m5','m15','m30','m60','m120'] as const).map(period=><Tabs.Content value={period} key={period}>{periodData.data?<MarketChart candles={periodData.data.candles} symbol={symbol} unit={period} volumeUnit={periodData.data.volumeUnit} historySource={periodData.data.source}/>:<div><Empty loading={periodData.loading} text={uiText(periodData.error)}/>{!periodData.loading&&<button className="outline-button" onClick={periodData.refresh}>{uiText("重试数据源")}</button>}</div>}</Tabs.Content>)}
           <Tabs.Content value="intraday">{dayData.data ? <IntradayChart data={dayData.data} /> : <Empty loading={dayData.loading} text={uiText(dayData.error || '分时暂不可用')} />}{dayData.error && dayData.data && <Source text="" error={uiText("分时刷新失败，保留上一快照")} />}</Tabs.Content>
           </ErrorBoundary>
-        </Tabs.Root><div className="desk-chart-source"><span>{uiText(chartSource)}</span><span>{chartDate}</span></div></section></Tabs.Content>
+        </Tabs.Root><div className="desk-chart-source"><span>{uiText(chartSource)}{mode === 'daily' && marketStale && <em className="desk-stale-tag" title={uiText('数据源暂不可用，显示最近一次成功的日线')}> · {uiText('缓存日线，可能延迟')}</em>}</span><span>{chartDate}</span></div></section></Tabs.Content>
           <Tabs.Content value="sectors"><ErrorBoundary label="板块联动" resetKey={symbol}><StockSectorMap key={symbol} symbol={symbol} name={quote?.name||market?.name} boards={boards} selected={chosenBoard} onBoard={setSectorCode} onStock={onSelect} peers={peerData.data} loading={boardData.loading} error={boardData.error} memberLoading={peerData.loading} memberError={peerData.error} onRetry={()=>{boardData.refresh();peerData.refresh();}}/></ErrorBoundary></Tabs.Content>
           <Tabs.Content value="flow"><ErrorBoundary label="资金流" resetKey={symbol}>{chinese?<FlowPanel key={symbol} symbol={symbol} auto={auto}/>:<Empty text="当前公开资金接口覆盖 A 股"/>}</ErrorBoundary></Tabs.Content>
           <Tabs.Content value="news"><NewsFeed items={companyNews.data?.items || []} loading={companyNews.loading} error={uiText(companyNews.error)} /><Source text={uiText("东方财富个股代码检索 · 来源摘要 · 3分钟刷新")} /></Tabs.Content>

@@ -30,7 +30,8 @@ export function useLiveEndpoint<T>(url: string | null, intervalMs = 0, enabled =
       let timedOut = false;
       const deadline = setTimeout(() => { timedOut = true; controller?.abort(); }, /analysis|trend|history|chips|market-pools|dragon|earnings/.test(url) ? 30000 : 15000);
       try {
-        const response = await fetch(url, { signal: controller.signal, cache: 'no-store', headers: { accept: 'application/json' } });
+        // Desk routes now send short public max-age + ETag: polls may use the HTTP cache; a manual refresh revalidates.
+        const response = await fetch(url, { signal: controller.signal, cache: showLoading ? 'no-cache' : 'default', headers: { accept: 'application/json' } });
         const body = await readJson<{ available?: boolean; reason?: string; error?: string }>(response);
         if (body?.available === false) throw new Error(body.reason || body.error || '数据暂不可用');
         if (!disposed) setState({ data: body as T, loading: false, error: '', updatedAt: Date.now() });
