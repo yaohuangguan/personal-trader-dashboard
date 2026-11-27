@@ -199,6 +199,7 @@ class _FullscreenChartState extends State<FullscreenChart> {
               MediaQuery.orientationOf(context) == Orientation.portrait;
           if (portrait && restoreAutoRotate) {
             restoreAutoRotate = false;
+            orientationRestore?.cancel();
             orientationRestore = Timer(
               const Duration(milliseconds: 800),
               () => SystemChrome.setPreferredOrientations(autoRotate),

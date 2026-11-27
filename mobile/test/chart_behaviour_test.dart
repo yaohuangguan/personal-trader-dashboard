@@ -130,13 +130,14 @@ void main() {
           pointer: 11,
         ),
         b = await tester.startGesture(
-          Offset(rect.left + 230, rect.top + 160),
+          Offset(rect.left + 230, rect.top + 260),
           pointer: 12,
         );
     for (var i = 0; i < 12; i++) {
-      // Spread apart with a strong vertical component.
-      await a.moveBy(const Offset(-4, -6));
-      await b.moveBy(const Offset(4, 6));
+      // Spread apart diagonally: the moving finger has a strong upward
+      // component that a page scroll would otherwise pick up.
+      await a.moveBy(const Offset(-3, 0));
+      await b.moveBy(const Offset(4, -8));
       await tester.pump(const Duration(milliseconds: 16));
     }
     await a.up();
