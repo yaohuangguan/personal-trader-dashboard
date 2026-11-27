@@ -117,7 +117,7 @@ export default function MarketChart({ candles:initialCandles, compact = false, s
     const makeChart = (el: HTMLDivElement, height: number, bottomAxis: boolean) => {
       const chart = createChart(el, {
         width: el.clientWidth, height: paneHeight(el.clientWidth, height),
-        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: light?'#ffffff':'#0c0c0d' }, textColor:light?'#555e6c':'#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: Math.round(display.fontSize*.82) },
+        layout: { attributionLogo: el === priceRef.current, background: { type: ColorType.Solid, color: light?'#ffffff':'#0c0c0d' }, textColor:light?'#555e6c':'#adb1b8', fontFamily: 'Inter, Microsoft YaHei, sans-serif', fontSize: Math.round(display.rootPx*.82) },
         grid: { vertLines: { visible: false }, horzLines: { color:light?'#e8ebef':'#222225' } },
         leftPriceScale: { visible: true, borderVisible: false, entireTextOnly: true, minimumWidth: compact ? 55 : 68, scaleMargins: { top: 0.12, bottom: 0.08 } },
         rightPriceScale: { visible: false },

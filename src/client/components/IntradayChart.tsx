@@ -33,7 +33,7 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
    const pane=document.createElement('div');pane.style.position='relative';pane.style.height=height+'px';el.appendChild(pane);
    if(label){const tag=document.createElement('span');tag.textContent=label;tag.style.cssText='position:absolute;left:8px;top:2px;font-size:11px;z-index:1;color:#999;pointer-events:none';pane.appendChild(tag);}
    const chart=createChart(pane,{width:el.clientWidth,height,
-    layout:{background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.fontSize*.8)},
+    layout:{background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.rootPx*.82)},
     grid:{vertLines:{visible:false},horzLines:{color:light?'#e9ecf0':'#202023'}},
     rightPriceScale:{visible:true,textColor:label?'#00000000':light?'#59616d':'#a1a1aa',borderVisible:false,minimumWidth:65,scaleMargins:{top:.12,bottom:.08}},
     timeScale:{visible:last,borderVisible:false,timeVisible:true,secondsVisible:false,tickMarkFormatter:format,fixLeftEdge:true,fixRightEdge:false},
