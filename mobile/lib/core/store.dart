@@ -11,12 +11,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 import 'chart_studies.dart';
+import 'credentials.dart';
 import 'watch_transfer.dart';
 import 'watch_insights.dart';
 part 'watch_cloud.dart';
 
 class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
-  AtlasStore(this.api, this.prefs, this.english) {
+  AtlasStore(this.api, this.prefs, this.english, {CredentialStore? credentials})
+    : credentials = credentials ?? CredentialStore() {
+    this.credentials.migrate(prefs);
     watchlist =
         prefs.getStringList('watchlist') ??
         ['300545.SZ', '300308.SZ', '300502.SZ'];
@@ -26,17 +29,21 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     fontSize = prefs.getDouble('fontSize') ?? 18;
     bookmarks = rows(_decode(prefs.getString('bookmarks')));
     alerts = rows(_decode(prefs.getString('alerts')));
-    deviceToken =
-        prefs.getString('deviceToken') ??
-        List.generate(
-          32,
-          (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
-        ).join();
-    prefs.setString('deviceToken', deviceToken);
+    deviceToken = this.credentials.read(CredentialStore.deviceToken);
+    if (deviceToken.isEmpty) {
+      deviceToken = List.generate(
+        32,
+        (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
+      ).join();
+      this.credentials.write(CredentialStore.deviceToken, deviceToken);
+    }
     WidgetsBinding.instance.addObserver(this);
     watchInsights.addListener(notifyListeners);
   }
   final AtlasApi api;
+
+  /// Keychain-backed secrets: account session, sync key, device capability.
+  final CredentialStore credentials;
   late final chartStudies = ChartStudies(api, prefs);
   late final watchInsights = WatchInsights(api);
   late final extendedQuotes = ExtendedQuotes(api);
@@ -72,14 +79,18 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   static Future<AtlasStore> load({
     AtlasApi? api,
     SharedPreferences? prefs,
+    CredentialStore? credentials,
   }) async {
     final data = jsonDecode(
       await rootBundle.loadString('assets/strings_en.json'),
     );
+    final secrets = credentials ?? CredentialStore();
+    await secrets.load();
     return AtlasStore(
       api ?? AtlasApi(),
       prefs ?? await SharedPreferences.getInstance(),
       Map<String, dynamic>.from(data),
+      credentials: secrets,
     );
   }
 

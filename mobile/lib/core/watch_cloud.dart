@@ -1,8 +1,8 @@
 part of 'store.dart';
 
 extension WatchCloud on AtlasStore {
-  String get syncKey => prefs.getString('cloudSyncKey') ?? '';
-  String get accountToken => prefs.getString('accountToken') ?? '';
+  String get syncKey => credentials.read(CredentialStore.syncKey);
+  String get accountToken => credentials.read(CredentialStore.accountToken);
   Json get account =>
       obj(AtlasStore._decode(prefs.getString('accountProfile')));
   bool get cloudConnected => accountToken.isNotEmpty || syncKey.isNotEmpty;
@@ -31,9 +31,9 @@ extension WatchCloud on AtlasStore {
   Future<void> _signIn(String path, Json body) async {
     if (syncBusy) throw const FormatException('正在同步，请稍候');
     final result = await api.post(path, body);
-    await prefs.setString('accountToken', str(result['token']));
+    credentials.write(CredentialStore.accountToken, str(result['token']));
     await prefs.setString('accountProfile', jsonEncode(obj(result['account'])));
-    await prefs.remove('cloudSyncKey');
+    credentials.delete(CredentialStore.syncKey);
     await prefs.remove('cloudSyncBase');
     await syncCloud();
   }
@@ -44,7 +44,7 @@ extension WatchCloud on AtlasStore {
     final token = accountToken;
     if (token.isEmpty) throw const FormatException('请先登录');
     await api.post('/api/account/delete', {'password': password}, token: token);
-    await prefs.remove('accountToken');
+    credentials.delete(CredentialStore.accountToken);
     await prefs.remove('accountProfile');
     await prefs.remove('cloudSyncBase');
     syncStatus = '账号已删除，本机自选保留';
@@ -53,7 +53,7 @@ extension WatchCloud on AtlasStore {
 
   Future<void> logoutAccount() async {
     final token = accountToken;
-    await prefs.remove('accountToken');
+    credentials.delete(CredentialStore.accountToken);
     await prefs.remove('accountProfile');
     await prefs.remove('cloudSyncBase');
     syncStatus = '已退出登录，本机自选保留';
@@ -76,13 +76,13 @@ extension WatchCloud on AtlasStore {
     final remote = key == null
         ? await api.post('/api/watch-sync/create', {})
         : await api.get('/api/watch-sync', token: key);
-    await prefs.setString('cloudSyncKey', key ?? str(remote['token']));
+    credentials.write(CredentialStore.syncKey, key ?? str(remote['token']));
     await prefs.remove('cloudSyncBase');
     await syncCloud();
   }
 
   Future<void> disconnectCloud() async {
-    await prefs.remove('cloudSyncKey');
+    credentials.delete(CredentialStore.syncKey);
     await prefs.remove('cloudSyncBase');
     syncStatus = '已断开，本机自选保留';
     notifyListeners();
@@ -124,7 +124,7 @@ extension WatchCloud on AtlasStore {
       }
     } on ApiException catch (e) {
       if (e.status == 401 && accountToken.isNotEmpty) {
-        await prefs.remove('accountToken');
+        credentials.delete(CredentialStore.accountToken);
         await prefs.remove('accountProfile');
         await prefs.remove('cloudSyncBase');
         syncStatus = '登录已过期，请重新登录；本机自选保留';

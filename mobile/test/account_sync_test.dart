@@ -120,6 +120,13 @@ void main() {
       ]),
     );
     expect(s.syncStatus, startsWith('已同步'));
+    expect(
+      s.prefs.getKeys().where(
+        (k) => ['accountToken', 'cloudSyncKey', 'deviceToken'].contains(k),
+      ),
+      isEmpty,
+      reason: 'secrets live in the keychain, not NSUserDefaults',
+    );
     s.dispose();
   });
 
