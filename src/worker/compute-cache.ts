@@ -66,7 +66,7 @@ async function digest(text: string) {
  * - ttl: seconds per live bucket.
  * Successful responses are stored via ctx.waitUntil; errors are never stored and leave `no-store`.
  */
-export async function computeCache(request: Request, identity: string, ttl: number, action: () => Promise<Response> | Response, options: {ctx?: WaitUntil; market?: 'cn' | 'us'; phase?: boolean; now?: Date} = {}) {
+export async function computeCache(request: Request, identity: string, ttl: number, action: () => Promise<Response> | Response, options: {ctx?: WaitUntil; market?: 'cn' | 'us'; phase?: boolean; now?: Date; cacheControl?: string} = {}) {
   const edge = typeof caches !== 'undefined' ? (caches as CacheStorage & {default?: Cache}).default : undefined;
   const phase: CachePhase = options.phase === false ? {bucket: 'fixed', ttl, closedSince: null, live: true} : cachePhase(options.now, options.market, ttl);
   const id = await digest(identity + '|' + phase.bucket);
@@ -77,7 +77,7 @@ export async function computeCache(request: Request, identity: string, ttl: numb
       if (hit) {
         const etag = hit.headers.get('etag');
         const headers = new Headers(hit.headers);
-        headers.set('cache-control', clientCacheControl(phase));
+        headers.set('cache-control', options.cacheControl ?? clientCacheControl(phase));
         headers.set('x-atlas-compute-cache', 'hit');
         headers.set('server-timing', 'edge-cache;dur=' + (performance.now() - start).toFixed(1));
         if (etag && etagMatches(request.headers.get('if-none-match'), etag)) return new Response(null, {status: 304, headers});
@@ -95,7 +95,7 @@ export async function computeCache(request: Request, identity: string, ttl: numb
   const response = new Response(computed.body, computed);
   response.headers.set('x-atlas-compute-cache', 'miss');
   response.headers.set('etag', '"' + id.slice(0, 32) + '-' + Date.now().toString(36) + '"');
-  response.headers.set('cache-control', clientCacheControl(phase));
+  response.headers.set('cache-control', options.cacheControl ?? clientCacheControl(phase));
   response.headers.append('server-timing', 'request;dur=' + (performance.now() - start).toFixed(1));
   if (edge) {
     // Keep the closed-session result until the next open only when its data covers that session.

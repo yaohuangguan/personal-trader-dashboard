@@ -585,6 +585,18 @@ async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promis
     return computeCache(request,'index-yellow-v2:'+symbol,90,desk404,{ctx});
    }
    if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,desk404,{ctx,phase:false});
+   if(incoming.pathname.startsWith('/api/desk/')&&request.method==='GET'){
+    // Slow-changing data: edge copy plus browser Cache-Control with stale-while-revalidate and an ETag.
+    const kind=incoming.pathname.slice('/api/desk/'.length),p=incoming.searchParams,symbol=p.get('symbol')||'';
+    const identity='desk-'+kind+'-v1:'+['symbol','period','before','basis','study','type','code'].map(k=>k+'='+(p.get(k)??'')).join('&');
+    const fixed=(ttl:number,client:string)=>computeCache(request,identity,ttl,desk404,{ctx,phase:false,cacheControl:client});
+    const phased=(ttl:number)=>computeCache(request,identity,ttl,desk404,{ctx,market:marketOf(symbol)});
+    if(kind==='f10')return fixed(21600,'public, max-age=3600, stale-while-revalidate=86400');
+    if(kind==='reports')return fixed(10800,'public, max-age=1800, stale-while-revalidate=86400');
+    if(kind==='history'&&p.get('before')!==null)return fixed(86400,'public, max-age=3600, stale-while-revalidate=86400');
+    if(kind==='history'){const period=p.get('period')||'';return phased(/^m\d+$/.test(period)?30:60);}
+    if(['sector-map','industries','sectors','chips','flow-history'].includes(kind))return phased(60);
+   }
    const desk=await deskRoute(request);if(desk)return desk;
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');

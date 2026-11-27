@@ -82,3 +82,15 @@ test('heavy analysis runs in a compute Durable Object and falls back inline when
   assert.deepEqual(a.patternMarks,b.patternMarks);
  }finally{restore();}
 });
+test('slow-changing desk data is browser-cacheable with ETags and reused at the edge',async()=>{
+ const {restore}=fakeCaches(),original=globalThis.fetch;let upstream=0;
+ globalThis.fetch=async()=>{upstream++;return Response.json({data:[]});};
+ try{
+  const first=await worker.fetch(new Request('https://atlas.example/api/desk/reports?symbol=300545.SZ'),{} as never);
+  assert.equal(first.status,200);assert.equal(first.headers.get('cache-control'),'public, max-age=1800, stale-while-revalidate=86400');assert.ok(first.headers.get('etag'));
+  const calls=upstream,second=await worker.fetch(new Request('https://atlas.example/api/desk/reports?symbol=300545.SZ&noise=1'),{} as never);
+  assert.equal(second.headers.get('x-atlas-compute-cache'),'hit');assert.equal(upstream,calls,'unknown query parameters do not split the cache');
+  const bad=await worker.fetch(new Request('https://atlas.example/api/desk/reports?symbol=bad'),{} as never);
+  assert.equal(bad.status,400);assert.equal(bad.headers.get('cache-control'),'no-store');
+ }finally{globalThis.fetch=original;restore();}
+});
