@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import {InAppReaderProvider} from './components/InAppReader';
 import ErrorBoundary from './components/ErrorBoundary';
+import './component-styles';
 import {t} from './preferences';
 import './styles.css';
 import './neutral.css';

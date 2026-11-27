@@ -97,26 +97,26 @@ html[data-theme="light"]{--chart-label-bg:#ffffffeb}
  .desk-quote-head .desk-big-price>strong{font-size:1.9rem}
  .desk-quote-head .desk-security-main{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
  .desk-quote-head .desk-live-actions{flex-wrap:nowrap}
- .desk-chart-heading>span{display:none}
- .desk-context-tabs>button{padding-top:10px;padding-bottom:10px}
- .desk-chart-heading{min-height:40px}
- .desk-chart-heading .desk-tabs>button{padding-top:9px;padding-bottom:9px}
+ html .desk-chart-heading>span{display:none}
+ html .desk-context-tabs>button{padding-top:10px;padding-bottom:10px}
+ html .desk-chart-heading{min-height:40px}
+ html .desk-chart-heading .desk-tabs>button{padding-top:9px;padding-bottom:9px}
 }
 /* Chart toolbars on phones: one scrolling row each instead of 3–4 wrapped rows. */
 @media(max-width:600px){
- .desk-chart-card .terminal-toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:8px;padding:6px 8px}
- .desk-chart-card .terminal-toolbar::-webkit-scrollbar{display:none}
- .desk-chart-card .terminal-range,.desk-chart-card .terminal-tools{flex:none;flex-wrap:nowrap}
- .desk-chart-card .terminal-ma-legend{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:2px 12px;padding:5px 10px 0}
- .desk-chart-card .terminal-ma-legend::-webkit-scrollbar{display:none}
- .desk-chart-card .terminal-ma-legend>button{flex:none;min-width:0}
- .desk-chart-card .terminal-readouts{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
- .desk-chart-card .terminal-readouts .terminal-ohlc{flex-wrap:nowrap;overflow:visible}
- .desk-chart-card .terminal-readouts .terminal-pattern-readout{flex:none;padding-left:0}
+ html .desk-chart-card .terminal-toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:8px;padding:6px 8px}
+ html .desk-chart-card .terminal-toolbar::-webkit-scrollbar{display:none}
+ html .desk-chart-card .terminal-range,.desk-chart-card .terminal-tools{flex:none;flex-wrap:nowrap}
+ html .desk-chart-card .terminal-ma-legend{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:2px 12px;padding:5px 10px 0}
+ html .desk-chart-card .terminal-ma-legend::-webkit-scrollbar{display:none}
+ html .desk-chart-card .terminal-ma-legend>button{flex:none;min-width:0}
+ html .desk-chart-card .terminal-readouts{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+ html .desk-chart-card .terminal-readouts .terminal-ohlc{flex-wrap:nowrap;overflow:visible}
+ html .desk-chart-card .terminal-readouts .terminal-pattern-readout{flex:none;padding-left:0}
 }
 .research-desk .desk-market-tape>button{flex:1 0 auto}
-.desk-chart-card .terminal-ma-legend{gap:2px 14px}
-.desk-chart-card .terminal-ma-legend>button{flex:0 0 auto;min-width:7.4em}
+html .desk-chart-card .terminal-ma-legend{gap:2px 14px}
+html .desk-chart-card .terminal-ma-legend>button{flex:0 0 auto;min-width:7.4em}
 @media(max-width:900px){
  .research-desk .desk-quote-head .desk-security-main{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:space-between;margin-top:6px}
  .research-desk .desk-quote-head .desk-big-price{gap:10px;min-width:0}
@@ -136,12 +136,12 @@ html[data-theme="light"]{--chart-label-bg:#ffffffeb}
 /* ---- Semantic theme tokens: every light-theme fix below reads these instead of hard-coded dark values ---- */
 :root{--foreground:var(--fg);--heat-up:#df4b5b;--heat-down:#168b76;--heat-base:#191b21;--heat-empty:#2b2e35;--heat-scale:1;--heat-text:#fff;--heat-muted:#ffffffa8;--heat-border:#ffffff0a;--heat-outline:#f4dde1}
 html[data-theme="light"]{--foreground:var(--fg);--heat-up:#d0394b;--heat-down:#0b8a71;--heat-base:#ffffff;--heat-empty:#eceef2;--heat-scale:.5;--heat-text:#141417;--heat-muted:#55555a;--heat-border:#0000000f;--heat-outline:#7a1f2b}
-.stock-sector-tiles button[aria-pressed=true]{outline-color:var(--heat-outline)}
+html .stock-sector-tiles button[aria-pressed=true]{outline-color:var(--heat-outline)}
 /* Price colours: the old #28cdb6 on white was ~2:1. */
-.terminal-up{color:var(--up)!important}.terminal-down{color:var(--down)!important}
+html .terminal-up{color:var(--up)!important}html .terminal-down{color:var(--down)!important}
 /* Dropdown menus used an undefined --foreground (light text on a light menu). */
-.compact-select-menu{background:var(--surface);color:var(--foreground);border-color:var(--stroke)}
-.compact-select>button{background:var(--surface);color:var(--fg);border-color:var(--stroke)}
+html .compact-select-menu{background:var(--surface);color:var(--foreground);border-color:var(--stroke)}
+html .compact-select>button{background:var(--surface);color:var(--fg);border-color:var(--stroke)}
 html[data-theme="light"] .compact-select-menu{box-shadow:0 8px 30px #0002}
 html[data-theme="light"] .desk-chart-card .terminal-tools>button,html[data-theme="light"] .desk-chart-card .terminal-toolbar,html[data-theme="light"] .desk-chart-card .terminal-panel-controls{background:var(--panel)}
 
