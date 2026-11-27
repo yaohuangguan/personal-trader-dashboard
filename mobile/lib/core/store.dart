@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'blob_store.dart';
 import 'chart_studies.dart';
 import 'credentials.dart';
 import 'market_hours.dart';
@@ -137,9 +138,17 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     );
     final secrets = credentials ?? CredentialStore();
     await secrets.load();
+    // Chart frames and scan state go to files; settings stay in
+    // NSUserDefaults (see AtlasPreferences).
+    final stored =
+        prefs ??
+        AtlasPreferences(
+          await SharedPreferences.getInstance(),
+          await BlobStore.open(),
+        );
     return AtlasStore(
       api ?? AtlasApi(),
-      prefs ?? await SharedPreferences.getInstance(),
+      stored,
       Map<String, dynamic>.from(data),
       credentials: secrets,
     );
