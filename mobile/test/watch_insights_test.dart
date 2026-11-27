@@ -45,6 +45,42 @@ void main() {
     cache.dispose();
     api.dispose();
   });
+  test(
+    'a skewed device clock neither defeats the cache nor marks rows stale',
+    () async {
+      // The device runs 5 minutes fast; the server stamps its own clock.
+      var now = start.add(const Duration(minutes: 5));
+      var calls = 0;
+      final api = AtlasApi(
+        client: MockClient((request) async {
+          calls++;
+          return http.Response(jsonEncode(data('NVDA', 70)), 200);
+        }),
+      );
+      final cache = WatchInsights(api, clock: () => now);
+      var rowEvents = 0;
+      cache.listen('NVDA').addListener(() => rowEvents++);
+      final first = await cache.load('NVDA');
+      expect(insightFresh(first, now), isTrue);
+      expect(watchPhase(first, now), 'pullback');
+      now = now.add(const Duration(seconds: 15));
+      await cache.load('NVDA');
+      expect(calls, 1, reason: 'expiry is receive time + server TTL');
+      now = now.add(const Duration(seconds: 10));
+      await cache.load('NVDA');
+      expect(calls, 2);
+      expect(
+        rowEvents,
+        1,
+        reason: 'identical content does not rebuild the row',
+      );
+      now = now.add(const Duration(seconds: 120));
+      cache.checkFreshness();
+      expect(rowEvents, 2, reason: 'the row turns 待更新 when it ages out');
+      cache.dispose();
+      api.dispose();
+    },
+  );
   test('preset ranking is stable and never ranks stale or historical scores as current', () {
     final a = data('a', 80),
         b = data('b', 40),

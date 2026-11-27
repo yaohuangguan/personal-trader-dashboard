@@ -5,8 +5,10 @@ import 'watch_import.dart';
 import '../widgets/cloud_sync.dart';
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api.dart';
@@ -25,57 +27,95 @@ Future<void> showStockSearch(BuildContext context) async {
   }
 }
 
+class _SearchState {
+  const _SearchState(this.query, {this.data, this.error, this.loading = false});
+  final String query;
+  final Json? data;
+  final Object? error;
+  final bool loading;
+}
+
+/// Sends one request after typing pauses; earlier keystrokes are cancelled and
+/// late responses for an older query are ignored.
 class StockSearch extends SearchDelegate<String> {
-  StockSearch(this.store) : super(searchFieldLabel: store.t('名称、代码或拼音首字母'));
+  StockSearch(this.store, {this.debounce = const Duration(milliseconds: 300)})
+    : super(searchFieldLabel: store.t('名称、代码或拼音首字母'));
   final AtlasStore store;
-  String? lastQuery;
-  Future<Json>? pending;
+  final Duration debounce;
+  Timer? _timer;
+  String? _scheduled;
+  final _state = ValueNotifier(const _SearchState(''));
+
   @override
   ThemeData appBarTheme(BuildContext context) => Theme.of(context);
   @override
   List<Widget> buildActions(BuildContext context) => [
-    IconButton(onPressed: () => query = '', icon: const Icon(Icons.clear)),
+    IconButton(
+      tooltip: store.t('清除'),
+      onPressed: () => query = '',
+      icon: const Icon(Icons.clear),
+    ),
   ];
   @override
   Widget buildLeading(BuildContext context) => IconButton(
+    tooltip: store.t('返回'),
     onPressed: () => close(context, ''),
     icon: const Icon(Icons.arrow_back),
   );
   @override
+  void close(BuildContext context, String result) {
+    _timer?.cancel();
+    super.close(context, result);
+  }
+
+  @override
   Widget buildResults(BuildContext context) => results(context);
   @override
   Widget buildSuggestions(BuildContext context) => results(context);
+
+  Future<void> _fetch(String value) async {
+    _state.value = _SearchState(value, loading: true);
+    try {
+      final data = await store.api.get('/api/search', parameters: {'q': value});
+      if (_scheduled == value) _state.value = _SearchState(value, data: data);
+    } catch (e) {
+      if (_scheduled == value) _state.value = _SearchState(value, error: e);
+    }
+  }
+
   Widget results(BuildContext context) {
     final value = query.trim();
     if (value.isEmpty) {
-      return ListView(
-        children: store.watchlist
-            .map(
-              (s) => ListTile(
-                title: Text(str(store.quotes[s]?['name'], s)),
-                subtitle: Text(s),
-                onTap: () => close(context, s),
-              ),
-            )
-            .toList(),
+      _timer?.cancel();
+      _scheduled = null;
+      return ListView.builder(
+        itemCount: store.watchlist.length,
+        itemBuilder: (_, i) {
+          final s = store.watchlist[i];
+          return ListTile(
+            title: Text(str(store.quotes[s]?['name'], s)),
+            subtitle: Text(s),
+            onTap: () => close(context, s),
+          );
+        },
       );
     }
-    if (lastQuery != value) {
-      lastQuery = value;
-      pending = Future.delayed(
-        const Duration(milliseconds: 250),
-        () => store.api.get('/api/search', parameters: {'q': value}),
-      );
+    if (value != _scheduled) {
+      _scheduled = value;
+      _timer?.cancel();
+      _timer = Timer(debounce, () => _fetch(value));
     }
-    return FutureBuilder<Json>(
-      future: pending,
-      builder: (context, snapshot) {
+    return ValueListenableBuilder<_SearchState>(
+      valueListenable: _state,
+      builder: (context, state, _) {
+        final current = state.query == value;
+        final items = current ? rows(state.data?['items']) : const <Json>[];
         return ListView(
           children: [
-            if (snapshot.connectionState == ConnectionState.waiting)
-              const LinearProgressIndicator(),
-            if (snapshot.hasError) Notice(snapshot.error.toString()),
-            ...rows(snapshot.data?['items']).map(
+            if (!current || state.loading) const LinearProgressIndicator(),
+            if (current && state.error != null)
+              Notice(describeError(state.error)),
+            ...items.map(
               (r) => ListTile(
                 title: Text(str(r['name'])),
                 subtitle: Text(str(r['symbol'])),
@@ -103,24 +143,34 @@ class WatchPage extends StatefulWidget {
 
 class _WatchPageState extends State<WatchPage> {
   String filter = 'all', sort = 'manual', group = 'all', phase = 'all';
-  Timer? insightTimer;
   bool get preset => group == '@trend' || group == '@five';
+
+  /// Preset views need every stock's insight, not only the visible rows.
+  final _tracked = <String>{};
+  late final AtlasStore _store;
   @override
   void initState() {
     super.initState();
-    insightTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      final s = context.read<AtlasStore>();
-      if (preset &&
-          s.foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        s.watchInsights.loadMany(s.watchlist);
-      }
-    });
+    _store = context.read<AtlasStore>();
+  }
+
+  void _trackPreset(AtlasStore s) {
+    final want = preset ? s.watchlist.toSet() : const <String>{};
+    for (final symbol in _tracked.difference(want).toList()) {
+      s.watchInsights.untrack(symbol);
+      _tracked.remove(symbol);
+    }
+    for (final symbol in want.difference(_tracked)) {
+      s.watchInsights.track(symbol);
+      _tracked.add(symbol);
+    }
   }
 
   @override
   void dispose() {
-    insightTimer?.cancel();
+    for (final symbol in _tracked) {
+      _store.watchInsights.untrack(symbol);
+    }
     super.dispose();
   }
 
@@ -175,12 +225,7 @@ class _WatchPageState extends State<WatchPage> {
                     Navigator.pop(ctx);
                   }
                 } catch (e) {
-                  set(
-                    () => error = e.toString().replaceFirst(
-                      'FormatException: ',
-                      '',
-                    ),
-                  );
+                  set(() => error = describeError(e));
                 }
               },
               child: Text(s.t('保存')),
@@ -194,56 +239,111 @@ class _WatchPageState extends State<WatchPage> {
     c.dispose();
   }
 
-  void stockActions(AtlasStore s, String symbol) => showModalBottomSheet<void>(
-    context: context,
-    useSafeArea: true,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, update) => ListView(
-        shrinkWrap: true,
-        children: [
-          ListTile(
-            title: Text(str(s.quotes[symbol]?['name'], symbol)),
-            subtitle: Text(s.t('可加入多个分组')),
+  /// Swipe-to-remove: in a group view only the group membership goes; in the
+  /// full list the stock leaves the watchlist. Either way it can be undone.
+  Future<void> remove(AtlasStore s, String symbol, Json? inGroup) async {
+    HapticFeedback.mediumImpact();
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final name = str(s.quotes[symbol]?['name'], symbol);
+    if (inGroup != null) {
+      final id = str(inGroup['id']);
+      await s.groupStock(id, symbol, false);
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text('${s.t('已移出分组')} ${str(inGroup['name'])} · $name'),
+          action: SnackBarAction(
+            label: s.t('撤销'),
+            onPressed: () => s.groupStock(id, symbol, true),
           ),
-          for (final g in s.groups)
-            CheckboxListTile(
-              title: Text(str(g['name'])),
-              value: (g['symbols'] as List).contains(symbol),
-              onChanged: (v) async {
-                await s.groupStock(str(g['id']), symbol, v == true);
-                update(() {});
-              },
-            ),
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: Text(s.t('创建分组')),
-            onTap: () {
-              Navigator.pop(ctx);
-              editGroup(s);
-            },
-          ),
-          ListTile(
-            title: Text(s.t('移到第一位')),
-            onTap: () {
-              Navigator.pop(ctx);
-              s.reorderWatch(s.watchlist.indexOf(symbol), 0);
-            },
-          ),
-          ListTile(
-            title: Text(s.t('移除自选')),
-            onTap: () {
-              Navigator.pop(ctx);
-              s.toggleWatch(symbol);
-            },
-          ),
-        ],
+        ),
+      );
+      return;
+    }
+    final removed = s.removalOf(symbol);
+    await s.removeWatch(symbol);
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('${s.t('已移除自选')} · $name'),
+        action: SnackBarAction(
+          label: s.t('撤销'),
+          onPressed: () => s.restoreWatch(removed),
+        ),
       ),
-    ),
-  );
+    );
+  }
+
+  void stockActions(AtlasStore s, String symbol, Json? inGroup) =>
+      showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, update) => ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(str(s.quotes[symbol]?['name'], symbol)),
+                subtitle: Text(s.t('可加入多个分组')),
+              ),
+              for (final g in s.groups)
+                CheckboxListTile(
+                  title: Text(str(g['name'])),
+                  value: (g['symbols'] as List).contains(symbol),
+                  onChanged: (v) async {
+                    await s.groupStock(str(g['id']), symbol, v == true);
+                    update(() {});
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.add),
+                title: Text(s.t('创建分组')),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  editGroup(s);
+                },
+              ),
+              ListTile(
+                title: Text(s.t('移到第一位')),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  s.reorderWatch(s.watchlist.indexOf(symbol), 0);
+                },
+              ),
+              if (inGroup != null)
+                ListTile(
+                  title: Text(s.t('移出当前分组')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    remove(s, symbol, inGroup);
+                  },
+                ),
+              ListTile(
+                title: Text(s.t('移除自选')),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  remove(s, symbol, null);
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>(),
-        selected = s.groups.where((g) => g['id'] == group).firstOrNull;
+    final s = context.watch<AtlasStore>();
+    _trackPreset(s);
+    // Only the views whose order depends on live data listen to it.
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        if (sort == 'change') s.quoteBook,
+        if (preset) s.watchInsights,
+      ]),
+      builder: (context, _) => _list(context, s),
+    );
+  }
+
+  Widget _list(BuildContext context, AtlasStore s) {
+    final selected = s.groups.where((g) => g['id'] == group).firstOrNull;
     final list = s.watchlist
         .where(
           (v) =>
@@ -263,17 +363,22 @@ class _WatchPageState extends State<WatchPage> {
         ),
       );
     }
-    final phaseCounts = {
-      for (final key in watchPhases.keys)
-        key: key == 'all'
-            ? list.length
-            : list
-                  .where((v) => watchPhase(s.watchInsights.values[v]) == key)
-                  .length,
-    };
+    final phaseCounts = group != '@five'
+        ? const <String, int>{}
+        : {
+            for (final key in watchPhases.keys)
+              key: key == 'all'
+                  ? list.length
+                  : list
+                        .where(
+                          (v) => watchPhase(s.watchInsights.values[v]) == key,
+                        )
+                        .length,
+          };
     if (group == '@five' && phase != 'all') {
       list.removeWhere((v) => watchPhase(s.watchInsights.values[v]) != phase);
     }
+    final scaler = MediaQuery.textScalerOf(context);
     final headers = <Widget>[
       Row(
         children: [
@@ -415,7 +520,12 @@ class _WatchPageState extends State<WatchPage> {
             ],
           ),
         ),
-      if (s.quoteError != null) Notice('${s.t('行情源暂时不可用')} · ${s.quoteError}'),
+      ValueListenableBuilder<String?>(
+        valueListenable: s.quoteBook.errors,
+        builder: (context, error, _) => error == null
+            ? const SizedBox.shrink()
+            : Notice('${s.t('行情源暂时不可用')} · ${s.t(error)}'),
+      ),
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         child: Row(
@@ -438,7 +548,7 @@ class _WatchPageState extends State<WatchPage> {
             ),
             const SizedBox(width: 8),
             SizedBox(
-              width: 84,
+              width: watchPriceWidth(scaler),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
@@ -451,12 +561,14 @@ class _WatchPageState extends State<WatchPage> {
         ),
       ),
     ];
+    final inGroup = preset ? null : selected;
     return RefreshIndicator(
       onRefresh: () async {
         await s.refreshQuotes();
         await s.watchInsights.loadMany(list, force: true);
       },
       child: ListView.builder(
+        key: const PageStorageKey('watch-list'),
         padding: const EdgeInsets.symmetric(horizontal: 12),
         itemCount: headers.length + list.length + 1,
         itemBuilder: (ctx, i) {
@@ -475,115 +587,32 @@ class _WatchPageState extends State<WatchPage> {
               ),
             );
           }
-          final symbol = list[i - headers.length], q = s.quotes[symbol] ?? {};
+          final symbol = list[i - headers.length];
           return Dismissible(
-            key: ValueKey(symbol),
+            key: ValueKey('${inGroup?['id'] ?? 'all'}:$symbol'),
             direction: DismissDirection.endToStart,
             background: Container(
               color: up.withValues(alpha: .2),
               alignment: Alignment.centerRight,
-              child: const Icon(Icons.star_border),
-            ),
-            onDismissed: (_) => s.toggleWatch(symbol),
-            child: InkWell(
-              onTap: () => openStock(context, symbol),
-              onLongPress: () => stockActions(s, symbol),
-              child: Container(
-                height: usStock(symbol) ? 140 : 112,
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      color: atlasColor(0xff26262c),
-                      width: .5,
-                    ),
+              padding: const EdgeInsets.only(right: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    inGroup == null
+                        ? Icons.star_border
+                        : Icons.folder_off_outlined,
                   ),
-                ),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 4,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  str(q['name'], symbol),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  symbol,
-                                  style: TextStyle(fontSize: 12, color: muted),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: SizedBox(
-                              height: 42,
-                              child: cnStock(symbol)
-                                  ? MiniIntraday(symbol)
-                                  : Center(
-                                      child: Text(
-                                        '—',
-                                        style: TextStyle(color: muted),
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 84,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerRight,
-                                  child: Text(
-                                    fixed(q['price']),
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      color: tone(q['changePercent']),
-                                      fontSize: 21,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerRight,
-                                  child: Text(
-                                    percent(q['changePercent']),
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      color: tone(q['changePercent']),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (usStock(symbol)) ExtendedQuoteLine(symbol),
-                    WatchRowInsight(symbol),
-                    const SizedBox(height: 6),
-                  ],
-                ),
+                  const SizedBox(width: 6),
+                  Text(s.t(inGroup == null ? '移除自选' : '移出分组')),
+                ],
               ),
+            ),
+            onDismissed: (_) => remove(s, symbol, inGroup),
+            child: WatchRow(
+              symbol,
+              onTap: () => openStock(context, symbol),
+              onLongPress: () => stockActions(s, symbol, inGroup),
             ),
           );
         },
@@ -592,9 +621,143 @@ class _WatchPageState extends State<WatchPage> {
   }
 }
 
-class MiniIntraday extends StatefulWidget {
-  const MiniIntraday(this.symbol, {super.key});
+/// Width of the price column; grows with the text scale up to a bound.
+double watchPriceWidth(TextScaler scaler) =>
+    math.min(120, math.max(84, scaler.scale(84 * 18 / 22)));
+
+/// One watchlist row. It listens to its own quote only, so a poll that
+/// changes one stock rebuilds one row.
+class WatchRow extends StatelessWidget {
+  const WatchRow(
+    this.symbol, {
+    super.key,
+    required this.onTap,
+    required this.onLongPress,
+  });
   final String symbol;
+  final VoidCallback onTap, onLongPress;
+  @override
+  Widget build(BuildContext context) {
+    final s = context.read<AtlasStore>(),
+        scaler = MediaQuery.textScalerOf(context),
+        us = usStock(symbol);
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Container(
+        // A minimum, not a fixed height: large app font × system text size
+        // makes the row taller instead of overlapping the insight line.
+        constraints: BoxConstraints(minHeight: us ? 128 : 104),
+        padding: const EdgeInsets.only(top: 10, bottom: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: atlasColor(0xff26262c), width: .5),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ValueListenableBuilder<Json?>(
+              valueListenable: s.quoteBook.listen(symbol),
+              builder: (context, quote, _) {
+                final q = quote ?? const <String, dynamic>{};
+                return Row(
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            str(q['name'], symbol),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            symbol,
+                            maxLines: 1,
+                            style: TextStyle(fontSize: 12, color: muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: SizedBox(
+                        height: 42,
+                        child: cnStock(symbol)
+                            ? MiniIntraday(symbol, revision: q['asOf'])
+                            : Center(
+                                child: Text(
+                                  '—',
+                                  style: TextStyle(color: muted),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: watchPriceWidth(scaler),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              fixed(q['price']),
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: tone(q['changePercent']),
+                                fontSize: 21,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              percent(q['changePercent']),
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: tone(q['changePercent']),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 6),
+            if (us) ExtendedQuoteLine(symbol),
+            WatchRowInsight(symbol),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MiniIntraday extends StatefulWidget {
+  const MiniIntraday(this.symbol, {super.key, this.revision});
+  final String symbol;
+
+  /// Changes when the row's quote changes; the sparkline re-reads (at most
+  /// once a minute) only then, so a closed market makes no requests.
+  final Object? revision;
   @override
   State<MiniIntraday> createState() => _MiniIntradayState();
 }
@@ -606,7 +769,9 @@ class _MiniIntradayState extends State<MiniIntraday> {
   @override
   void didUpdateWidget(covariant MiniIntraday old) {
     super.didUpdateWidget(old);
-    load();
+    if (old.symbol != widget.symbol || old.revision != widget.revision) {
+      load();
+    }
   }
 
   @override
@@ -645,15 +810,34 @@ class _MiniIntradayState extends State<MiniIntraday> {
           ? Center(
               child: Text('—', style: TextStyle(color: muted)),
             )
-          : CustomPaint(painter: SparkPainter(points, previous)),
+          : CustomPaint(
+              painter: SparkPainter(
+                points,
+                previous,
+                upColor: up,
+                downColor: down,
+                baseColor: muted,
+              ),
+            ),
     );
   }
 }
 
 class SparkPainter extends CustomPainter {
-  SparkPainter(this.points, this.previous);
+  SparkPainter(
+    this.points,
+    this.previous, {
+    Color? upColor,
+    Color? downColor,
+    Color? baseColor,
+  }) : upColor = upColor ?? up,
+       downColor = downColor ?? down,
+       baseColor = baseColor ?? muted;
   final List<Json> points;
   final double? previous;
+
+  /// Theme colours are part of the painter so a theme switch repaints.
+  final Color upColor, downColor, baseColor;
   @override
   void paint(Canvas c, Size size) {
     final prices = points
@@ -674,7 +858,7 @@ class SparkPainter extends CustomPainter {
         Offset(0, y(previous!)),
         Offset(size.width, y(previous!)),
         Paint()
-          ..color = muted.withValues(alpha: .35)
+          ..color = baseColor.withValues(alpha: .35)
           ..strokeWidth = .5,
       );
     }
@@ -690,7 +874,9 @@ class SparkPainter extends CustomPainter {
     c.drawPath(
       path,
       Paint()
-        ..color = (prices.last >= (previous ?? prices.first) ? up : down)
+        ..color = (prices.last >= (previous ?? prices.first)
+            ? upColor
+            : downColor)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2,
     );
@@ -698,7 +884,11 @@ class SparkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SparkPainter old) =>
-      old.points != points || old.previous != previous;
+      old.points != points ||
+      old.previous != previous ||
+      old.upColor != upColor ||
+      old.downColor != downColor ||
+      old.baseColor != baseColor;
 }
 
 class SettingsPage extends StatelessWidget {
@@ -718,7 +908,11 @@ class SettingsPage extends StatelessWidget {
               children: [
                 Text(s.t('外观'), style: Theme.of(context).textTheme.titleLarge),
                 Chips(
-                  values: const {'dark': '中性黑', 'light': '明亮白'},
+                  values: const {
+                    'system': '跟随系统',
+                    'dark': '中性黑',
+                    'light': '明亮白',
+                  },
                   selected: s.themeMode,
                   onSelected: s.setTheme,
                 ),
@@ -759,17 +953,21 @@ class SettingsPage extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 15),
-                FilledButton.icon(
-                  onPressed: () => shareWatchTransfer(context),
-                  icon: const Icon(Icons.ios_share),
-                  label: Text(s.t('导出自选')),
+                Builder(
+                  builder: (button) => FilledButton.icon(
+                    onPressed: () => shareWatchTransfer(button),
+                    icon: const Icon(Icons.ios_share),
+                    label: Text(s.t('导出自选')),
+                  ),
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: s.watchlist.isEmpty
-                      ? null
-                      : () => shareWatchCode(context),
-                  icon: const Icon(Icons.key),
-                  label: Text(s.t('生成分享码')),
+                Builder(
+                  builder: (button) => FilledButton.tonalIcon(
+                    onPressed: s.watchlist.isEmpty
+                        ? null
+                        : () => shareWatchCode(button),
+                    icon: const Icon(Icons.key),
+                    label: Text(s.t('生成分享码')),
+                  ),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => showWatchImport(context, enterCode: true),
@@ -808,6 +1006,7 @@ class SettingsPage extends StatelessWidget {
                     ),
                     subtitle: Text(s.t(r['firedAt'] != null ? '已触发' : '等待触发')),
                     trailing: IconButton(
+                      tooltip: s.t('删除提醒'),
                       onPressed: () => s.removeAlert(r),
                       icon: const Icon(Icons.delete_outline),
                     ),
@@ -844,6 +1043,9 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
+/// Trend score and five-MA stance under a watch row. It shows the shared
+/// [WatchInsights] snapshot, listens to its own symbol only, and is refreshed
+/// by the store's scheduler while it is on screen (no per-row timer).
 class WatchRowInsight extends StatefulWidget {
   const WatchRowInsight(this.symbol, {super.key});
   final String symbol;
@@ -852,69 +1054,89 @@ class WatchRowInsight extends StatefulWidget {
 }
 
 class _WatchRowInsightState extends State<WatchRowInsight> {
-  Timer? timer;
+  late final AtlasStore store = context.read<AtlasStore>();
+  String? tracked;
   @override
-  void initState() {
-    super.initState();
-    load();
-    timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted &&
-          context.read<AtlasStore>().foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        load();
-      }
-    });
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _track();
+  }
+
+  @override
+  void didUpdateWidget(covariant WatchRowInsight oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.symbol != widget.symbol) _track();
+  }
+
+  /// Registered with the scheduler only while visible: its tab is on stage
+  /// and no stock page covers the list.
+  void _track() {
+    final visible =
+        TickerMode.valuesOf(context).enabled &&
+        (ModalRoute.isCurrentOf(context) ?? true);
+    final want = visible ? widget.symbol : null;
+    if (want == tracked) return;
+    if (tracked != null) store.watchInsights.untrack(tracked!);
+    tracked = want;
+    if (want != null) {
+      store.watchInsights.track(want);
+      load();
+    }
   }
 
   @override
   void dispose() {
-    timer?.cancel();
+    if (tracked != null) store.watchInsights.untrack(tracked!);
     super.dispose();
   }
 
   Future<void> load() async {
     try {
-      await context.read<AtlasStore>().watchInsights.load(widget.symbol);
+      await store.watchInsights.load(widget.symbol);
     } catch (_) {}
   }
 
   @override
-  Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>(),
-        data = s.watchInsights.values[widget.symbol],
-        trend = obj(data?['trend']),
-        action = obj(data?['operation']),
-        structure = obj(data?['structure']),
-        score = numOf(trend['score']);
-    return Row(
-      children: [
-        Text(
-          '${s.t(trend['current'] == true
-              ? '今日走势'
-              : str(trend['date'], '').isEmpty
-              ? '走势'
-              : str(trend['date']).substring(5))} ${score?.toStringAsFixed(0) ?? '—'}',
-          style: TextStyle(
-            fontSize: 12,
-            color: score == null || !insightFresh(data)
-                ? muted
-                : score >= 60
-                ? up
-                : score < 40
-                ? down
-                : muted,
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: store.watchInsights.listen(widget.symbol),
+    builder: (context, _) {
+      final s = store,
+          data = s.watchInsights.values[widget.symbol],
+          trend = obj(data?['trend']),
+          action = obj(data?['operation']),
+          structure = obj(data?['structure']),
+          score = numOf(trend['score']),
+          fresh = insightFresh(data);
+      return Row(
+        children: [
+          Text(
+            '${s.t(trend['current'] == true
+                ? '今日走势'
+                : str(trend['date'], '').isEmpty
+                ? '走势'
+                : str(trend['date']).substring(5))} ${score?.toStringAsFixed(0) ?? '—'}',
+            style: TextStyle(
+              fontSize: 12,
+              color: score == null || !fresh
+                  ? muted
+                  : score >= 60
+                  ? up
+                  : score < 40
+                  ? down
+                  : muted,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            '${s.t(str(action['action'], '五线待核验'))} · ${s.t(data != null && !insightFresh(data) ? '待更新' : str(structure['state'], '—'))}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: muted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${s.t(str(action['action'], '五线待核验'))} · ${s.t(data != null && !fresh ? '待更新' : str(structure['state'], '—'))}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: muted),
+            ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      );
+    },
+  );
 }

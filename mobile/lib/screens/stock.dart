@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -56,6 +57,11 @@ class _StockPageState extends State<StockPage> {
   }
 
   Timer? timer, historyRetry;
+
+  /// Sheets opened from this page (行情详情, 盘口, 筹码) keep the page polling
+  /// and show [liveQuote] instead of a frozen snapshot.
+  int sheetsOpen = 0;
+  final liveQuote = ValueNotifier<Json>(const {});
   int historyFailures = 0;
   late ValueNotifier<int> chartMARevision;
   int tick = 0, analysisGeneration = 0, historyGeneration = 0;
@@ -80,7 +86,7 @@ class _StockPageState extends State<StockPage> {
       if (auto &&
           mounted &&
           context.read<AtlasStore>().foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? false)) {
+          (sheetsOpen > 0 || (ModalRoute.of(context)?.isCurrent ?? false))) {
         refreshQuote();
         if (++tick % 12 == 0) {
           refreshAnalysis();
@@ -95,6 +101,7 @@ class _StockPageState extends State<StockPage> {
     timer?.cancel();
     historyRetry?.cancel();
     chartMARevision.removeListener(maChanged);
+    liveQuote.dispose();
     super.dispose();
   }
 
@@ -141,7 +148,7 @@ class _StockPageState extends State<StockPage> {
       }
     } catch (e) {
       if (mounted && generation == historyGeneration) {
-        setState(() => historyError = e.toString());
+        setState(() => historyError = describeError(e));
         if (studies.isLocal && historyFailures++ < 2) {
           historyRetry = Timer(
             Duration(seconds: historyFailures == 1 ? 2 : 8),
@@ -181,9 +188,10 @@ class _StockPageState extends State<StockPage> {
           quote = rows(r['items']).firstOrNull;
           quoteError = null;
         });
+        liveQuote.value = q;
       }
     } catch (e) {
-      if (mounted) setState(() => quoteError = e.toString());
+      if (mounted) setState(() => quoteError = describeError(e));
     }
   }
 
@@ -258,7 +266,7 @@ class _StockPageState extends State<StockPage> {
       }
     } catch (e) {
       if (mounted && generation == analysisGeneration) {
-        setState(() => analysisError = e.toString());
+        setState(() => analysisError = describeError(e));
       }
     } finally {
       if (generation == analysisGeneration) loading = false;
@@ -280,7 +288,7 @@ class _StockPageState extends State<StockPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => trendError = e.toString());
+      if (mounted) setState(() => trendError = describeError(e));
     } finally {
       trendLoading = false;
     }
@@ -406,7 +414,11 @@ class _StockPageState extends State<StockPage> {
             child: SingleChildScrollView(
               controller: controller,
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              child: child,
+              child: _SheetPresence(
+                onOpen: () => sheetsOpen++,
+                onClose: () => sheetsOpen--,
+                child: child,
+              ),
             ),
           ),
         ],
@@ -553,7 +565,10 @@ class _StockPageState extends State<StockPage> {
 
   Widget mini(String text, VoidCallback action, {Color? color}) => InkWell(
     onTap: action,
-    child: Padding(
+    child: Container(
+      // 44 pt minimum touch target.
+      constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       child: Text(
         tr(context, text),
@@ -569,24 +584,33 @@ class _StockPageState extends State<StockPage> {
         children: [
           LiveAlertsPanel(liveAlerts),
           const Divider(height: 26),
-          Wrap(
-            spacing: 26,
-            runSpacing: 18,
-            children: [
-              LabelValue('今开', fixed(q['open'])),
-              LabelValue('昨收', fixed(q['previous'])),
-              LabelValue('最高', fixed(q['high'])),
-              LabelValue('最低', fixed(q['low'])),
-              LabelValue('成交额', amount(q['amount'])),
-              LabelValue('换手率', '${fixed(q['turnover'])}%'),
-              LabelValue('量比', fixed(q['volumeRatio'])),
-              LabelValue('市盈率 TTM', fixed(q['pe'])),
-              LabelValue('总市值', amount(q['marketCap'])),
-            ],
+          // Live while the sheet is open: the page keeps polling.
+          ValueListenableBuilder<Json>(
+            valueListenable: liveQuote..value = q,
+            builder: (context, q, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 26,
+                  runSpacing: 18,
+                  children: [
+                    LabelValue('今开', fixed(q['open'])),
+                    LabelValue('昨收', fixed(q['previous'])),
+                    LabelValue('最高', fixed(q['high'])),
+                    LabelValue('最低', fixed(q['low'])),
+                    LabelValue('成交额', amount(q['amount'])),
+                    LabelValue('换手率', '${fixed(q['turnover'])}%'),
+                    LabelValue('量比', fixed(q['volumeRatio'])),
+                    LabelValue('市盈率 TTM', fixed(q['pe'])),
+                    LabelValue('总市值', amount(q['marketCap'])),
+                  ],
+                ),
+                const Divider(height: 30),
+                SourceLine(q),
+                if (quoteError != null) Notice(quoteError!),
+              ],
+            ),
           ),
-          const Divider(height: 30),
-          SourceLine(q),
-          if (quoteError != null) Notice(quoteError!),
           ListTile(
             leading: const Icon(Icons.insights),
             title: Text(tr(context, '当日走势分析')),
@@ -642,7 +666,13 @@ class _StockPageState extends State<StockPage> {
       RepaintBoundary(key: snapshotKey, child: buildPage(context));
 
   Widget buildPage(BuildContext context) {
-    final s = context.watch<AtlasStore>(), name = str(q['name'], widget.symbol);
+    final s = context.read<AtlasStore>(), name = str(q['name'], widget.symbol);
+    // Rebuild for this page's star and the language only, not every store
+    // change.
+    final starred = context.select<AtlasStore, bool>(
+      (s) => s.watchlist.contains(widget.symbol),
+    );
+    context.select<AtlasStore, String>((s) => s.locale);
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 44,
@@ -677,14 +707,12 @@ class _StockPageState extends State<StockPage> {
             icon: const Icon(Icons.ios_share, size: 20),
           ),
           IconButton(
-            tooltip: s.t('我的自选'),
+            tooltip: s.t(starred ? '移除自选' : '加入自选'),
             onPressed: () => s.toggleWatch(widget.symbol),
             icon: Icon(
-              s.watchlist.contains(widget.symbol)
-                  ? Icons.star
-                  : Icons.star_border,
+              starred ? Icons.star : Icons.star_border,
               size: 20,
-              color: s.watchlist.contains(widget.symbol) ? Colors.amber : muted,
+              color: starred ? favorite : muted,
             ),
           ),
           IconButton(
@@ -750,7 +778,8 @@ class _StockPageState extends State<StockPage> {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
-          height: 50,
+          // Grows with the label size; never below 50.
+          height: math.max(50, MediaQuery.textScalerOf(context).scale(11) + 34),
           decoration: BoxDecoration(
             color: atlasColor(0xff131316),
             border: Border(
@@ -809,39 +838,42 @@ class _StockPageState extends State<StockPage> {
               children: [
                 _quoteStrip(),
                 SizedBox(
+                  // Fixed (first screen): the text is capped instead. The same
+                  // analysis is also behind the 44 pt "走势" source-bar button.
                   height: 14,
-                  child: InkWell(
-                    onTap: openTrend,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.sensors,
-                            size: 13,
-                            color: liveAlerts.isEmpty
-                                ? muted
-                                : const Color(0xffd5ae58),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              liveAlerts.isEmpty
-                                  ? tr(context, '盘中观察 · 无新增预警')
-                                  : liveAlerts
-                                        .take(2)
-                                        .map((a) => str(a['title']))
-                                        .join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: liveAlerts.isEmpty ? muted : ink,
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.15,
+                    child: InkWell(
+                      onTap: openTrend,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.sensors,
+                              size: 13,
+                              color: liveAlerts.isEmpty ? muted : warning,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                liveAlerts.isEmpty
+                                    ? tr(context, '盘中观察 · 无新增预警')
+                                    : liveAlerts
+                                          .take(2)
+                                          .map((a) => str(a['title']))
+                                          .join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: liveAlerts.isEmpty ? muted : ink,
+                                ),
                               ),
                             ),
-                          ),
-                          Icon(Icons.chevron_right, size: 14, color: muted),
-                        ],
+                            Icon(Icons.chevron_right, size: 14, color: muted),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -885,73 +917,78 @@ class _StockPageState extends State<StockPage> {
       },
     ),
   );
-  Widget _quoteStrip() => InkWell(
-    onTap: more,
-    child: Container(
-      height: 78,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: atlasColor(0xff24242a), width: .5),
+  Widget _quoteStrip() => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: _firstScreenTextScale,
+    child: InkWell(
+      onTap: more,
+      child: Container(
+        // Fixed so the chart below keeps its height; the text scale is capped
+        // (and prices use FittedBox) so large system sizes cannot overflow it.
+        height: 78,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: atlasColor(0xff24242a), width: .5),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 5,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    fixed(q['price']),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      fixed(q['price']),
+                      style: TextStyle(
+                        fontSize: 31,
+                        height: 1,
+                        fontWeight: FontWeight.w600,
+                        color: tone(q['changePercent']),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${fixed(q['change'])}  ${percent(q['changePercent'])}',
                     style: TextStyle(
-                      fontSize: 31,
+                      fontSize: 13,
                       height: 1,
-                      fontWeight: FontWeight.w600,
                       color: tone(q['changePercent']),
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${fixed(q['change'])}  ${percent(q['changePercent'])}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1,
-                    color: tone(q['changePercent']),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            flex: 6,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _statColumn(
-                    '今开',
-                    fixed(q['open']),
-                    '最低',
-                    fixed(q['low']),
+            Expanded(
+              flex: 6,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _statColumn(
+                      '今开',
+                      fixed(q['open']),
+                      '最低',
+                      fixed(q['low']),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _statColumn(
-                    '最高',
-                    fixed(q['high']),
-                    '换手率',
-                    '${fixed(q['turnover'])}%',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _statColumn(
+                      '最高',
+                      fixed(q['high']),
+                      '换手率',
+                      '${fixed(q['turnover'])}%',
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -983,21 +1020,51 @@ class _StockPageState extends State<StockPage> {
         ),
     ],
   );
-  Widget _periodBar() => PeriodSelector(
-    intraday: cnStock(widget.symbol),
-    value: timeframe,
-    onChanged: (v) => setState(() => timeframe = v),
+  // Above the chart on the first screen: fixed height, text scaled to fit,
+  // so the candles keep their room at every text size.
+  Widget _periodBar() => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: _firstScreenTextScale,
+    child: PeriodSelector(
+      height: 36,
+      intraday: cnStock(widget.symbol),
+      value: timeframe,
+      onChanged: (v) => setState(() => timeframe = v),
+    ),
   );
+
+  /// Largest text scale the fixed first-screen rows (quote strip, alert
+  /// strip, period bar) can hold; larger app/system sizes do not grow them.
+  static const _firstScreenTextScale = 22 / 18;
   Widget _waiting() => Center(
     child: Padding(
       padding: const EdgeInsets.all(16),
-      child: (historyError ?? analysisError) == null
+      child: !supportedStock(widget.symbol)
+          // Index tickers such as ^GSPC or partial codes have no data source;
+          // say so instead of spinning forever.
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.block, color: muted),
+                const SizedBox(height: 10),
+                Text(
+                  '${tr(context, '暂不支持该代码')} · ${widget.symbol}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: muted),
+                ),
+                Text(
+                  tr(context, '请输入沪深北6位代码或美股代码，例如 600519、AAPL'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: muted),
+                ),
+              ],
+            )
+          : (historyError ?? analysisError) == null
           ? const CircularProgressIndicator(strokeWidth: 1.5)
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  (historyError ?? analysisError)!,
+                  tr(context, (historyError ?? analysisError)!),
                   style: TextStyle(fontSize: 13, color: muted),
                 ),
                 TextButton(
@@ -1064,7 +1131,7 @@ class _StockPageState extends State<StockPage> {
   }
 
   Widget _sourceBar() => Container(
-    height: 32,
+    height: math.max(44, MediaQuery.textScalerOf(context).scale(12) + 20),
     decoration: BoxDecoration(
       border: Border(top: BorderSide(color: atlasColor(0xff25252b), width: .5)),
     ),
@@ -1093,7 +1160,13 @@ class _StockPageState extends State<StockPage> {
             openTrend,
             color: ink,
           ),
-        mini('盘口', () => sheet('五档盘口', BookPanel(widget.symbol, q))),
+        mini(
+          '盘口',
+          () => sheet(
+            '五档盘口',
+            BookPanel(widget.symbol, q, live: liveQuote..value = q),
+          ),
+        ),
         mini(
           '筹码',
           () => sheet(
@@ -1111,16 +1184,70 @@ class _StockPageState extends State<StockPage> {
   );
 }
 
+/// Counts the sheets a stock page has open (see `sheetsOpen`).
+class _SheetPresence extends StatefulWidget {
+  const _SheetPresence({
+    required this.onOpen,
+    required this.onClose,
+    required this.child,
+  });
+  final VoidCallback onOpen, onClose;
+  final Widget child;
+  @override
+  State<_SheetPresence> createState() => _SheetPresenceState();
+}
+
+class _SheetPresenceState extends State<_SheetPresence> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onOpen();
+  }
+
+  @override
+  void dispose() {
+    widget.onClose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class BookPanel extends StatefulWidget {
-  const BookPanel(this.symbol, this.quote, {super.key});
+  const BookPanel(this.symbol, this.quote, {super.key, this.live});
   final String symbol;
   final Json quote;
+
+  /// The page's polled quote; the five levels update while the sheet is up.
+  final ValueListenable<Json>? live;
   @override
   State<BookPanel> createState() => _BookPanelState();
 }
 
 class _BookPanelState extends State<BookPanel> {
   String tab = 'book';
+  Json get quote {
+    final live = widget.live?.value;
+    return live == null || live.isEmpty ? widget.quote : live;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.live?.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.live?.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted && tab == 'book') setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = context.read<AtlasStore>();
@@ -1215,12 +1342,10 @@ class _BookPanelState extends State<BookPanel> {
               ),
             )
           else if (tab == 'book') ...[
-            for (final r in rows(
-              widget.quote['asks'],
-            ).indexed.toList().reversed)
+            for (final r in rows(quote['asks']).indexed.toList().reversed)
               _level('卖${r.$1 + 1}', r.$2),
             const Divider(),
-            for (final r in rows(widget.quote['bids']).indexed)
+            for (final r in rows(quote['bids']).indexed)
               _level('买${r.$1 + 1}', r.$2),
             Notice(s.t('公开五档和约3秒聚合分笔；没有授权十档、逐笔委托队列或完整交易所 Level-2。')),
           ] else if (tab == 'ticks')
@@ -1270,8 +1395,8 @@ class _BookPanelState extends State<BookPanel> {
             fixed(r['price']),
             style: TextStyle(
               color: tone(
-                (numOf(r['price']) ?? numOf(widget.quote['previous']) ?? 0) -
-                    (numOf(widget.quote['previous']) ?? 0),
+                (numOf(r['price']) ?? numOf(quote['previous']) ?? 0) -
+                    (numOf(quote['previous']) ?? 0),
               ),
             ),
           ),
@@ -1297,53 +1422,74 @@ class ChipProfile extends StatefulWidget {
   State<ChipProfile> createState() => _ChipProfileState();
 }
 
+Json? _chipJob((List<Bar>, List<double>) input) =>
+    chipModel(input.$1, input.$2);
+
 class _ChipProfileState extends State<ChipProfile> {
-  late Future<Json> sourceData;
   List<Bar> get bars => widget.bars;
   String get symbol => widget.symbol;
   String get volumeUnit => widget.volumeUnit;
   Json get quote => widget.quote;
+  Json? model;
+  bool waiting = true, historical = false;
   @override
   void initState() {
     super.initState();
-    sourceData = context.read<AtlasStore>().api.get(
-      '/api/desk/chips',
-      parameters: {'symbol': widget.symbol},
-    );
+    _load();
+  }
+
+  /// The cost model runs once per opening, on a background isolate, instead
+  /// of inside every FutureBuilder rebuild on the UI isolate.
+  Future<void> _load() async {
+    Json? source;
+    try {
+      source = await context.read<AtlasStore>().api.get(
+        '/api/desk/chips',
+        parameters: {'symbol': widget.symbol},
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    final raw = rows(source?['bars']),
+        floatShares =
+            (numOf(quote['floatCap']) ?? 0) / (numOf(quote['price']) ?? 1);
+    final from = raw.isNotEmpty;
+    final input = from ? raw.map(Bar.fromJson).toList() : bars;
+    final turns = from
+        ? raw.map((r) => numOf(r['turnover']) ?? double.nan).toList()
+        : input
+              .map(
+                (b) => floatShares > 0
+                    ? b.volume *
+                          (volumeUnit == '手' ? 100 : 1) /
+                          floatShares *
+                          100
+                    : double.nan,
+              )
+              .toList();
+    Json? result;
+    try {
+      result = await compute(_chipJob, (input, turns));
+    } catch (_) {
+      result = chipModel(input, turns);
+    }
+    if (mounted) {
+      setState(() {
+        model = result;
+        historical = from;
+        waiting = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final s = context.read<AtlasStore>();
-    return FutureBuilder<Json>(
-      future: sourceData,
-      builder: (context, snapshot) {
-        final source = snapshot.data,
-            raw = rows(source?['bars']),
-            floatShares =
-                (numOf(quote['floatCap']) ?? 0) / (numOf(quote['price']) ?? 1),
-            historical = raw.isNotEmpty;
-        final input = historical ? raw.map(Bar.fromJson).toList() : bars;
-        final turns = historical
-            ? raw.map((r) => numOf(r['turnover']) ?? double.nan).toList()
-            : input
-                  .map(
-                    (b) => floatShares > 0
-                        ? b.volume *
-                              (volumeUnit == '手' ? 100 : 1) /
-                              floatShares *
-                              100
-                        : double.nan,
-                  )
-                  .toList();
-        final model = chipModel(input, turns);
+    return Builder(
+      builder: (context) {
+        final model = this.model;
         if (model == null) {
           return Notice(
-            s.t(
-              snapshot.connectionState == ConnectionState.waiting
-                  ? '正在获取历史换手率…'
-                  : '历史换手率与流通股本均不可用，无法推演筹码分布。',
-            ),
+            s.t(waiting ? '正在获取历史换手率…' : '历史换手率与流通股本均不可用，无法推演筹码分布。'),
           );
         }
         final histogram = rows(model['histogram']).reversed.toList(),
@@ -1367,6 +1513,9 @@ class _ChipProfileState extends State<ChipProfile> {
                   histogram,
                   maxWeight,
                   numOf(quote['price']) ?? bars.last.close,
+                  upColor: up,
+                  downColor: down,
+                  labelColor: muted,
                 ),
               ),
             ),
@@ -1415,9 +1564,19 @@ class _ChipProfileState extends State<ChipProfile> {
 }
 
 class _ChipHistogramPainter extends CustomPainter {
-  const _ChipHistogramPainter(this.histogram, this.maxWeight, this.lastPrice);
+  const _ChipHistogramPainter(
+    this.histogram,
+    this.maxWeight,
+    this.lastPrice, {
+    required this.upColor,
+    required this.downColor,
+    required this.labelColor,
+  });
   final List<Json> histogram;
   final double maxWeight, lastPrice;
+
+  /// Theme colours are fields so a theme switch repaints.
+  final Color upColor, downColor, labelColor;
   @override
   void paint(Canvas canvas, Size size) {
     if (histogram.isEmpty || maxWeight <= 0) return;
@@ -1434,7 +1593,8 @@ class _ChipHistogramPainter extends CustomPainter {
           width * (numOf(r['weight']) ?? 0) / maxWeight,
           math.max(.5, step - .5),
         ),
-        Paint()..color = (numOf(r['price']) ?? 0) < lastPrice ? up : down,
+        Paint()
+          ..color = (numOf(r['price']) ?? 0) < lastPrice ? upColor : downColor,
       );
     }
     for (var i = 0; i <= 4; i++) {
@@ -1442,7 +1602,7 @@ class _ChipHistogramPainter extends CustomPainter {
       final text = TextPainter(
         text: TextSpan(
           text: fixed(histogram[index]['price']),
-          style: TextStyle(fontSize: 13, color: muted),
+          style: TextStyle(fontSize: 13, color: labelColor),
         ),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: left - 6);
@@ -1463,7 +1623,10 @@ class _ChipHistogramPainter extends CustomPainter {
   bool shouldRepaint(covariant _ChipHistogramPainter old) =>
       old.histogram != histogram ||
       old.lastPrice != lastPrice ||
-      old.maxWeight != maxWeight;
+      old.maxWeight != maxWeight ||
+      old.upColor != upColor ||
+      old.downColor != downColor ||
+      old.labelColor != labelColor;
 }
 
 class StockNews extends StatelessWidget {

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/api.dart';
 import '../core/store.dart';
@@ -22,7 +23,9 @@ class NewsTile extends StatelessWidget {
   final bool compact;
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>();
+    final s = context.read<AtlasStore>();
+    final saved = context.select<AtlasStore, bool>((s) => s.saved(item));
+    context.select<AtlasStore, String>((s) => s.locale);
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       title: Text(
@@ -49,8 +52,8 @@ class NewsTile extends StatelessWidget {
         onPressed: () => s.toggleSaved(item),
         tooltip: s.t('收藏'),
         icon: Icon(
-          s.saved(item) ? Icons.bookmark : Icons.bookmark_border,
-          color: s.saved(item) ? Colors.amber : muted,
+          saved ? Icons.bookmark : Icons.bookmark_border,
+          color: saved ? favorite : muted,
         ),
       ),
       onTap: () => openNews(context, item),
@@ -68,84 +71,135 @@ class NewsPage extends StatefulWidget {
 class _NewsPageState extends State<NewsPage> {
   String category = 'all', source = 'all';
   bool auto = true;
+  final _panels = <String, GlobalKey<AsyncPanelState>>{};
 
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AtlasStore>();
     if (widget.savedOnly) {
-      return ListView(
+      final saved = s.bookmarks;
+      return ListView.builder(
         padding: const EdgeInsets.all(18),
-        children: [
-          PageTitle('收藏情报', '只保存在当前设备'),
-          if (s.bookmarks.isEmpty) Notice(s.t('还没有收藏情报')),
-          ...s.bookmarks.map((r) => NewsTile(r)),
-        ],
+        itemCount: saved.length + 1 + (saved.isEmpty ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (i == 0) return const PageTitle('收藏情报', '只保存在当前设备');
+          if (saved.isEmpty) return Notice(s.t('还没有收藏情报'));
+          return NewsTile(saved[i - 1]);
+        },
       );
     }
     final categories = {
       'all': '7×24 快讯',
       for (final r in rows(s.catalog['sectors'])) str(r['id']): str(r['name']),
     };
-    return ListView(
-      padding: const EdgeInsets.all(18),
-      children: [
-        PageTitle(
-          '7×24 财经快讯',
-          '财联社与华尔街见闻 · 来源摘要 · 北京时间',
-          trailing: IconButton(
-            onPressed: () => setState(() => auto = !auto),
-            tooltip: s.t(auto ? '暂停' : '恢复'),
-            icon: Icon(
-              auto ? Icons.pause_circle_outline : Icons.play_circle_outline,
+    final panel = _panels.putIfAbsent(category, GlobalKey<AsyncPanelState>.new);
+    const pad = EdgeInsets.symmetric(horizontal: 18);
+    return RefreshIndicator(
+      onRefresh: () async => panel.currentState?.refresh(),
+      child: CustomScrollView(
+        key: const PageStorageKey('news'),
+        slivers: [
+          SliverPadding(
+            padding: pad.copyWith(top: 18),
+            sliver: SliverList.list(
+              children: [
+                PageTitle(
+                  '7×24 财经快讯',
+                  '财联社与华尔街见闻 · 来源摘要 · 北京时间',
+                  trailing: IconButton(
+                    onPressed: () => setState(() => auto = !auto),
+                    tooltip: s.t(auto ? '暂停' : '恢复'),
+                    icon: Icon(
+                      auto
+                          ? Icons.pause_circle_outline
+                          : Icons.play_circle_outline,
+                    ),
+                  ),
+                ),
+                Chips(
+                  values: categories,
+                  selected: category,
+                  onSelected: (v) => setState(() => category = v),
+                ),
+                if (category == 'all')
+                  Chips(
+                    values: const {
+                      'all': '全部快讯',
+                      'important': '重要',
+                      '财联社': '财联社',
+                      '华尔街见闻': '华尔街见闻',
+                    },
+                    selected: source,
+                    onSelected: (v) => setState(() => source = v),
+                  ),
+              ],
             ),
           ),
-        ),
-        Chips(
-          values: categories,
-          selected: category,
-          onSelected: (v) => setState(() => category = v),
-        ),
-        if (category == 'all')
-          Chips(
-            values: const {
-              'all': '全部快讯',
-              'important': '重要',
-              '财联社': '财联社',
-              '华尔街见闻': '华尔街见闻',
-            },
-            selected: source,
-            onSelected: (v) => setState(() => source = v),
+          SliverPadding(
+            padding: pad.copyWith(bottom: 18),
+            sliver: AsyncPanel(
+              key: panel,
+              sliver: true,
+              refreshSeconds: auto ? 60 : 0,
+              load: () => s.api.get(
+                category == 'all' ? '/api/desk/flash' : '/api/news',
+                parameters: category == 'all' ? null : {'category': category},
+              ),
+              builder: (data) {
+                final items = rows(data['items'])
+                    .where(
+                      (r) =>
+                          category != 'all' ||
+                          source == 'all' ||
+                          (source == 'important'
+                              ? r['important'] == true
+                              : r['source'] == source),
+                    )
+                    .toList();
+                final warnings = (data['warnings'] as List?) ?? const [];
+                return SliverMainAxisGroup(
+                  slivers: [
+                    if (items.isEmpty)
+                      SliverToBoxAdapter(child: Notice(s.t('当前范围内暂无来源资讯'))),
+                    SliverList.builder(
+                      itemCount: items.length,
+                      itemBuilder: (_, i) => NewsTile(items[i]),
+                    ),
+                    SliverList.list(
+                      children: [
+                        SourceLine(data),
+                        ...warnings.map((w) => Notice('$w')),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
-        AsyncPanel(
-          key: ValueKey(category),
-          refreshSeconds: auto ? 60 : 0,
-          load: () => s.api.get(
-            category == 'all' ? '/api/desk/flash' : '/api/news',
-            parameters: category == 'all' ? null : {'category': category},
-          ),
-          builder: (data) {
-            final items = rows(data['items'])
-                .where(
-                  (r) =>
-                      category != 'all' ||
-                      source == 'all' ||
-                      (source == 'important'
-                          ? r['important'] == true
-                          : r['source'] == source),
-                )
-                .toList();
-            return Column(
-              children: [
-                if (items.isEmpty) Notice(s.t('当前范围内暂无来源资讯')),
-                ...items.map((r) => NewsTile(r)),
-                SourceLine(data),
-                ...((data['warnings'] as List?) ?? []).map((w) => Notice('$w')),
-              ],
-            );
-          },
-        ),
-      ],
+        ],
+      ),
     );
+  }
+}
+
+/// Opens an article link in the system browser (Safari view on iOS).
+Future<void> openSourceLink(BuildContext context, String? url) async {
+  final uri = url == null ? null : Uri.tryParse(url);
+  final store = context.read<AtlasStore>();
+  if (uri == null || !const {'http', 'https'}.contains(uri.scheme)) {
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(store.t('无法打开链接'))));
+    return;
+  }
+  try {
+    if (!await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) {
+      throw StateError('launch failed');
+    }
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(store.t('无法打开链接'))));
+    }
   }
 }
 
@@ -176,16 +230,16 @@ class ReaderPage extends StatelessWidget {
                 await SharePlus.instance.share(
                   ShareParams(
                     text: '${str(item['title'])}\n${str(result['url'])}',
-                    sharePositionOrigin: box == null
-                        ? null
-                        : box.localToGlobal(Offset.zero) & box.size,
+                    sharePositionOrigin: shareOrigin(box),
                   ),
                 );
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('${s.t('分享失败')}：$e')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${s.t('分享失败')}：${s.t(describeError(e))}'),
+                    ),
+                  );
                 }
               }
             },
@@ -201,6 +255,14 @@ class ReaderPage extends StatelessWidget {
               builder: (data) => _body(context, {...item, ...data}),
             ),
     );
+  }
+
+  static String? _original(Json data) {
+    final url = str(data['url'] ?? data['sourceUrl'], '');
+    final uri = Uri.tryParse(url);
+    return uri != null && const {'http', 'https'}.contains(uri.scheme)
+        ? url
+        : null;
   }
 
   Widget _body(BuildContext context, Json data) {
@@ -240,7 +302,7 @@ class ReaderPage extends StatelessWidget {
                   margin: Margins.zero,
                 ),
               },
-              onLinkTap: (_, _, _) {},
+              onLinkTap: (url, _, _) => openSourceLink(context, url),
             )
           else
             Notice(s.t('该资讯源仅提供了标题、日期与出处，未授权提供正文。本站不推测正文，也不把标题扩写成未经核实的新闻内容。')),
@@ -261,6 +323,15 @@ class ReaderPage extends StatelessWidget {
               ),
               icon: const Icon(Icons.picture_as_pdf),
               label: Text(s.t('公告 PDF')),
+            ),
+          if (_original(data) case final url?)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: OutlinedButton.icon(
+                onPressed: () => openSourceLink(context, url),
+                icon: const Icon(Icons.open_in_new),
+                label: Text(s.t('打开原文')),
+              ),
             ),
           const SizedBox(height: 22),
           Notice(s.t('这是媒体信息线索，不代表公司订单、收入或利润已经兑现。需要结合正式公告、财报和不同来源交叉验证。')),
@@ -303,14 +374,31 @@ Json? parseArticleLink(String url) {
   }
 }
 
-class SharedReaderPage extends StatelessWidget {
+/// Opens a short in-site share link (`/n/<id>`). The request is made once
+/// (not on every build) and can be retried.
+class SharedReaderPage extends StatefulWidget {
   const SharedReaderPage(this.id, {super.key});
   final String id;
+  @override
+  State<SharedReaderPage> createState() => _SharedReaderPageState();
+}
+
+class _SharedReaderPageState extends State<SharedReaderPage> {
+  late Future<Json> share;
+  @override
+  void initState() {
+    super.initState();
+    share = _fetch();
+  }
+
+  Future<Json> _fetch() =>
+      context.read<AtlasStore>().api.get('/api/shares/${widget.id}');
+
   @override
   Widget build(BuildContext context) {
     final s = context.read<AtlasStore>();
     return FutureBuilder<Json>(
-      future: s.api.get('/api/shares/$id'),
+      future: share,
       builder: (ctx, snapshot) {
         if (snapshot.hasData) {
           final data = snapshot.data!,
@@ -330,7 +418,27 @@ class SharedReaderPage extends StatelessWidget {
             child: snapshot.hasError
                 ? Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Text('${snapshot.error}'),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_off, color: muted),
+                        const SizedBox(height: 12),
+                        Text(
+                          s.t(describeError(snapshot.error)),
+                          textAlign: TextAlign.center,
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            final next = _fetch();
+                            setState(() {
+                              share = next;
+                            });
+                          },
+                          icon: const Icon(Icons.refresh),
+                          label: Text(s.t('重试')),
+                        ),
+                      ],
+                    ),
                   )
                 : const CircularProgressIndicator(),
           ),

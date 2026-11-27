@@ -2,13 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>UIUserInterfaceStyle</key><string>Dark</string>
 	<key>FirebaseMessagingAutoInitEnabled</key><false/>
 	<key>UIBackgroundModes</key><array><string>remote-notification</string></array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>io.github.yaohuangguan.guanlan</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>guanlan</string>
+			</array>
+		</dict>
+	</array>
+	<key>FlutterDeepLinkingEnabled</key>
+	<true/>
 	<key>CFBundleDisplayName</key>
 	<string>观澜</string>
 	<key>CFBundleExecutable</key>

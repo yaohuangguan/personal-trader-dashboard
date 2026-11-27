@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +16,27 @@ Color tone(dynamic value) => numOf(value) == null
     ? up
     : down;
 String tr(BuildContext c, String key) => c.read<AtlasStore>().t(key);
+
+/// Anchor for the iOS share sheet. iPad presents it as a popover and fails
+/// without a non-empty source rectangle.
+Rect? shareOrigin(RenderBox? box) {
+  if (box == null || !box.attached || !box.hasSize || box.size.isEmpty) {
+    return null;
+  }
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
+/// Height of a row of text tabs: a 44 pt touch target that grows with the
+/// text scale instead of clipping large text.
+double touchRowHeight(BuildContext context, double fontSize) =>
+    math.max(44, MediaQuery.textScalerOf(context).scale(fontSize) + 22);
+
+/// True when periodic work for this widget is worth doing: the app is in the
+/// foreground, its tab is on stage ([TickerMode]) and no route covers it.
+bool visibleHere(BuildContext context) =>
+    context.read<AtlasStore>().foreground &&
+    TickerMode.valuesOf(context).enabled &&
+    (ModalRoute.isCurrentOf(context) ?? true);
 
 double compactMenuHeight(BuildContext context) {
   final height = MediaQuery.sizeOf(context).height;
@@ -131,11 +153,16 @@ class AsyncPanel extends StatefulWidget {
     required this.builder,
     this.empty,
     this.refreshSeconds = 0,
+    this.sliver = false,
   });
   final Future<Json> Function() load;
+
+  /// Builds the content; with [sliver] it must return a sliver, so long
+  /// lists are built lazily inside a CustomScrollView.
   final Widget Function(Json data) builder;
   final String? empty;
   final int refreshSeconds;
+  final bool sliver;
   @override
   State<AsyncPanel> createState() => AsyncPanelState();
 }
@@ -151,16 +178,17 @@ class AsyncPanelState extends State<AsyncPanel> {
   void initState() {
     super.initState();
     refresh();
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (widget.refreshSeconds > 0 &&
-          DateTime.now().difference(lastRead).inSeconds >=
-              widget.refreshSeconds &&
-          !loading &&
-          mounted &&
-          context.read<AtlasStore>().foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        refresh();
-      }
+    _schedule();
+  }
+
+  /// A timer only exists when the panel refreshes at all; ticks are skipped
+  /// while the app is backgrounded, the tab is offstage or a route covers it.
+  void _schedule() {
+    timer?.cancel();
+    timer = null;
+    if (widget.refreshSeconds <= 0) return;
+    timer = Timer.periodic(Duration(seconds: widget.refreshSeconds), (_) {
+      if (!loading && mounted && visibleHere(context)) refresh();
     });
   }
 
@@ -174,6 +202,7 @@ class AsyncPanelState extends State<AsyncPanel> {
   void didUpdateWidget(covariant AsyncPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.key != widget.key) refresh();
+    if (oldWidget.refreshSeconds != widget.refreshSeconds) _schedule();
   }
 
   Future<void> refresh() async {
@@ -199,6 +228,28 @@ class AsyncPanelState extends State<AsyncPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final content = _build(context);
+    if (!widget.sliver) return content;
+    if (data == null) return SliverToBoxAdapter(child: content);
+    return SliverMainAxisGroup(
+      slivers: [
+        if (error != null) SliverToBoxAdapter(child: _staleNotice(context)),
+        widget.builder(data!),
+        SliverToBoxAdapter(child: _refreshButton(context)),
+      ],
+    );
+  }
+
+  Widget _staleNotice(BuildContext context) => Notice(
+    '${tr(context, '刷新失败，保留上一快照')} · ${tr(context, describeError(error))}',
+  );
+  Widget _refreshButton(BuildContext context) => TextButton.icon(
+    onPressed: loading ? null : refresh,
+    icon: const Icon(Icons.refresh, size: 18),
+    label: Text(tr(context, loading ? '正在读取' : '刷新数据')),
+  );
+
+  Widget _build(BuildContext context) {
     if (data == null) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -210,7 +261,9 @@ class AsyncPanelState extends State<AsyncPanel> {
               Icon(Icons.cloud_off, color: muted),
             const SizedBox(height: 14),
             Text(
-              loading ? tr(context, '正在连接数据源…') : tr(context, error.toString()),
+              loading
+                  ? tr(context, '正在连接数据源…')
+                  : tr(context, describeError(error)),
               textAlign: TextAlign.center,
             ),
             if (!loading)
@@ -223,16 +276,13 @@ class AsyncPanelState extends State<AsyncPanel> {
         ),
       );
     }
+    if (widget.sliver) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (error != null) Notice('${tr(context, '刷新失败，保留上一快照')} · $error'),
+        if (error != null) _staleNotice(context),
         widget.builder(data!),
-        TextButton.icon(
-          onPressed: loading ? null : refresh,
-          icon: const Icon(Icons.refresh, size: 18),
-          label: Text(tr(context, loading ? '正在读取' : '刷新数据')),
-        ),
+        _refreshButton(context),
       ],
     );
   }
@@ -269,6 +319,8 @@ class SourceLine extends StatelessWidget {
       [
         str(data['source'] ?? data['provider'], ''),
         str(data['date'] ?? data['asOf'] ?? data['fetchedAt'], ''),
+        // The server fell back to its last good snapshot.
+        if (data['cacheSource'] == 'last-good') tr(context, '上次成功快照'),
         ?extra,
       ].where((s) => s.isNotEmpty).join(' · '),
       style: TextStyle(color: muted, fontSize: 13, height: 1.6),
@@ -288,34 +340,39 @@ class Chips extends StatelessWidget {
   final ValueChanged<String> onSelected;
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 38,
+    height: touchRowHeight(context, 14),
     child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: values.entries
             .map(
-              (e) => InkWell(
-                onTap: () => onSelected(e.key),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 13),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: selected == e.key ? ink : Colors.transparent,
-                        width: 1.5,
+              (e) => Semantics(
+                button: true,
+                selected: selected == e.key,
+                child: InkWell(
+                  onTap: () => onSelected(e.key),
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 44),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 13),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: selected == e.key ? ink : Colors.transparent,
+                          width: 1.5,
+                        ),
                       ),
                     ),
-                  ),
-                  child: Text(
-                    tr(context, e.value),
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1,
-                      color: selected == e.key ? ink : muted,
-                      fontWeight: selected == e.key
-                          ? FontWeight.w600
-                          : FontWeight.normal,
+                    child: Text(
+                      tr(context, e.value),
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1,
+                        color: selected == e.key ? ink : muted,
+                        fontWeight: selected == e.key
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
                     ),
                   ),
                 ),
@@ -354,8 +411,8 @@ class PageTitle extends StatelessWidget {
   final String title, subtitle;
   final Widget? trailing;
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 42,
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 44),
     child: Row(
       children: [
         Expanded(
@@ -394,13 +451,18 @@ class PeriodSelector extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.intraday = true,
+    this.height,
   });
   final bool intraday;
   final String value;
   final ValueChanged<String> onChanged;
+
+  /// Fixed height for space-critical places (the stock first screen);
+  /// otherwise a 44 pt row that grows with the text.
+  final double? height;
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 36,
+    height: height ?? touchRowHeight(context, 14),
     child: Row(
       children: [
         for (final pair in [
@@ -410,23 +472,28 @@ class PeriodSelector extends StatelessWidget {
           ('month', '月 K'),
         ])
           Expanded(
-            child: InkWell(
-              onTap: () => onChanged(pair.$1),
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      width: 2,
-                      color: value == pair.$1 ? up : Colors.transparent,
+            child: Semantics(
+              button: true,
+              selected: value == pair.$1,
+              child: InkWell(
+                onTap: () => onChanged(pair.$1),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        width: 2,
+                        color: value == pair.$1 ? up : Colors.transparent,
+                      ),
                     ),
                   ),
-                ),
-                child: Text(
-                  tr(context, pair.$2),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: value == pair.$1 ? ink : muted,
+                  child: Text(
+                    tr(context, pair.$2),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: value == pair.$1 ? ink : muted,
+                    ),
                   ),
                 ),
               ),

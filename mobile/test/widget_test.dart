@@ -307,6 +307,9 @@ void main() {
     await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
     expect(find.text('字体大小'), findsOneWidget);
+    // Taller 44 pt option rows push the language chips further down.
+    await tester.ensureVisible(find.text('English'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('English'));
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsOneWidget);

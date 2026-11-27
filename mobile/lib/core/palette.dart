@@ -63,3 +63,12 @@ Color chartColor(Color c, {double contrast = 3}) {
 
 /// Legend/readout text colour for a series (≥4.5:1 on the light surface).
 Color chartTextColor(Color c) => chartColor(c, contrast: 4.5);
+
+/// Favourite star / bookmark. Plain amber is 1.6:1 on white; the light value
+/// keeps ≥4.5:1 so the filled star reads as "on".
+Color get favorite =>
+    AtlasPalette.light ? const Color(0xff946200) : const Color(0xffffc94d);
+
+/// Caution text and icons (risk notes, intraday alerts) in both themes.
+Color get warning =>
+    AtlasPalette.light ? const Color(0xff8a5a00) : const Color(0xffd5ae58);
