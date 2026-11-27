@@ -319,11 +319,47 @@ class _StockPageState extends State<StockPage> {
               RegExp(r'^68[89]').hasMatch(widget.symbol)
           ? '股'
           : '手');
-  List<Bar> get bars => patchDailyQuote(
-    rows(chartMarket['candles']).map(Bar.fromJson).toList(),
-    q,
-    volumeUnit,
-  );
+  Object? _barsSource;
+  List<Bar> _parsedBars = const [];
+  Object? _patchKey;
+  List<Bar> _patchedBars = const [];
+
+  /// Parsed once per candle payload and re-patched only when the quote
+  /// values change, so MarketChart receives a stable list across rebuilds.
+  List<Bar> get bars {
+    final candles = chartMarket['candles'];
+    if (!identical(candles, _barsSource)) {
+      _barsSource = candles;
+      _parsedBars = rows(candles).map(Bar.fromJson).toList();
+    }
+    final quote = q, unit = volumeUnit;
+    final key = (
+      _parsedBars,
+      unit,
+      quote['asOf'],
+      quote['price'],
+      quote['open'],
+      quote['high'],
+      quote['low'],
+      quote['volume'],
+      quote['previous'],
+      quote['stale'],
+      quote['volumeUnit'],
+    );
+    if (key != _patchKey) {
+      _patchKey = key;
+      _patchedBars = patchDailyQuote(_parsedBars, quote, unit);
+    }
+    return _patchedBars;
+  }
+
+  final _feedBars = Expando<List<Bar>>();
+  List<Bar> feedBars(Json r) {
+    final candles = r['candles'];
+    if (candles is! List) return const [];
+    return _feedBars[candles] ??= rows(candles).map(Bar.fromJson).toList();
+  }
+
   Future<void> sheet(String title, Widget child) => showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -812,8 +848,12 @@ class _StockPageState extends State<StockPage> {
                 ),
                 _periodBar(),
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (ctx, box) => _chart(box.maxHeight, name),
+                  // Keeps this list item alive so scrolling to the details
+                  // does not dispose the chart (viewport, history, study).
+                  child: ChartKeepAlive(
+                    child: LayoutBuilder(
+                      builder: (ctx, box) => _chart(box.maxHeight, name),
+                    ),
                   ),
                 ),
                 _sourceBar(),
@@ -1009,7 +1049,7 @@ class _StockPageState extends State<StockPage> {
               )
             : MarketChart(
                 key: ValueKey('${widget.symbol}-$timeframe'),
-                bars: rows(r['candles']).map(Bar.fromJson).toList(),
+                bars: feedBars(r),
                 name: name,
                 symbol: widget.symbol,
                 unit: timeframe,

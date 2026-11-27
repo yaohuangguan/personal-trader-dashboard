@@ -73,9 +73,12 @@ void main() {
       find.byKey(const ValueKey('candlestick-canvas')).last,
     );
     expect(full.width, 390);
+    // The history status line (with its 44pt action) sits directly under the
+    // candles in every mode; together they fill the screen.
+    expect(full.bottom, greaterThanOrEqualTo(819));
     expect(
-      full.bottom,
-      greaterThan(820),
+      tester.getRect(find.text('向左查看，自动加载更早K线').last).bottom,
+      greaterThan(830),
       reason: 'Portrait fullscreen must fill the available screen',
     );
     expect(tester.takeException(), isNull);

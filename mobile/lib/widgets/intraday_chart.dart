@@ -43,6 +43,24 @@ class _IntradayChartState extends State<IntradayChart> {
   Timer? timer;
   Json? selected;
   String get symbol => str(widget.data['symbol']);
+  (Object?, Object?)? _studyFor;
+  List<Json> _studied = const [];
+
+  /// MACD study of the session, computed once per data snapshot (not in
+  /// every build and again in paint).
+  List<Json> get points {
+    final key = (widget.data['points'], widget.data['previous']);
+    final f = _studyFor;
+    if (f == null || !identical(f.$1, key.$1) || f.$2 != key.$2) {
+      _studyFor = key;
+      _studied = intradayStudy(
+        rows(widget.data['points']),
+        numOf(widget.data['previous']),
+      );
+    }
+    return _studied;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -134,6 +152,7 @@ class _IntradayChartState extends State<IntradayChart> {
   }
 
   Future<void> refreshOverlays() async {
+    if (!mounted) return;
     final g = ++generation;
     setState(() {
       extraBusy = true;
@@ -194,6 +213,7 @@ class _IntradayChartState extends State<IntradayChart> {
                 value: benchmarkOn,
                 onChanged: (v) {
                   update(() => benchmarkOn = v);
+                  if (!mounted) return;
                   setState(() {
                     benchmark = null;
                   });
@@ -217,6 +237,7 @@ class _IntradayChartState extends State<IntradayChart> {
                   onChanged: (v) {
                     if (v == null) return;
                     update(() => index = v);
+                    if (!mounted) return;
                     setState(() => benchmark = null);
                     if (benchmarkOn) refreshOverlays();
                   },
@@ -227,6 +248,7 @@ class _IntradayChartState extends State<IntradayChart> {
                 trailing: TextButton(
                   onPressed: () {
                     update(() => board = null);
+                    if (!mounted) return;
                     setState(() => sector = null);
                     refreshOverlays();
                   },
@@ -251,6 +273,7 @@ class _IntradayChartState extends State<IntradayChart> {
                             subtitle: Text(str(b['code'])),
                             onTap: () {
                               update(() => board = b);
+                              if (!mounted) return;
                               setState(() => sector = null);
                               refreshOverlays();
                             },
@@ -269,10 +292,7 @@ class _IntradayChartState extends State<IntradayChart> {
 
   @override
   Widget build(BuildContext context) {
-    final points = intradayStudy(
-          rows(widget.data['points']),
-          numOf(widget.data['previous']),
-        ),
+    final points = this.points,
         shown = selected == null
             ? points.lastOrNull
             : points.where((p) => p['clock'] == selected!['clock']).firstOrNull;
@@ -339,7 +359,9 @@ class _IntradayChartState extends State<IntradayChart> {
                         str(r['label']),
                         style: TextStyle(
                           fontSize: 11,
-                          color: Color((numOf(r['color'])!).toInt()),
+                          color: chartTextColor(
+                            Color((numOf(r['color'])!).toInt()),
+                          ),
                         ),
                       ),
                     ),
@@ -369,15 +391,21 @@ class _IntradayChartState extends State<IntradayChart> {
                     select(e.localPosition, c.maxWidth, points),
                 onLongPressStart: (e) =>
                     select(e.localPosition, c.maxWidth, points),
-                child: CustomPaint(
-                  key: const ValueKey('intraday-canvas'),
-                  size: Size(c.maxWidth, c.maxHeight),
-                  painter: IntradayPainter(
-                    points,
-                    numOf(widget.data['previous']),
-                    comparisons,
-                    selected: shown,
-                    macdOn: macdOn,
+                onTap: selected == null
+                    ? null
+                    : () => setState(() => selected = null),
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    key: const ValueKey('intraday-canvas'),
+                    size: Size(c.maxWidth, c.maxHeight),
+                    painter: IntradayPainter(
+                      points,
+                      numOf(widget.data['previous']),
+                      comparisons,
+                      // Only a user selection draws the crosshair.
+                      selected: selected == null ? null : shown,
+                      macdOn: macdOn,
+                    ),
                   ),
                 ),
               ),
@@ -415,7 +443,9 @@ class _IntradayChartState extends State<IntradayChart> {
         distance = (minute - target).abs().toDouble();
       }
     }
-    setState(() => selected = best);
+    if (best?['clock'] != selected?['clock']) {
+      setState(() => selected = best);
+    }
   }
 
   Widget _auctionPanel() {
@@ -508,10 +538,17 @@ class IntradayPainter extends CustomPainter {
     this.selected,
     this.macdOn = true,
   });
+
+  /// Session points already passed through [intradayStudy].
   final List<Json> points, comparisons;
   final double? previous;
+
+  /// The long-pressed point; null when nothing is selected.
   final Json? selected;
   final bool macdOn;
+  final bool light = AtlasPalette.light;
+  static const _dea = Color(0xffd5ae58);
+
   @override
   void paint(Canvas c, Size size) {
     if (size.width < 70 || size.height < 80) return;
@@ -524,18 +561,16 @@ class IntradayPainter extends CustomPainter {
         : numOf(points.firstOrNull?['price']) ?? 1;
     double normalized(Json p, double prev) =>
         ((numOf(p['price']) ?? prev) / prev - 1) * 100;
-    final values = [
-      0.0,
-      ...points.map((p) => normalized(p, base)),
-      for (final r in comparisons)
-        ...rows(r['points']).map((p) => normalized(p, numOf(r['previous'])!)),
-    ];
-    final bound = math.max(
-          .3,
-          values.map((v) => v.abs()).fold<double>(0, math.max) * 1.08,
-        ),
-        hi = bound,
-        lo = -bound;
+    var extreme = 0.0;
+    for (final p in points) {
+      extreme = math.max(extreme, normalized(p, base).abs());
+    }
+    for (final r in comparisons) {
+      for (final p in rows(r['points'])) {
+        extreme = math.max(extreme, normalized(p, numOf(r['previous'])!).abs());
+      }
+    }
+    final bound = math.max(.3, extreme * 1.08), hi = bound, lo = -bound;
     double y(double v) => 14 + (hi - v) / (hi - lo) * (priceBottom - 18);
     double x(String clock) => 8 + (sessionMinute(clock) ?? 0) / 240 * width;
     void text(String s, Offset p, Color color, [double font = 11]) {
@@ -549,13 +584,10 @@ class IntradayPainter extends CustomPainter {
       t.paint(c, p);
     }
 
+    final grid = Paint()..color = muted.withValues(alpha: .16);
     for (var i = 0; i < 5; i++) {
       final v = lo + (hi - lo) * i / 4;
-      c.drawLine(
-        Offset(8, y(v)),
-        Offset(8 + width, y(v)),
-        Paint()..color = muted.withValues(alpha: .16),
-      );
+      c.drawLine(Offset(8, y(v)), Offset(8 + width, y(v)), grid);
       text(
         comparisons.isEmpty
             ? (base * (1 + v / 100)).toStringAsFixed(2)
@@ -571,8 +603,11 @@ class IntradayPainter extends CustomPainter {
     c.drawLine(
       Offset(8, y(0)),
       Offset(8 + width, y(0)),
-      Paint()..color = Colors.amber.withValues(alpha: .3),
+      Paint()..color = chartColor(Colors.amber).withValues(alpha: .3),
     );
+    final stroke = Paint()
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
     void line(List<Json> rows, double prev, Color color) {
       final path = Path();
       int? prior;
@@ -587,13 +622,7 @@ class IntradayPainter extends CustomPainter {
         }
         prior = m;
       }
-      c.drawPath(
-        path,
-        Paint()
-          ..color = color
-          ..strokeWidth = 1.5
-          ..style = PaintingStyle.stroke,
-      );
+      c.drawPath(path, stroke..color = color);
       if (rows.length == 1) {
         c.drawCircle(
           Offset(x(str(rows.first['clock'])), y(normalized(rows.first, prev))),
@@ -610,7 +639,7 @@ class IntradayPainter extends CustomPainter {
       line(
         rows(r['points']),
         numOf(r['previous'])!,
-        Color(numOf(r['color'])!.toInt()),
+        chartColor(Color(numOf(r['color'])!.toInt())),
       );
     }
     c.restore();
@@ -619,6 +648,8 @@ class IntradayPainter extends CustomPainter {
       (v, p) => math.max(v, numOf(p['volume']) ?? 0),
     );
     text('VOL', Offset(8, volTop - 16), muted);
+    final upBars = Path(), downBars = Path();
+    final barWidth = math.max(.8, width / 240 * .7);
     for (var i = 0; i < points.length; i++) {
       final p = points[i], m = sessionMinute(str(p['clock']));
       if (m == null) continue;
@@ -628,22 +659,15 @@ class IntradayPainter extends CustomPainter {
               math.max(1, maxVol),
           price = numOf(p['price']) ?? base,
           prior = i == 0 ? base : numOf(points[i - 1]['price']) ?? base;
-      c.drawRect(
-        Rect.fromLTWH(
-          x(str(p['clock'])) - .6,
-          volBottom - h,
-          math.max(.8, width / 240 * .7),
-          h,
-        ),
-        Paint()..color = price >= prior ? up : down,
+      (price >= prior ? upBars : downBars).addRect(
+        Rect.fromLTWH(x(str(p['clock'])) - .6, volBottom - h, barWidth, h),
       );
     }
+    c.drawPath(upBars, Paint()..color = up);
+    c.drawPath(downBars, Paint()..color = down);
+    final macdTop = size.height * .80, macdBottom = size.height - 26;
     if (macdOn) {
-      final studied = intradayStudy(
-        points,
-        previous,
-      ).where((p) => p['warmup'] == false).toList();
-      final top = size.height * .80, bottom = size.height - 26;
+      final studied = points.where((p) => p['warmup'] == false).toList();
       final bound = studied.fold<double>(
         .0001,
         (v, p) => math.max(
@@ -658,26 +682,33 @@ class IntradayPainter extends CustomPainter {
         ),
       );
       double my(double n) =>
-          (top + bottom) / 2 - n / bound * math.max(1, bottom - top) / 2;
-      text('MACD (12,26,9)', Offset(8, top - 15), muted, 10);
+          (macdTop + macdBottom) / 2 -
+          n / bound * math.max(1, macdBottom - macdTop) / 2;
+      text('MACD (12,26,9)', Offset(8, macdTop - 15), muted, 10);
       c.drawLine(
         Offset(8, my(0)),
         Offset(width + 8, my(0)),
         Paint()..color = muted.withValues(alpha: .18),
       );
+      final upHist = Path(), downHist = Path();
+      final histWidth = math.max(.8, width / 240 * .65);
       for (final p in studied) {
         final v = numOf(p['histogram']) ?? 0, py = my(v), zero = my(0);
-        c.drawRect(
+        (v >= 0 ? upHist : downHist).addRect(
           Rect.fromLTWH(
             x(str(p['clock'])) - .5,
             math.min(py, zero),
-            math.max(.8, width / 240 * .65),
+            histWidth,
             math.max(.5, (zero - py).abs()),
           ),
-          Paint()..color = v >= 0 ? up : down,
         );
       }
-      for (final entry in [('dif', ink), ('dea', const Color(0xffd5ae58))]) {
+      c.drawPath(upHist, Paint()..color = up);
+      c.drawPath(downHist, Paint()..color = down);
+      final thin = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1;
+      for (final entry in [('dif', ink), ('dea', chartColor(_dea))]) {
         final path = Path();
         int? prior;
         for (final p in studied) {
@@ -691,13 +722,7 @@ class IntradayPainter extends CustomPainter {
           }
           prior = m;
         }
-        c.drawPath(
-          path,
-          Paint()
-            ..color = entry.$2
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1,
-        );
+        c.drawPath(path, thin..color = entry.$2);
       }
     }
     for (final entry in [
@@ -720,10 +745,74 @@ class IntradayPainter extends CustomPainter {
     if (points.isEmpty) {
       text('等待成交 · 全日时间轴', Offset(12, priceBottom / 2), muted);
     }
+    final pick = selected;
+    final clock = str(pick?['clock'], '');
+    if (pick != null && sessionMinute(clock) != null) {
+      // Long-press crosshair: vertical guide through every pane, price guide
+      // and a dot on the selected minute.
+      final px = x(clock),
+          py = y(normalized(pick, base)),
+          cross = Paint()
+            ..color = ink.withValues(alpha: .54)
+            ..strokeWidth = .8;
+      c.drawLine(
+        Offset(px, 10),
+        Offset(px, macdOn ? macdBottom : volBottom),
+        cross,
+      );
+      c.drawLine(Offset(8, py), Offset(8 + width, py), cross);
+      c.drawCircle(Offset(px, py), 3.5, Paint()..color = surface);
+      c.drawCircle(
+        Offset(px, py),
+        3.5,
+        Paint()
+          ..color = ink
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      final label = TextPainter(
+        text: TextSpan(
+          text: fixed(pick['price']),
+          style: TextStyle(color: ink, fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final box = Rect.fromLTWH(
+        width + 10,
+        (py - label.height / 2 - 1).clamp(0, priceBottom),
+        label.width + 6,
+        label.height + 2,
+      );
+      c.drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(2)),
+        Paint()..color = surface,
+      );
+      label.paint(c, box.topLeft + const Offset(3, 1));
+    }
+  }
+
+  static bool _sameComparisons(List<Json> a, List<Json> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i]['points'], b[i]['points']) ||
+          a[i]['color'] != b[i]['color'] ||
+          a[i]['previous'] != b[i]['previous']) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override
-  bool shouldRepaint(covariant IntradayPainter old) => true;
+  bool shouldRepaint(covariant IntradayPainter old) =>
+      !identical(points, old.points) ||
+      previous != old.previous ||
+      macdOn != old.macdOn ||
+      light != old.light ||
+      selected?['clock'] != old.selected?['clock'] ||
+      selected?['price'] != old.selected?['price'] ||
+      !_sameComparisons(comparisons, old.comparisons);
 }
 
 class AuctionPainter extends CustomPainter {
@@ -766,18 +855,24 @@ class AuctionPainter extends CustomPainter {
         Offset(x, y),
         2,
         Paint()
-          ..color = p['indicative'] == true ? const Color(0xffd5ae58) : ink,
+          ..color = p['indicative'] == true
+              ? chartColor(const Color(0xffd5ae58))
+              : ink,
       );
     }
     c.drawPath(
       path,
       Paint()
-        ..color = const Color(0xffd5ae58)
+        ..color = chartColor(const Color(0xffd5ae58))
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2,
     );
   }
 
   @override
-  bool shouldRepaint(covariant AuctionPainter old) => true;
+  bool shouldRepaint(covariant AuctionPainter old) =>
+      !identical(points, old.points) ||
+      segment != old.segment ||
+      light != old.light;
+  final bool light = AtlasPalette.light;
 }

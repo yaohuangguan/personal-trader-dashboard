@@ -2,10 +2,45 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' as isolate show compute;
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+
+/// Cheap identity for a study request: every small parameter verbatim, plus
+/// the candle count, the first and last candle and a numeric hash of the
+/// closes/volumes instead of a JSON dump of the whole series.
+String studyCacheKey(Json input) {
+  Object digest(Object? candles) {
+    if (candles is! List || candles.isEmpty) return 0;
+    final first = candles.first, last = candles.last;
+    return [
+      candles.length,
+      first is Map ? first.values.toList() : first,
+      last is Map ? last.values.toList() : last,
+      Object.hashAll(
+        candles.map((c) => c is Map ? Object.hash(c['close'], c['volume']) : c),
+      ),
+    ];
+  }
+
+  final market = input['market'];
+  return jsonEncode({
+    for (final e in input.entries)
+      if (e.key != 'candles' && e.key != 'market') e.key: e.value,
+    'candles': digest(input['candles']),
+    if (market is Map)
+      'market': {
+        for (final e in market.entries)
+          if (e.key != 'candles') '${e.key}': e.value,
+        'candles': digest(market['candles']),
+      },
+  }, toEncodable: (v) => '$v');
+}
+
+String _encode(Json input) => jsonEncode(input);
+Object? _decode(String raw) => jsonDecode(raw);
 
 /// Public OHLCV stays online; the bundled identical rules run off the UI thread on iOS.
 class ChartStudies {
@@ -30,7 +65,7 @@ class ChartStudies {
   final _frames = <String, Json>{};
   Future<Json> compute(Json input) async {
     final key =
-        '${jsonEncode(input)}:${DateTime.now().toUtc().millisecondsSinceEpoch ~/ 60000}';
+        '${studyCacheKey(input)}:${DateTime.now().toUtc().millisecondsSinceEpoch ~/ 60000}';
     final cached = _results[key];
     if (cached != null) return obj(jsonDecode(cached));
     final pending = _pending[key];
@@ -40,9 +75,14 @@ class ChartStudies {
       if (_runner != null) {
         result = await _runner(input);
       } else if (isLocal) {
+        // Large candle payloads are serialised off the UI isolate.
+        final large = (input['candles'] as List?)?.length ?? 0;
+        final payload = large > 300
+            ? await isolate.compute(_encode, input)
+            : jsonEncode(input);
         final raw = await channel
             .invokeMethod<String>('compute', {
-              'payload': jsonEncode(input),
+              'payload': payload,
               if (!_ready)
                 'source': await (_source ??= rootBundle.loadString(
                   'assets/chart_engine.js',
@@ -53,7 +93,11 @@ class ChartStudies {
               onTimeout: () => throw TimeoutException('本机分析超时，请重试'),
             );
         if (raw == null) throw const FormatException('本机分析未返回结果');
-        result = obj(jsonDecode(raw));
+        result = obj(
+          raw.length > 100000
+              ? await isolate.compute(_decode, raw)
+              : jsonDecode(raw),
+        );
         _ready = true;
       } else {
         result = await api.post('/api/chart-study', input);
