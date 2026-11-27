@@ -26,7 +26,6 @@ void main() {
                       data,
                       0,
                       bars.length,
-                      null,
                       true,
                       forecast: IndicatorData([
                         ...bars,
