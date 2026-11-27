@@ -213,6 +213,7 @@ class _IntradayChartState extends State<IntradayChart> {
                 value: benchmarkOn,
                 onChanged: (v) {
                   update(() => benchmarkOn = v);
+                  if (!mounted) return;
                   setState(() {
                     benchmark = null;
                   });
@@ -236,6 +237,7 @@ class _IntradayChartState extends State<IntradayChart> {
                   onChanged: (v) {
                     if (v == null) return;
                     update(() => index = v);
+                    if (!mounted) return;
                     setState(() => benchmark = null);
                     if (benchmarkOn) refreshOverlays();
                   },
@@ -246,6 +248,7 @@ class _IntradayChartState extends State<IntradayChart> {
                 trailing: TextButton(
                   onPressed: () {
                     update(() => board = null);
+                    if (!mounted) return;
                     setState(() => sector = null);
                     refreshOverlays();
                   },
@@ -270,6 +273,7 @@ class _IntradayChartState extends State<IntradayChart> {
                             subtitle: Text(str(b['code'])),
                             onTap: () {
                               update(() => board = b);
+                              if (!mounted) return;
                               setState(() => sector = null);
                               refreshOverlays();
                             },
@@ -851,13 +855,15 @@ class AuctionPainter extends CustomPainter {
         Offset(x, y),
         2,
         Paint()
-          ..color = p['indicative'] == true ? const Color(0xffd5ae58) : ink,
+          ..color = p['indicative'] == true
+              ? chartColor(const Color(0xffd5ae58))
+              : ink,
       );
     }
     c.drawPath(
       path,
       Paint()
-        ..color = const Color(0xffd5ae58)
+        ..color = chartColor(const Color(0xffd5ae58))
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2,
     );

@@ -533,9 +533,18 @@ class _MarketChartState extends State<MarketChart> {
     );
   }
 
+  /// Guide events, kept by reference while the parent rebuilds an equal list
+  /// (so marks are not re-resolved and the canvas not repainted every tick).
+  late List<Json> events = widget.events;
+
   @override
   void didUpdateWidget(covariant MarketChart oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(widget.events, events) &&
+        (widget.events.length != events.length ||
+            jsonEncode(widget.events) != jsonEncode(events))) {
+      events = widget.events;
+    }
     final identityChanged =
         oldWidget.symbol != widget.symbol ||
         oldWidget.unit != widget.unit ||
@@ -1144,7 +1153,7 @@ class _MarketChartState extends State<MarketChart> {
       studyTrades,
       studyPatterns,
       studyIndicators,
-      widget.events,
+      events,
     );
     final f = _marksFor;
     if (f == null ||
@@ -1159,7 +1168,7 @@ class _MarketChartState extends State<MarketChart> {
         trades: studyTrades,
         patterns: studyPatterns,
         indicatorMarks: studyIndicators,
-        events: widget.events,
+        events: events,
       );
       _marksFor = key;
     }
@@ -2122,7 +2131,7 @@ class _MarketChartState extends State<MarketChart> {
                     drawVolume,
                     drawMacd,
                     drawKdj,
-                    shapeMarkers ? widget.events : const [],
+                    shapeMarkers ? events : const [],
                     widget.volumeUnit,
                     font,
                     markers,
