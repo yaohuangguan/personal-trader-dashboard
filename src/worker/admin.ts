@@ -1,5 +1,5 @@
 import {watchDiff,emptyWatch,validWatch,type WatchState} from '../shared/watch-sync';
-import {sha256} from './account';
+import {timingSafeEqual,bearer} from './http';
 import type {MonitorNamespace} from './signal-monitor';
 
 /**
@@ -26,9 +26,8 @@ export async function adminRoute(req:Request,env:{ADMIN_TOKEN?:string;MARKET_SCA
  const u=new URL(req.url);if(!u.pathname.startsWith('/api/admin/'))return null;
  const expected=env.ADMIN_TOKEN||'';
  if(expected.length<32)return json({error:'Unknown API path'},404);
- const given=req.headers.get('authorization')?.replace(/^Bearer /,'')||'';
- // Compare digests so the check does not leak the token through timing.
- if(await sha256(given)!==await sha256(expected))return json({error:'Unauthorized'},401);
+ // Constant-time digest comparison so the check does not leak the token through timing.
+ if(!await timingSafeEqual(bearer(req),expected))return json({error:'Unauthorized'},401);
  const ns=env.MARKET_SCANNER;if(!ns?.idFromString)return json({error:'Storage unavailable'},503);
  if(req.method!=='POST')return json({error:'Method not allowed'},405);
  let body:Record<string,unknown>;try{body=await req.json() as Record<string,unknown>;}catch{return json({error:'Invalid JSON'},400);}

@@ -4,14 +4,20 @@ import {validateDailyBars,sinaBeijingDaily} from './research';
 import type {Candle} from '../shared/types';
 export type DayData={candles:Candle[];quote?:import('../shared/desk-types').Snapshot;provider:string};
 type Node={day?:unknown[][];qfqday?:unknown[][];qt?:Record<string,string[]>};
+export const retryableStatus=(status:number)=>status===429||status>=500;
+/** Full-jitter exponential backoff: a random delay in [base/2, base] with base=300ms·2^attempt. */
+export function backoffDelay(attempt:number,random=Math.random){const base=300*2**attempt;return Math.round(base/2+random()*base/2);}
+function backoff(attempt:number,signal?:AbortSignal){return new Promise<void>((resolve,reject)=>{signal?.throwIfAborted();const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve();},backoffDelay(attempt));const abort=()=>{clearTimeout(timer);reject(signal!.reason);};signal?.addEventListener('abort',abort,{once:true});});}
 export async function fetchScreenDaily(symbol:string,adjusted:boolean,count=adjusted?500:20,signal?:AbortSignal){
  const wire=symbol.slice(-2).toLowerCase()+symbol.slice(0,6),base='https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=';
  const url=(size:number)=>base+wire+',day,,,'+size+','+(adjusted?'qfq':'');
  const request=(size:number)=>fetch(url(size),{headers:{Referer:'https://gu.qq.com/','User-Agent':'Mozilla/5.0'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(7000)]):AbortSignal.timeout(7000)});
  let r=await request(count);
- // The upstream CDN sometimes returns HTTP 501 for short adjusted windows from Workers.
+ // The upstream CDN sometimes returns HTTP 501 for short windows (adjusted and unadjusted) from Workers.
  // Use the canonical full-history URL, then slice locally; never turn that into an empty result.
- if(!r.ok&&adjusted&&count<500)r=await request(500);
+ if(!r.ok&&count<500)r=await request(500);
+ // Transient 5xx/429: bounded retries with jittered exponential backoff that honour the caller's abort signal.
+ for(let attempt=0;!r.ok&&retryableStatus(r.status)&&attempt<2;attempt++){await backoff(attempt,signal);r=await request(500);}
  if(!r.ok)throw new Error('形态日线来源 HTTP '+r.status);
  const data=await r.json() as {data?:Record<string,Node>},node=data.data?.[wire],rows=adjusted?(node?.qfqday||node?.day):node?.day;
  if(!Array.isArray(rows)||!rows.length)throw new Error('来源缺少所需复权日线');

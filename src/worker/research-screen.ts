@@ -5,7 +5,9 @@ import {sinaBeijingDaily,sinaAdjustedDaily,sinaRawDaily} from './research';
 import {evaluateScreen,DEFAULT_SCREEN,SCREEN_MODES} from '../shared/pattern-screen';
 import type {ScreenCandidate,UniverseItem} from '../shared/screening';
 import type {Snapshot} from '../shared/desk-types';
-export type ScreenStorage={get<T>(key:string):Promise<T|undefined>;put<T>(key:string,value:T):Promise<void>;setAlarm(t:number):Promise<void>;getAlarm():Promise<number|null>;list?<T>(options:{prefix:string;limit:number}):Promise<Map<string,T>>};
+export type ScreenStorage={get<T>(key:string):Promise<T|undefined>;put<T>(key:string,value:T):Promise<void>;setAlarm(t:number):Promise<void>;getAlarm():Promise<number|null>;list?<T>(options:{prefix:string;limit:number;start?:string}):Promise<Map<string,T>>;delete?(key:string):Promise<boolean>};
+/** GET status payload modes: progress only, the full ranked list, or candidates discovered from index `since` onward. */
+export type StatusView='progress'|'full'|{since:number};
 export type ResearchJob={id:string;phase:'universe'|'quotes'|'cache'|'history'|'screening'|'complete'|'paused';total:number;registered:number;page:number;pages:number;cursor:number;targets:number;checked:number;cached:number;failed:number;candidateCount:number;startedAt:number;updatedAt:number;finishedAt?:number;message:string;rejected:Record<string,number>;pageAttempts:number;failureSample:{symbol:string;reason:string}[];consecutiveFailed?:number;previous?:string;seed?:string;retryOf?:string;baseChecked?:number;catalog?:string;quoteCursor?:number;algorithm?:number;resultCount?:number;deferred?:number;historyTotal?:number;historyCursor?:number};
 type Batch={candidates:ScreenCandidate[];failed:UniverseItem[]};
 type Target=UniverseItem&{snapshot?:Snapshot};
@@ -15,20 +17,48 @@ export {patchSession} from '../shared/patch-session';
 const PREFIX='research:v1:',key=(id:string,kind:string,n:number)=>PREFIX+id+':'+kind+':'+n;
 const OPTIONS={...DEFAULT_SCREEN,modes:Object.keys(SCREEN_MODES) as (keyof typeof SCREEN_MODES)[],auto:true,activity:false,maxMarketCap:null};
 const failure=(e:unknown)=>/timeout|abort|time.*out/i.test(String(e))?'行情来源响应超时，保留进度，可重试未完成标的':e instanceof Error?e.message:'行情来源暂不可用';
+/** Every storage key a job may have written (enumerated, so cleanup never needs to list large values). */
+export function researchJobKeys(job:Pick<ResearchJob,'id'|'pages'|'total'|'targets'|'cursor'|'resultCount'|'historyTotal'>){
+ const keys:string[]=[],add=(kind:string,from:number,count:number)=>{for(let i=from;i<from+count;i++)keys.push(key(job.id,kind,i));};
+ add('universe',1,Math.max(0,job.pages||0));add('liquid',0,Math.ceil((job.total||0)/240));add('targets',0,Math.ceil((job.targets||0)/100));
+ add('result',0,job.resultCount??Math.ceil((job.cursor||0)/8));add('deferred',0,Math.ceil((job.targets||0)/8));add('pending',0,Math.ceil((job.historyTotal||0)/100));
+ return keys;
+}
+/** Which payload a GET status poll receives (see StatusView). */
+export function statusView(job:Pick<ResearchJob,'id'|'phase'>|undefined,params:{id?:string|null;count?:string|null;since?:string|null}):StatusView{
+ if(!job)return 'full';
+ const since=params.since!=null&&/^\d{1,6}$/.test(params.since)?Number(params.since):null;
+ if(params.id&&params.id!==job.id)return 'full';
+ if(since!==null)return {since};
+ if(['complete','paused'].includes(job.phase))return 'full';
+ const count=params.count==null||params.count===''?0:Number(params.count);
+ return Number.isFinite(count)&&count>0?'progress':'full';
+}
 export class ResearchScreen {
  constructor(private storage:ScreenStorage){}
- async read(includeCandidates=true){
+ async read(view:boolean|StatusView=true){
   const job=await this.storage.get<ResearchJob>(PREFIX+'job');if(!job)return {available:true,job:null,candidates:[]};
+  if(typeof view==='object'){
+   // Incremental cursor: discovery order is append-only, so `since` indices stay stable while the job runs.
+   const ordered=await this.ordered(job),since=Math.min(view.since,ordered.length);
+   return {available:true,job:this.publicJob(job),candidates:ordered.slice(since),since,next:ordered.length,notice:'增量候选：按发现顺序返回 since 之后的新候选，客户端自行合并排序。'};
+  }
+  const includeCandidates=view===true||view==='full';
   const candidates=includeCandidates?await this.candidates(job):[];
   const previous=job.previous?await this.storage.get<ResearchJob>(PREFIX+'archive:'+job.previous):undefined;
   const previousReport=includeCandidates&&job.candidateCount===0&&previous?{job:previous,candidates:await this.candidates(previous)}:undefined;
-  return {available:true,job:{...job,stage:job.phase,phase:['cache','history'].includes(job.phase)?'screening':job.phase,cursor:job.checked+job.failed,failed:job.failed+(job.phase==='paused'?Math.max(0,job.targets-job.checked-job.failed):0)},...(includeCandidates?{candidates,previousReport}:{}),notice:'按需启动一次全市场扫描，服务端继续处理；仅前台轮询任务进度，不重复扫描行情。不触发盘中推送。'};
+  return {available:true,job:this.publicJob(job),...(includeCandidates?{candidates,previousReport}:{}),notice:'按需启动一次全市场扫描，服务端继续处理；仅前台轮询任务进度，不重复扫描行情。不触发盘中推送。'};
  }
+ private publicJob(job:ResearchJob){return {...job,stage:job.phase,phase:['cache','history'].includes(job.phase)?'screening':job.phase,cursor:job.checked+job.failed,failed:job.failed+(job.phase==='paused'?Math.max(0,job.targets-job.checked-job.failed):0)};}
  private async batches(job:ResearchJob){return Promise.all(Array.from({length:(job.resultCount??Math.ceil(job.cursor/8))},(_,i)=>this.storage.get<Batch>(key(job.id,'result',i))));}
- private async candidates(job:ResearchJob):Promise<ScreenCandidate[]>{
+ /** Candidates in discovery order (seed chain first), de-duplicated by symbol. */
+ private async ordered(job:ResearchJob):Promise<ScreenCandidate[]>{
   const seed=job.seed?await this.storage.get<ResearchJob>(PREFIX+'archive:'+job.seed):undefined;
-  const candidates=[...(seed?await this.candidates(seed):[]),...(await this.batches(job)).flatMap(b=>b?.candidates||[])];
-  return [...new Map(candidates.map(c=>[c.symbol,c])).values()].sort((a,b)=>(b.ranking?.score||0)-(a.ranking?.score||0));
+  const candidates=[...(seed?await this.ordered(seed):[]),...(await this.batches(job)).flatMap(b=>b?.candidates||[])];
+  return [...new Map(candidates.map(c=>[c.symbol,c])).values()];
+ }
+ private async candidates(job:ResearchJob):Promise<ScreenCandidate[]>{
+  return (await this.ordered(job)).sort((a,b)=>(b.ranking?.score||0)-(a.ranking?.score||0));
  }
  private async catalog(){
   let meta=await this.storage.get<{id:string;pages:number;total:number;at:string}>(PREFIX+'catalog');
@@ -36,7 +66,12 @@ export class ResearchScreen {
   if(!meta&&this.storage.list){const first=await this.storage.list({prefix:PREFIX+'m',limit:1});const id=first.keys().next().value?.split(':')[2];if(id){const page=await this.storage.get<Awaited<ReturnType<typeof universe>>>(key(id,'universe',1));if(page){const pages=Math.ceil(page.total/page.pageSize),all=await Promise.all(Array.from({length:pages},(_,i)=>this.storage.get<Awaited<ReturnType<typeof universe>>>(key(id,'universe',i+1))));if(all.every(Boolean)&&new Set(all.flatMap(p=>p!.items.map(s=>s.symbol))).size===page.total){meta={id,pages,total:page.total,at:page.fetchedAt};await this.storage.put(PREFIX+'catalog',meta);}}}}
   return meta&&beijingParts(new Date(meta.at)).date===beijingParts().date?meta:null;
  }
- async start(retry=false){
+ /**
+  * retry: re-check only the failed (and unprocessed) stocks of the last finished or paused job;
+  * `symbols` narrows that set. A retry with nothing to retry returns the current job and never
+  * starts a full-market scan.
+  */
+ async start(retry=false,symbols?:string[]){
   const previous=await this.storage.get<ResearchJob>(PREFIX+'job');
   if(previous?.algorithm===2&&['universe','quotes','cache','history','screening'].includes(previous.phase)){
    if(!await this.storage.getAlarm())await this.storage.setAlarm(Date.now()+100);
@@ -46,16 +81,50 @@ export class ResearchScreen {
   if(previous?.algorithm===2&&previous.phase==='paused'&&!retry){
    const catalog=await this.catalog();if(previous.page<=previous.pages&&catalog){previous.phase='quotes';previous.catalog=catalog.id;previous.total=catalog.total;previous.registered=catalog.total;previous.pages=catalog.pages;previous.quoteCursor=0;}else previous.phase=previous.page<=previous.pages?'universe':(previous.historyTotal!==undefined?'history':'cache');previous.pageAttempts=0;previous.consecutiveFailed=0;previous.message='从已保存的位置继续';await this.save(previous);return this.read();
   }
-  if(previous?.checked){await this.storage.put(PREFIX+'archive:'+previous.id,previous);await this.storage.put(PREFIX+'last-good',previous.id);}
+  let retryTargets:Target[]=[];
+  if(retry){
+   if(previous&&['complete','paused'].includes(previous.phase)&&(previous.failed||previous.historyTotal)){
+    retryTargets=(await this.batches(previous)).flatMap(b=>b?.failed||[]) as Target[];
+    if(previous.phase==='paused'&&previous.historyTotal){for(let i=previous.historyCursor||0;i<previous.historyTotal;i++){const page=await this.storage.get<Target[]>(key(previous.id,'pending',Math.floor(i/100)));if(page?.[i%100])retryTargets.push(page[i%100]);}}
+    if(symbols){const wanted=new Set(symbols);retryTargets=retryTargets.filter(t=>wanted.has(t.symbol));}
+   }
+   if(!retryTargets.length)return this.read();
+  }
+  // Every replaced job is archived so old keys can be found and cleaned up later.
+  if(previous){await this.storage.put(PREFIX+'archive:'+previous.id,previous);if(previous.checked)await this.storage.put(PREFIX+'last-good',previous.id);}
   const id=Date.now().toString(36),job:ResearchJob={id,algorithm:2,resultCount:0,deferred:0,phase:'universe',total:0,registered:0,page:1,pages:1,cursor:0,targets:0,checked:0,cached:0,failed:0,candidateCount:0,startedAt:Date.now(),updatedAt:Date.now(),message:'读取全市场证券池',rejected:{},pageAttempts:0,failureSample:[]};
-  if(retry&&previous&&['complete','paused'].includes(previous.phase)&&(previous.failed||previous.historyTotal)){
-   const failed=(await this.batches(previous)).flatMap(b=>b?.failed||[]) as Target[];
-   if(previous.phase==='paused'&&previous.historyTotal){for(let i=previous.historyCursor||0;i<previous.historyTotal;i++){const page=await this.storage.get<Target[]>(key(previous.id,'pending',Math.floor(i/100)));if(page?.[i%100])failed.push(page[i%100]);}}
-   if(failed.length){await this.storage.put(PREFIX+'archive:'+previous.id,previous);job.seed=previous.id;job.retryOf=previous.id;job.baseChecked=(previous.baseChecked||0)+previous.checked;job.phase='screening';job.total=previous.total;job.registered=previous.registered;job.page=2;job.pages=1;job.targets=failed.length;job.historyTotal=failed.length;job.historyCursor=0;job.phase='history';job.candidateCount=(await this.candidates(previous)).length;await this.targets(job,failed);for(let i=0;i<failed.length;i+=100)await this.storage.put(key(job.id,'pending',i/100),failed.slice(i,i+100));}
+  if(retry&&previous&&retryTargets.length){
+   const failed=retryTargets;
+   if(failed.length){job.seed=previous.id;job.retryOf=previous.id;job.baseChecked=(previous.baseChecked||0)+previous.checked;job.phase='screening';job.total=previous.total;job.registered=previous.registered;job.page=2;job.pages=1;job.targets=failed.length;job.historyTotal=failed.length;job.historyCursor=0;job.phase='history';job.candidateCount=(await this.candidates(previous)).length;await this.targets(job,failed);for(let i=0;i<failed.length;i+=100)await this.storage.put(key(job.id,'pending',i/100),failed.slice(i,i+100));}
   }
   if(job.phase==='universe'){const catalog=await this.catalog();if(catalog){job.phase='quotes';job.catalog=catalog.id;job.pages=catalog.pages;job.total=catalog.total;job.registered=catalog.total;job.quoteCursor=0;job.message='复用当日完整名单，批量更新全市场快照';}}
   job.previous=await this.storage.get<string>(PREFIX+'last-good');
-  await this.save(job);return this.read();
+  await this.save(job);
+  await this.cleanup(job).catch(()=>{/* Cleanup is best effort; the job is already saved. */});
+  return this.read();
+ }
+ /** Ids still referenced by the current job, its previous report and their retry seed chains. */
+ private async retained(job:ResearchJob){
+  const keep=new Set<string>(),catalog=await this.storage.get<{id:string}>(PREFIX+'catalog');
+  const queue=[job.id,job.previous,job.seed,job.catalog,catalog?.id];
+  while(queue.length){
+   const id=queue.shift();if(!id||keep.has(id))continue;keep.add(id);
+   const archived=id===job.id?job:await this.storage.get<ResearchJob>(PREFIX+'archive:'+id);
+   if(archived?.seed)queue.push(archived.seed);
+  }
+  return keep;
+ }
+ /** Deletes keys of archived jobs nothing references any more (bounded per call). */
+ async cleanup(job:ResearchJob,budget=1500){
+  const s=this.storage;if(!s.list||!s.delete)return 0;
+  const keep=await this.retained(job),archives=await s.list<ResearchJob>({prefix:PREFIX+'archive:',limit:200});let removed=0;
+  for(const [archiveKey,old] of archives){
+   if(!old||keep.has(old.id))continue;
+   const keys=researchJobKeys(old);if(removed+keys.length>budget)break;
+   for(const k of keys)if(await s.delete(k))removed++;
+   await s.delete(archiveKey);removed++;
+  }
+  return removed;
  }
  private async targets(job:ResearchJob,stocks:Target[]){for(let i=0;i<stocks.length;i+=100)await this.storage.put(key(job.id,'targets',i/100),stocks.slice(i,i+100));}
  private async save(job:ResearchJob){job.updatedAt=Date.now();await this.storage.put(PREFIX+'job',job);if(['universe','quotes','cache','history','screening'].includes(job.phase))await this.storage.setAlarm(Date.now()+100);}

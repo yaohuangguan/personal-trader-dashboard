@@ -1,4 +1,12 @@
 export const isUSStock=(symbol='')=>/^[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)?$/.test(symbol);
+/**
+ * US share classes are spelled BRK.B (Tencent), BRK-B (Yahoo, SEC) or BRK/B by different sources.
+ * shareClassSymbol(symbol,'.') / (symbol,'-') converts only the class suffix; other symbols are unchanged.
+ */
+export function shareClassSymbol(symbol:string,separator:'.'|'-'){
+ const match=/^([A-Z]{1,6})[.\-/]([A-Z])$/.exec(symbol.trim().toUpperCase());
+ return match?match[1]+separator+match[2]:symbol;
+}
 export const supportedStock=(symbol:string)=>/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)||isUSStock(symbol);
 
 /** Exchange-local dates, including New York daylight saving changes. */

@@ -15,12 +15,17 @@ import { memo, quotes, intraday, history, ticks, sectors, peers, ranks, fundFlow
 import {auction,sectorIntraday,indexEqual} from './intraday-extras';
 import {earnings} from './earnings';
 import {historyPage} from './chart-history';
+import {dataDateOf,DATA_DATE_HEADER} from './compute-cache';
 import {validHistoryDate,type HistoryBasis} from '../shared/chart-history';
 
 export async function deskRoute(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith('/api/desk/')) return null;
-  const respond = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+  const respond = (value: unknown, status = 200) => {
+    const headers: Record<string, string> = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
+    const day = status === 200 ? dataDateOf(value) : null; if (day) headers[DATA_DATE_HEADER] = day;
+    return new Response(JSON.stringify(value), { status, headers });
+  };
   if(url.pathname==='/api/desk/candidate-check'&&request.method==='POST'){
     try{
       const raw=await request.text();if(raw.length>64000)return respond({error:'候选过多'},413);

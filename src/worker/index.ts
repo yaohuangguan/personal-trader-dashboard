@@ -3,12 +3,15 @@ import {usHistory} from './us-market';
 import {chartStudy} from '../shared/chart-study';
 import {projectMarket} from '../shared/market-projection';
 import {loadChartBundle,loadChartFrame} from './chart-bundle';
-import {historicalSnapshot} from './history-cache';
+import {historicalSnapshot,lastGoodMarket} from './history-cache';
 import {chartPayload} from './chart-payload';
-import {computeCache,studySession} from './compute-cache';
+import {computeCache,dataDateOf,DATA_DATE_HEADER} from './compute-cache';
+import {offload,registerInlineHandler} from './compute-offload';
+import {parseChartStudy} from './chart-study-input';
 import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
-import {accountRoute} from './account';
+import {accountRoute,verifyAccountSession} from './account';
+import {parseScreenJobBody} from './screen-job';
 import {adminRoute} from './admin';
 import {watchShareRoute} from './watch-share';
 import {indicatorMarks} from '../shared/indicator-marks';
@@ -18,7 +21,9 @@ import {reviewedPatternMarks} from '../shared/pattern-marks';
 import {GUIDE_PATTERN_COVERAGE} from '../shared/guide-patterns';
 import {evaluateStrategyHistory} from '../shared/strategy-backtest';
 import {marketContext} from '../shared/market-context';
-import {scannerCall} from './full-market-scanner';
+import {scannerCall,scannerFetch} from './full-market-scanner';
+import {closeReportRoute} from './close-report-route';
+import {timingSafeEqual,bearer,finalizeApiResponse,type WaitUntil} from './http';
 import {level2,type Level2Env} from './level2';
 import {shareRoute,type ShareStore} from './shares';
 import {clientMigrationRoute} from './client-migration';
@@ -27,32 +32,45 @@ import {guideScore} from '../shared/guide-score';
 import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
 import {stockCharacter} from '../shared/stock-character';
 import {screenCandidate} from '../shared/screening';
-import {history as deskHistory,quotes as deskQuotes} from './desk-data';
+import {history as deskHistory,quotes as deskQuotes,memo as deskMemo,stockNews} from './desk-data';
 export {CloseCoordinator as MarketScanner} from './close-coordinator';
 import {monitorRoute,type MonitorNamespace} from './signal-monitor';
 export {CloseSignalMonitor as SignalMonitor} from './close-monitor';
 import { deskRoute } from './desk-api';
+import {firstSuccess} from './provider-chain';
+import {rateLimited} from './rate-limit';
+import {CLOSE_DISPATCH_CRON,dispatchCloseWorkflow,type DispatchEnv} from './close-dispatch';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
-import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
+import { secCompany, fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env extends Level2Env { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env, DispatchEnv { /** '1' computes heavy analysis in the Worker (Workers Paid plan with a larger CPU limit) instead of compute Durable Objects. */ COMPUTE_INLINE?:string; PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
-const pending=new Map<string,Promise<unknown>>();
-const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
+/** Successful payloads may be cached briefly; errors and `available:false` fallbacks never are. */
+const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200&&!(data&&typeof data==='object'&&(data as {available?:unknown}).available===false)?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
+/** JSON response that names the trade date its data covers, for the compute cache's closed-session TTL. */
+const dated=(data:unknown)=>{const response=json(data),day=dataDateOf(data);if(day)response.headers.set(DATA_DATE_HEADER,day);return response;};
 const validSymbol=(s:string)=>/^[A-Z0-9^.-]{1,18}$/.test(s);
 const num=(v:unknown)=>{const n=Number(v);return Number.isFinite(n)?n:0;};
 function withTimeout(url:string, opts:RequestInit={},timeout=9000):Promise<Response>{
   return fetch(url,{...opts,signal:AbortSignal.timeout(timeout),headers:{'accept':'application/json, text/plain, text/xml, application/xml, */*',...(opts.headers||{})}});
 }
+/**
+ * Isolate memory cache of completed values only. In-flight promises are not shared across
+ * requests: a Workers request's I/O belongs to that request, and a cancelled request could leave
+ * other waiters hanging or failing with "Cannot perform I/O on behalf of a different request".
+ */
 async function cached<T>(key:string,ttl:number,fn:()=>Promise<T>):Promise<T>{
   const value=memory.get(key);if(value&&value.until>Date.now())return value.body as T;
-  const current=pending.get(key);if(current)return current as Promise<T>;
-  const task=(async()=>{const result=await fn();if(memory.size>250)memory.clear();memory.set(key,{until:Date.now()+ttl*1000,body:result});return result;})();pending.set(key,task);
-  try{return await task;}finally{pending.delete(key);}
+  const result=await fn();if(memory.size>250)memory.clear();memory.set(key,{until:Date.now()+ttl*1000,body:result});return result;
+}
+/** Resolves to `fallback` when `task` has not settled within `ms` (the task keeps its own timeouts). */
+function withDeadline<T>(task:Promise<T>,ms:number,fallback:()=>T):Promise<T>{
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  return Promise.race([task,new Promise<T>(resolve=>{timer=setTimeout(()=>resolve(fallback()),ms);})]).finally(()=>clearTimeout(timer));
 }
 function csv(text:string):Candle[]{
  const lines=text.trim().split(/\r?\n/),candles:Candle[]=[];
@@ -105,66 +123,31 @@ async function alphaVantage(symbol:string,key:string):Promise<{candles:Candle[];
  })).filter(c=>c.close>0&&c.open>0).sort((a,b)=>a.time.localeCompare(b.time));
  return {candles,url:'https://www.alphavantage.co/documentation/'};
 }
+/** Overall budget for one market() call; a provider still pending after 1.5 s gets the next one started alongside it. */
+const MARKET_DEADLINE_MS=20000,MARKET_HEDGE_MS=1500;
 async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  const symbol=normalizeSymbol(symbolRaw);if(!validSymbol(symbol))throw new Error('Invalid ticker');
  const cn=/^\d{6}\.(SH|SZ|BJ)$/.test(symbol);
  const known=CATALOG.find(c=>c.symbol===symbol);
- let source:{candles:Candle[];url:string;name?:string}|null=null,provider='',notice='',failure='';
+ type Source={candles:Candle[];url:string;name?:string};
+ const attempts:{name:string;provider:string;notice:string;run:()=>Promise<Source>}[]=[];
  // Prefer licensed, auditable price-history APIs. Never suggest unlicensed feeds are guaranteed.
- if(env.FMP_API_KEY){
-  try{
-   source=await fmpDaily(symbol,env.FMP_API_KEY);
-   provider='Financial Modeling Prep';
-   notice='FMP EOD OHLCV. Delay and exchange entitlements depend on your subscription.';
-  }catch(e){failure+=' FMP: '+(e instanceof Error?e.message:String(e));}
+ if(env.FMP_API_KEY)attempts.push({name:'FMP',provider:'Financial Modeling Prep',notice:'FMP EOD OHLCV. Delay and exchange entitlements depend on your subscription.',run:()=>fmpDaily(symbol,env.FMP_API_KEY!)});
+ if(env.TWELVE_DATA_API_KEY)attempts.push({name:'Twelve Data',provider:'Twelve Data',notice:'Provider daily candles. Exchange entitlements and delay depend on your plan.',run:()=>twelveData(symbol,env.TWELVE_DATA_API_KEY!)});
+ if(env.ALPHA_VANTAGE_API_KEY)attempts.push({name:'Alpha Vantage',provider:'Alpha Vantage (daily)',notice:'免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。',run:()=>alphaVantage(symbol,env.ALPHA_VANTAGE_API_KEY!)});
+ if(cn&&!symbol.endsWith('.BJ')){
+  attempts.push({name:'Tencent CN',provider:'腾讯财经公开日线（非授权接口，前复权）',notice:'500根左右的前复权日线；成交量使用原始接口单位（通常为手）。研究使用，非交易所实时或受保证的授权数据。',run:()=>tencentAshares(symbol)});
+  attempts.push({name:'Sina adjusted CN',provider:'新浪公开日线（前复权因子校正，成交量为股）',notice:'公开原始日线按新浪逐日有效前复权因子校正OHLC，成交量保持原始股数；非授权实时行情。',run:()=>sinaAdjustedDaily(symbol)});
  }
- if(!source&&env.TWELVE_DATA_API_KEY){
-  try{source=await twelveData(symbol,env.TWELVE_DATA_API_KEY);provider='Twelve Data';notice='Provider daily candles. Exchange entitlements and delay depend on your plan.';}
-  catch(e){failure=e instanceof Error?e.message:String(e);}
- }
- if(!source&&env.ALPHA_VANTAGE_API_KEY){
-  try{
-   source=await alphaVantage(symbol,env.ALPHA_VANTAGE_API_KEY);
-   provider='Alpha Vantage (daily)';
-   notice='免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。';
-  }catch(e){failure+=' Alpha Vantage: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&cn&&!symbol.endsWith('.BJ')){
-  try{
-   source=await tencentAshares(symbol);
-   provider='腾讯财经公开日线（非授权接口，前复权）';
-   notice='500根左右的前复权日线；成交量使用原始接口单位（通常为手）。研究使用，非交易所实时或受保证的授权数据。';
-  }catch(e){failure+=' Tencent CN: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&cn&&!symbol.endsWith('.BJ')){
-  try{source=await sinaAdjustedDaily(symbol);provider='新浪公开日线（前复权因子校正，成交量为股）';notice='公开原始日线按新浪逐日有效前复权因子校正OHLC，成交量保持原始股数；非授权实时行情。';}
-  catch(e){failure+=' Sina adjusted CN: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&symbol.endsWith('.BJ')){
-  try{source=await sinaBeijingDaily(symbol);provider='新浪公开日线（北交所，不复权）';notice='公开日线，不复权；送转和除权可能影响均线结构，需复核。成交量为股。';}
-  catch(e){failure+=' Sina BJ: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&isUSStock(symbol)){
-  try{source=await usHistory(symbol,'day');provider='腾讯财经美股前复权日线';notice='美股前复权OHLC，成交量为原始股数；USD，交易日按纽约时区。公开延迟数据。';}
-  catch(e){failure+=' Tencent US: '+String(e);}
- }
- if(!source){
-  try{
-   source=await yahooDaily(symbol);
-   provider='Yahoo Finance (unofficial daily endpoint)';
-   notice='Unlicensed public endpoint, may rate limit (429) without warning; not suitable for production financial feeds.';
-  }catch(e){failure+=' Yahoo: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source){
-  try{
-   const candidate=cn?await eastmoney(symbol):await stooq(symbol);
-   if(candidate.candles.length) {
-    source=candidate;
-    provider=cn?'东方财富（非官方公开历史行情接口）':'Stooq（日线历史行情）';
-    notice='日线历史数据，非交易所实时或逐笔报价。属于非SLA来源，服务可能拒绝自动访问。';
-   }
-  }catch(e){failure+=' Public source: '+(e instanceof Error?e.message:String(e));}
- }
+ if(symbol.endsWith('.BJ'))attempts.push({name:'Sina BJ',provider:'新浪公开日线（北交所，不复权）',notice:'公开日线，不复权；送转和除权可能影响均线结构，需复核。成交量为股。',run:()=>sinaBeijingDaily(symbol)});
+ if(isUSStock(symbol))attempts.push({name:'Tencent US',provider:'腾讯财经美股前复权日线',notice:'美股前复权OHLC，成交量为原始股数；USD，交易日按纽约时区。公开延迟数据。',run:()=>usHistory(symbol,'day')});
+ attempts.push({name:'Yahoo',provider:'Yahoo Finance (unofficial daily endpoint)',notice:'Unlicensed public endpoint, may rate limit (429) without warning; not suitable for production financial feeds.',run:()=>yahooDaily(symbol)});
+ attempts.push({name:'Public source',provider:cn?'东方财富（非官方公开历史行情接口）':'Stooq（日线历史行情）',notice:'日线历史数据，非交易所实时或逐笔报价。属于非SLA来源，服务可能拒绝自动访问。',run:()=>cn?eastmoney(symbol):stooq(symbol)});
+ let source:Source|null=null,provider='',notice='',failure='';
+ try{
+  const chosen=await firstSuccess(attempts,{hedgeAfterMs:MARKET_HEDGE_MS,deadlineMs:MARKET_DEADLINE_MS,valid:v=>!!v?.candles?.length});
+  source=chosen.value;provider=attempts[chosen.index].provider;notice=attempts[chosen.index].notice;
+ }catch(e){failure=e instanceof Error?e.message:String(e);}
  if(!source||!source.candles.length)throw new Error('No permitted OHLCV source available for '+symbol+'. Configure a licensed FMP / Twelve Data / Alpha Vantage API key. '+failure);
  const candles=validateDailyBars(source.candles);
  if(candles.length<2)throw new Error('Source returned insufficient valid candles for '+symbol);
@@ -210,21 +193,14 @@ const publicRss = {
  technology:'https://feeds.bbci.co.uk/news/technology/rss.xml',
  cnbc:'https://www.cnbc.com/id/100003114/device/rss/rss.html'
 } as const;
-const pendingRss = new Map<string,Promise<NewsItem[]>>();
 async function publicFeed(key:keyof typeof publicRss):Promise<NewsItem[]>{
- const source=publicRss[key],cacheKey='public-rss:'+key;
- let job=pendingRss.get(cacheKey);
- if(!job){
-  job=cached(cacheKey,240,async()=>{
-   const response=await withTimeout(source,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},10000);
-   if(!response.ok)throw new Error(key+' RSS HTTP '+response.status);
-   const xml=await response.text();if(!xml.includes('<rss'))throw new Error(key+' feed did not return RSS');
-   return parseFeed(xml,'world',key==='cnbc'?'CNBC':'BBC News');
-  });
-  pendingRss.set(cacheKey,job);
-  void job.finally(()=>pendingRss.delete(cacheKey)).catch(()=>{});
- }
- return job;
+ const source=publicRss[key];
+ return cached('public-rss:'+key,240,async()=>{
+  const response=await withTimeout(source,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},10000);
+  if(!response.ok)throw new Error(key+' RSS HTTP '+response.status);
+  const xml=await response.text();if(!xml.includes('<rss'))throw new Error(key+' feed did not return RSS');
+  return parseFeed(xml,'world',key==='cnbc'?'CNBC':'BBC News');
+ });
 }
 async function fallbackPublicLane(category:string):Promise<NewsItem[]>{
  const keys:(keyof typeof publicRss)[] = category==='world'
@@ -280,9 +256,11 @@ async function fetchNewsLane(category:string):Promise<NewsItem[]>{
  }catch{}
  throw new Error(category+' feed unavailable: '+firstError);
 }
-async function news(category:string):Promise<NewsPayload>{
+/** deadlineMs bounds the whole fan-out: lanes still running after it are reported as warnings. */
+async function news(category:string,deadlineMs?:number):Promise<NewsPayload>{
  const keys=category==='all'?Object.keys(feeds):[category];if(!keys.every(k=>feeds[k]))throw new Error('Unknown news category');
- const results=await Promise.allSettled(keys.map(k=>cached('feed:'+k,180,()=>fetchNewsLane(k))));
+ const lane=(k:string)=>cached('feed:'+k,180,()=>fetchNewsLane(k));
+ const results=await Promise.allSettled(keys.map(k=>deadlineMs?withDeadline(lane(k),deadlineMs,()=>{throw new Error('timed out after '+deadlineMs+'ms');}):lane(k)));
  const warnings:string[]=[],items:NewsItem[]=[];
  for(let i=0;i<results.length;i++){
   const r=results[i];if(r.status==='fulfilled')items.push(...r.value);
@@ -301,10 +279,7 @@ async function financials(symbol:string,env:Env):Promise<FundamentalsPayload>{
  if(!env.SEC_USER_AGENT || env.SEC_USER_AGENT.includes('example.com'))
   return {symbol,available:false,provider:'SEC EDGAR',sourceUrl,notice:'需配置 SEC_USER_AGENT（真实联系方式）才能访问官方 SEC XBRL 接口。'};
  const hdr={'User-Agent':env.SEC_USER_AGENT,'Accept-Encoding':'gzip, deflate','Accept':'application/json'};
- const listRes=await withTimeout('https://www.sec.gov/files/company_tickers.json',{headers:hdr},14000);
- if(!listRes.ok)throw new Error('SEC ticker index HTTP '+listRes.status);
- const list=await listRes.json() as Record<string,{ticker:string;cik_str:number;title:string}>;
- const company=Object.values(list).find(x=>x.ticker.toUpperCase()===symbol);
+ const company=await secCompany(symbol,env.SEC_USER_AGENT);
  if(!company)return {symbol,available:false,provider:'SEC EDGAR',sourceUrl,notice:'SEC 未找到该股票代码。'};
  const cik=String(company.cik_str).padStart(10,'0');
  const factsRes=await withTimeout('https://data.sec.gov/api/xbrl/companyfacts/CIK'+cik+'.json',{headers:hdr},14000);
@@ -378,26 +353,33 @@ async function inAppFilingDocument(symbol:string,form:string,date:string,env:Env
  return {available:content.length>0,content,title:symbol+' · '+form,provider:'SEC EDGAR',
   notice:'SEC 官方披露文本摘录（最多5万字符）；表格和脚注格式可能丢失，请谨慎解读。',sourceUrl:filings.sourceUrl,publishedAt:date};
 }
+/** Shared full-market job. GET is public; POST follows the contract in screen-job.ts. */
+async function screenJobRoute(request:Request,env:Env):Promise<Response>{
+ const ns=env.MARKET_SCANNER;if(!ns)return json({error:'扫描任务存储暂不可用'},503);
+ const noStore=(r:Response)=>new Response(r.body,{status:r.status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+ const url=new URL(request.url);
+ if(request.method==='GET'){const p=url.searchParams,query=new URLSearchParams();for(const k of ['id','count','since']){const v=p.get(k);if(v!==null)query.set(k,v.slice(0,40));}return noStore(await scannerFetch(ns,'research-status'+(query.size?'?'+query:'')));}
+ if(request.method!=='POST')return json({error:'Method not allowed'},405);
+ const parsed=parseScreenJobBody(await request.text());if('error' in parsed)return json({error:parsed.error,code:'BAD_REQUEST'},400);
+ // Only a request that may need to create a job checks credentials; retries are anonymous.
+ const token=bearer(request);let authorized=false;
+ if(token&&!parsed.retry)authorized=!!env.SCREEN_JOB_TOKEN&&await timingSafeEqual(token,env.SCREEN_JOB_TOKEN)||!!await verifyAccountSession(ns,token).catch(()=>null);
+ return noStore(await scannerFetch(ns,'research-start',{retry:parsed.retry,symbols:parsed.symbols,authorized}));
+}
 async function handle(req:Request,env:Env):Promise<Response>{
  const url=new URL(req.url),p=url.pathname;
  if(p==='/api/admin/ingest'){
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   const secret=env.INGEST_SECRET;
   if(!secret || secret.length<24)return json({error:'Manual ingest not configured'},503);
-  const auth=req.headers.get('Authorization')||'';
-  const actual=auth.startsWith('Bearer ')?auth.slice(7):'';
-  // Fixed-length XOR avoids immediately leaking the first mismatching character.
-  const expected=new TextEncoder().encode(secret),given=new TextEncoder().encode(actual);
-  let diff=expected.length^given.length;
-  for(let i=0;i<Math.max(expected.length,given.length);i++)diff|=(expected[i]||0)^(given[i]||0);
-  if(diff!==0)return json({error:'Unauthorized'},401);
+  if(!await timingSafeEqual(bearer(req),secret))return json({error:'Unauthorized'},401);
   try{return json(await scanOnce(env));}catch(e){return json({error:'Ingestion failed',details:String(e)},502);}
  }
  if(req.method!=='GET')return json({error:'Method not allowed'},405);
  if(p==='/api/level2'){const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid symbol'},400);return json(await level2(symbol,env));}
  if(p==='/api/analysis'){
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
-  let data=await cached('mobile-analysis:'+symbol,60,()=>market(symbol,env));
+  let data=await lastGoodMarket(url.origin,symbol,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)));
   const selectedMA=parseMAPeriods(url.searchParams.get('ma'));
   const decision=url.searchParams.get('review')==='1'?await loadTradeReview(symbol,data,selectedMA):null;
   if(decision)data=decision.market;
@@ -406,7 +388,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
   const strategy=decision?.strategy||analyzeStrategy(data.candles,{symbol,name:data.name,maPeriods:selectedMA});
   const response=json({available:true,strategy,review:decision?.review,patternMarks:reviewedPatternMarks(data.candles,strategy,new Date(),{symbol,name:data.name,maPeriods:selectedMA}),indicatorMarks:indicatorMarks(data.candles),maPeriods:strategy.plan.maPeriods,patternCoverage:GUIDE_PATTERN_COVERAGE,strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
-  response.headers.set('cache-control','no-store');return response;
+  response.headers.set('cache-control','no-store');const day=dataDateOf({market:data});if(day)response.headers.set(DATA_DATE_HEADER,day);return response;
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
   providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',
@@ -435,9 +417,9 @@ async function handle(req:Request,env:Env):Promise<Response>{
    const saved=env.DB?await readSnapshot(env.DB,symbol):null;
    if(saved?.fetchedAt && Date.now()-Date.parse(saved.fetchedAt)<40*60000)return json({...saved,cacheSource:'D1'});
    try{
-    const result=await cached('market:'+symbol+':'+Boolean(env.FMP_API_KEY)+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),900,()=>market(symbol,env));
+    const result=await lastGoodMarket(url.origin,symbol,()=>cached('market:'+symbol+':'+Boolean(env.FMP_API_KEY)+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),900,()=>market(symbol,env)));
     if(env.DB)try{await saveSnapshot(env.DB,result);}catch(err){console.warn('Quote persistence:',String(err));}
-    return json({...result,stale:false,cacheSource:'upstream'});
+    return json({...result,stale:result.stale===true,cacheSource:result.stale?'last-good':'upstream'});
    }catch(e){
     if(saved)return json({...saved,stale:true,notice:saved.notice+' | Live update failed; historical last-success snapshot shown.'});
     throw e;
@@ -493,13 +475,20 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
   if(!validSymbol(symbol))return json({error:'Invalid ticker'},400);
   try{
-   let source:NewsItem[]=[];
+   // A-shares: English headline matching can never find Chinese companies. Use the same
+   // Eastmoney stock-news index as /api/desk/stock-news, in the shape this endpoint returns.
+   if(/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)){
+    const feed=await deskMemo('stock-news'+symbol,120,()=>stockNews(symbol,AbortSignal.timeout(6000)));
+    return json({items:feed.items.slice(0,25),source:'index',notice:'东方财富个股新闻检索（与个股资讯同源）；相关性以来源检索为准，需核验是否为公司实质利好。',sources:feed.sources,fetchedAt:feed.fetchedAt});
+   }
+   let source:NewsItem[]=[],origin:'stored'|'index'='stored';
    if(env.DB){
     const history=await listEvents(env.DB,{category:'all',symbol,limit:60});
     source=history;
    }
-   if(!source.length)source=(await news('all')).items;
-   return json(await companyNews(symbol,source));
+   // Live feeds are bounded to 6 s overall; slower lanes are skipped rather than holding the page.
+   if(!source.length){source=(await news('all',6000)).items;origin='index';}
+   return json(await companyNews(symbol,source,origin));
   }catch(e){return json({error:'Stock news unavailable',details:String(e)},502);}
  }
  if(p==='/api/news'){
@@ -516,8 +505,12 @@ async function handle(req:Request,env:Env):Promise<Response>{
  }
  return json({error:'Unknown API path'},404);
 }
-export default {
- async fetch(request:Request,env:Env):Promise<Response>{
+/** Every /api/* response leaves through the error-envelope normaliser (no-store and Retry-After on errors). */
+async function fetchHandler(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
+ const response=await route(request,env,ctx);
+ return new URL(request.url).pathname.startsWith('/api/')?finalizeApiResponse(response):response;
+}
+async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promise<Response>{
   try {
    const incoming=new URL(request.url);
    if(['/sw.js','/version.json'].includes(incoming.pathname)&&env.ASSETS){const resource=await env.ASSETS.fetch(request),response=new Response(resource.body,resource);response.headers.set('cache-control','no-store, max-age=0');if(incoming.pathname==='/sw.js')response.headers.set('service-worker-allowed','/');return response;}
@@ -526,29 +519,32 @@ export default {
    const account=await accountRoute(request,env.MARKET_SCANNER);if(account)return account;
    const watchShare=await watchShareRoute(request,env.SHARES);if(watchShare)return watchShare;
    const admin=await adminRoute(request,env);if(admin)return admin;
-   if(new URL(request.url).pathname==='/api/chart-study'){
+   /** Heavy public analysis: edge cache first, then a compute Durable Object; inside that object it computes inline. */
+   const heavy=(identity:string,ttl:number,shardKey:string,compute:()=>Promise<Response>|Response,options:{market?:'cn'|'us';body?:string}={})=>
+    inline?Promise.resolve(compute()):computeCache(request,identity,ttl,()=>env.COMPUTE_INLINE==='1'?compute():offload(request,env.MARKET_SCANNER,shardKey,compute,options.body),{ctx,market:options.market});
+   const marketOf=(symbol:string)=>isUSStock(symbol)?'us' as const:'cn' as const;
+   if(incoming.pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
-    const raw=await request.text();if(raw.length>2500000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
-    if(!Array.isArray(body.candles)||body.candles.length>20000||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
-    const ma=body.ma.length?parseMAPeriods(body.ma.join(',')):[];
-    if(body.task==='projection')return computeCache(request,'projection-v2:'+studySession()+':'+raw,60,()=>json({projection:projectMarket(body.candles,{maPeriods:ma,horizon:body.horizon,unit:body.unit,symbol:body.symbol,name:body.name})}));
-    return computeCache(request,'chart-study-v6:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
+    const raw=await request.text(),parsed=parseChartStudy(raw);if('error' in parsed)return json({error:parsed.error},parsed.status);
+    const body=parsed.body,ma=body.ma.length?parseMAPeriods(body.ma.join(',')):[],options={body:raw,market:marketOf(body.symbol||'')};
+    if(body.task==='projection')return heavy('projection-v3:'+raw,60,'study:'+(body.symbol||''),()=>json({projection:projectMarket(body.candles,{maPeriods:ma,horizon:body.horizon,unit:body.unit,symbol:body.symbol,name:body.name})}),options);
+    return heavy('chart-study-v7:'+raw,300,'study:'+(body.symbol||''),()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))),options);
    }
    if(incoming.pathname==='/api/chart-frame'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
-    return computeCache(request,'chart-frame-v1:'+studySession()+symbol,2,async()=>json(await loadChartFrame(symbol,()=>cached('mobile-analysis:'+symbol,60,()=>historicalSnapshot(incoming.origin,symbol,()=>market(symbol,env))),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
+    return computeCache(request,'chart-frame-v2:'+symbol,2,async()=>dated(await loadChartFrame(symbol,()=>cached('mobile-analysis:'+symbol,60,()=>historicalSnapshot(incoming.origin,symbol,()=>market(symbol,env))),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))),{ctx,market:marketOf(symbol)});
    }
    if(incoming.pathname==='/api/review-context'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
-    return computeCache(request,'review-context-v1:'+studySession()+symbol,15,async()=>json(await loadTradeContext(symbol)));
+    return computeCache(request,'review-context-v2:'+symbol,15,async()=>dated(await loadTradeContext(symbol)),{ctx});
    }
    if(incoming.pathname==='/api/chart-bundle'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
     const periods=parseMAPeriods(incoming.searchParams.get('ma'))??CLASSIC_MA;
-    return computeCache(request,'chart-bundle-v3:'+studySession()+JSON.stringify([symbol,periods]),3,async()=>json(await loadChartBundle(symbol,periods,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
+    return heavy('chart-bundle-v4:'+JSON.stringify([symbol,periods]),3,symbol,async()=>dated(await loadChartBundle(symbol,periods,()=>lastGoodMarket(incoming.origin,symbol,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),ctx),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))),{market:marketOf(symbol)});
    }
 
    // Old installed PWAs must download their same-origin shell before the new
@@ -557,48 +553,71 @@ export default {
    const migrationAsset=incoming.pathname==='/index.html'||incoming.pathname==='/manifest.webmanifest'||incoming.pathname==='/favicon.svg'||incoming.pathname.startsWith('/assets/')||incoming.pathname.startsWith('/icons/');
    if(env.PUBLIC_ORIGIN&&incoming.hostname==='personal-market-atlas.nzs.workers.dev'&&request.method==='GET'&&!incoming.pathname.startsWith('/api/')&&!migrationAsset)return new Response(null,{status:308,headers:{location:env.PUBLIC_ORIGIN+incoming.pathname+incoming.search,'cache-control':'public, max-age=300'}});
    const share=await shareRoute(request,env.SHARES,env.PUBLIC_ORIGIN);if(share)return share;
-   const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
+   const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR,key=>rateLimited(env.MARKET_SCANNER,key,40,600000));if(monitoring)return monitoring;
    const closeUrl=new URL(request.url);
-   if(closeUrl.pathname==='/api/desk/screen-job'){
-    if(!env.MARKET_SCANNER)return json({error:'扫描任务存储暂不可用'},503);
-    if(request.method==='GET'){const response=json(await scannerCall(env.MARKET_SCANNER,'research-status'+(closeUrl.search||'')));response.headers.set('cache-control','no-store');return response;}
-    if(request.method==='POST'){const body=await request.json() as {retry?:boolean};const response=json(await scannerCall(env.MARKET_SCANNER,'research-start',{retry:body.retry===true}));response.headers.set('cache-control','no-store');return response;}
-    return json({error:'Method not allowed'},405);
-   }
-   if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET'){if(!env.MARKET_SCANNER)return json({report:null});return json(await scannerCall(env.MARKET_SCANNER,'results'));}
-   if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||request.headers.get('Authorization')!=='Bearer '+env.SCREEN_JOB_TOKEN)return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);return json(await scannerCall(env.MARKET_SCANNER,action!,JSON.parse(raw)));}
+   if(closeUrl.pathname==='/api/desk/screen-job')return screenJobRoute(request,env);
+   if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET')return closeReportRoute(request,env.MARKET_SCANNER,ctx);
+   if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||!await timingSafeEqual(bearer(request),env.SCREEN_JOB_TOKEN))return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);let body:unknown;try{body=JSON.parse(raw);}catch{return json({error:'Invalid JSON',code:'BAD_JSON'},400);}const result=await scannerFetch(env.MARKET_SCANNER,action!,body);return new Response(result.body,{status:result.status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
+   const desk404=async()=>await deskRoute(request)||json({error:'Not found'},404);
    if(['/api/desk/insight','/api/desk/trend'].includes(incoming.pathname)&&request.method==='GET'){
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(incoming.pathname.endsWith('/insight')?!supportedStock(symbol):!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({available:false,reason:'Invalid stock symbol'},400);
-    return computeCache(request,'desk-view-v3:'+incoming.pathname+':'+studySession()+':'+symbol,incoming.pathname.endsWith('/insight')?5:15,async()=>await deskRoute(request)||json({error:'Not found'},404));
+    return heavy('desk-view-v4:'+incoming.pathname+':'+symbol,incoming.pathname.endsWith('/insight')?5:15,symbol,desk404,{market:marketOf(symbol)});
+   }
+   if(incoming.pathname==='/api/desk/history'&&request.method==='GET'){
+    // Daily/weekly/monthly A-share history carries pattern marks computed on the server.
+    const p=incoming.searchParams,symbol=p.get('symbol')||'',period=p.get('period')||'';
+    if(/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&['day','week','month'].includes(period)&&p.get('before')===null&&p.get('study')!=='client')return heavy('desk-history-v1:'+symbol+':'+period,60,symbol,desk404);
+   }
+   if(['/api/desk/screen','/api/desk/screen-batch'].includes(incoming.pathname)&&request.method==='GET'){
+    const p=incoming.searchParams,symbols=(p.get('symbol')||p.get('symbols')||'').slice(0,80);
+    return heavy('desk-screen-v1:'+incoming.pathname+'?'+[...p].sort(([a],[b])=>a<b?-1:1).map(([k,v])=>k+'='+v).join('&'),30,symbols,desk404);
    }
    if(incoming.pathname==='/api/desk/index-equal'&&request.method==='GET'){
     const symbol=incoming.searchParams.get('symbol')||'';
     if(!['000001.SH','399001.SZ','399006.SZ','000300.SH','000688.SH','899050.BJ'].includes(symbol))return json({error:'无效指数'},400);
-    return computeCache(request,'index-yellow-v1:'+studySession()+':'+symbol,90,async()=>await deskRoute(request)||json({error:'Not found'},404));
+    return computeCache(request,'index-yellow-v2:'+symbol,90,desk404,{ctx});
    }
-   if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,async()=>await deskRoute(request)||json({error:'Not found'},404));
+   if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,desk404,{ctx,phase:false});
+   if(incoming.pathname.startsWith('/api/desk/')&&request.method==='GET'){
+    // Slow-changing data: edge copy plus browser Cache-Control with stale-while-revalidate and an ETag.
+    const kind=incoming.pathname.slice('/api/desk/'.length),p=incoming.searchParams,symbol=p.get('symbol')||'';
+    const identity='desk-'+kind+'-v1:'+['symbol','period','before','basis','study','type','code'].map(k=>k+'='+(p.get(k)??'')).join('&');
+    const fixed=(ttl:number,client:string)=>computeCache(request,identity,ttl,desk404,{ctx,phase:false,cacheControl:client});
+    const phased=(ttl:number)=>computeCache(request,identity,ttl,desk404,{ctx,market:marketOf(symbol)});
+    if(kind==='f10')return fixed(21600,'public, max-age=3600, stale-while-revalidate=86400');
+    if(kind==='reports')return fixed(10800,'public, max-age=1800, stale-while-revalidate=86400');
+    if(kind==='history'&&p.get('before')!==null)return fixed(86400,'public, max-age=3600, stale-while-revalidate=86400');
+    if(kind==='history'){const period=p.get('period')||'';return phased(/^m\d+$/.test(period)?30:60);}
+    if(['sector-map','industries','sectors','chips','flow-history'].includes(kind))return phased(60);
+   }
    const desk=await deskRoute(request);if(desk)return desk;
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');
     if(isUSStock(symbol)){
       const ma=parseMAPeriods(p.get('ma'))??CLASSIC_MA;
-      return computeCache(request,'us-analysis-v2-client:'+studySession()+JSON.stringify([symbol,ma]),15,async()=>{
-        const frame=await loadChartFrame(symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
+      return computeCache(request,'us-analysis-v3-client:'+JSON.stringify([symbol,ma]),15,async()=>{
+        const frame=await loadChartFrame(symbol,()=>lastGoodMarket(incoming.origin,symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),ctx),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
         // The browser already runs the shared study rules. Repeating the full
         // study here can exhaust the edge CPU budget on an uncached symbol.
-        return json({...frame,available:true,maPeriods:ma,calculation:'client'});
-      });
+        return dated({...frame,available:true,maPeriods:ma,calculation:'client'});
+      },{ctx,market:'us'});
     }
     if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
     const periods=parseMAPeriods(p.get('ma'));
-    return computeCache(request,'analysis-v5:'+studySession()+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,()=>handle(request,env));
+    return heavy('analysis-v6:'+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,symbol,()=>handle(request,env));
    }
-   if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v1:'+studySession()+':'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env));
+   if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v2:'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env),{ctx});
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
-  }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details))return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:new Date(new Date().setUTCHours(24,0,0,0)).toISOString()},503);return json({error:'Unexpected server error',details},500);}
- },
- async scheduled(_controller:unknown,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
+  }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details)){const retryAt=new Date(new Date().setUTCHours(24,0,0,0));return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:retryAt.toISOString(),retryAfter:Math.max(60,Math.ceil((retryAt.getTime()-Date.now())/1000))},503);}return json({error:'Unexpected server error',code:'INTERNAL',details},500);}
+}
+// Inside a compute Durable Object the same routes run without forwarding again.
+registerInlineHandler((request,env,ctx)=>route(request,env as Env,ctx,true));
+export default {
+ fetch:fetchHandler,
+ async scheduled(controller:{cron?:string}|undefined,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
+  // The close cron only dispatches the GitHub closing workflow; it is a no-op without GITHUB_DISPATCH_TOKEN.
+  if(controller?.cron===CLOSE_DISPATCH_CRON){ctx.waitUntil(dispatchCloseWorkflow(env).then(r=>console.log('Close workflow dispatch:',JSON.stringify(r))));return;}
   if(env.DB)ctx.waitUntil(scanOnce(env).catch(err=>console.error('Scheduled intelligence scan failed:',String(err))));
  }
 };

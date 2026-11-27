@@ -5,8 +5,10 @@ type Vault={revision:number;updatedAt:string;state:WatchState;seen:string[]};
 const json=(v:unknown,status=200)=>Response.json(v,{status,headers:{'cache-control':'no-store','referrer-policy':'no-referrer'}});
 export async function watchVault(req:Request,s:Storage){
  // Internal purge for account deletion; public routes never build a URL with ?purge.
- if(req.method==='DELETE'){if(!new URL(req.url).searchParams.has('purge')||!s.delete)return json({error:'Method not allowed'},405);await s.delete('watch:v1');return json({ok:true});}
+ // Purging leaves a tombstone so a stale session cannot recreate the deleted account's vault.
+ if(req.method==='DELETE'){if(!new URL(req.url).searchParams.has('purge')||!s.delete)return json({error:'Method not allowed'},405);await s.delete('watch:v1');await s.put('watch:v1:deleted',Date.now());return json({ok:true});}
  let vault=await s.get<Vault>('watch:v1');
+ if(!vault&&await s.get('watch:v1:deleted'))return json({error:'账号已删除',code:'ACCOUNT_DELETED'},410);
  if(req.method==='POST'&&new URL(req.url).searchParams.has('create')){if(vault)return json({error:'Already exists'},409);vault={revision:0,updatedAt:new Date().toISOString(),state:emptyWatch(),seen:[]};await s.put('watch:v1',vault);return json(vault);}
  // Account vaults are addressed by a verified account ID, so they are created on first use.
  if(!vault&&new URL(req.url).searchParams.has('ensure')){vault={revision:0,updatedAt:new Date().toISOString(),state:emptyWatch(),seen:[]};await s.put('watch:v1',vault);}

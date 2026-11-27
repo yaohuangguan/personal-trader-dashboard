@@ -1,11 +1,20 @@
 name: Daily closing screen
 on:
   schedule:
+    # 15:20 Beijing. GitHub can start scheduled runs hours late, so two backups follow;
+    # every run first checks the published report and exits quickly when it is current.
+    # The Worker cron (wrangler.toml) also dispatches this workflow at 07:25 UTC when configured.
     - cron: '20 7 * * 1-5'
+    - cron: '50 8 * * 1-5'
+    - cron: '40 12 * * 1-5'
   workflow_dispatch:
     inputs:
       previous_close:
-        description: 'Warm the latest closed session when today has not closed'
+        description: 'Legacy: the latest closed session is now published automatically'
+        type: boolean
+        default: false
+      force:
+        description: 'Rebuild and republish even if the latest session already has a report'
         type: boolean
         default: false
 concurrency:
@@ -32,7 +41,7 @@ jobs:
       - name: Build one shared close report
         env:
           SCREEN_JOB_TOKEN: ${{ secrets.SCREEN_JOB_TOKEN }}
-          ALLOW_PREVIOUS_CLOSE: ${{ inputs.previous_close && '1' || '0' }}
+          FORCE_PUBLISH: ${{ inputs.force && '1' || '0' }}
         run: node --import tsx .github/scripts/close-screen.mts
       - uses: actions/upload-artifact@v4
         if: always()
