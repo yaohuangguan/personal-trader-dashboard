@@ -2262,5 +2262,19 @@
   "前往登录": "Sign in",
   "报价 {time} · 结构分 {date}": "Quote {time} · structure {date}",
   "历史价格 · {date}（当前报价待核验）": "Historical price · {date} (current quote pending)",
-  "刷新": "Refresh"
+  "刷新": "Refresh",
+  "已读取分享码 {code}；股票与分组可一起导入。": "Share code {code} loaded. Stocks and groups can be imported together.",
+  "识别 {a} 个，核验 {b} 个；重复项自动合并。": "Recognized {a}, verified {b}; duplicates merged.",
+  "未核验代码不会加入，请核对原图。": "Unverified symbols are not added; check the original image.",
+  "导入完成 · 新增股票 {a} · 新建分组 {b}；已有自选保留。": "Import complete · {a} new stocks · {b} new groups; your watchlist is kept.",
+  "已新增 {n} 只，已有自选保留；已连接云同步时自动同步。": "Added {n}; your watchlist is kept and syncs automatically when cloud sync is on.",
+  "粘贴名单、分享码或查看识别原文": "Paste a list or share code, or review the recognized text",
+  "新增股票 {a} · 已有股票 {b} · 新建分组 {c}": "{a} new stocks · {b} already present · {c} new groups",
+  "当前自选 {n}/60；已有股票不会重复加入，超出容量的新增项请分组整理后再导入。": "Watchlist {n}/60. Existing stocks are not added twice; tidy groups before importing beyond capacity.",
+  "确认合并 {n} 只": "Merge {n} stocks",
+  "容量不足跳过：股票 {a} · 分组 {b}。自选最多60只、分组最多20个；已有数据不会删除。": "Skipped for capacity: {a} stocks · {b} groups. Up to 60 stocks and 20 groups; existing data is never deleted.",
+  "暂不支持该代码": "Symbol not supported",
+  "请输入沪深北6位代码或美股代码，例如 600519、AAPL": "Enter a 6-digit A-share code or a US ticker, e.g. 600519, AAPL",
+  "打开原文": "Open original",
+  "无法打开链接": "Cannot open the link"
 }

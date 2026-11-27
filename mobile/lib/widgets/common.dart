@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,11 @@ Rect? shareOrigin(RenderBox? box) {
   }
   return box.localToGlobal(Offset.zero) & box.size;
 }
+
+/// Height of a row of text tabs: a 44 pt touch target that grows with the
+/// text scale instead of clipping large text.
+double touchRowHeight(BuildContext context, double fontSize) =>
+    math.max(44, MediaQuery.textScalerOf(context).scale(fontSize) + 22);
 
 /// True when periodic work for this widget is worth doing: the app is in the
 /// foreground, its tab is on stage ([TickerMode]) and no route covers it.
@@ -147,11 +153,16 @@ class AsyncPanel extends StatefulWidget {
     required this.builder,
     this.empty,
     this.refreshSeconds = 0,
+    this.sliver = false,
   });
   final Future<Json> Function() load;
+
+  /// Builds the content; with [sliver] it must return a sliver, so long
+  /// lists are built lazily inside a CustomScrollView.
   final Widget Function(Json data) builder;
   final String? empty;
   final int refreshSeconds;
+  final bool sliver;
   @override
   State<AsyncPanel> createState() => AsyncPanelState();
 }
@@ -217,6 +228,28 @@ class AsyncPanelState extends State<AsyncPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final content = _build(context);
+    if (!widget.sliver) return content;
+    if (data == null) return SliverToBoxAdapter(child: content);
+    return SliverMainAxisGroup(
+      slivers: [
+        if (error != null) SliverToBoxAdapter(child: _staleNotice(context)),
+        widget.builder(data!),
+        SliverToBoxAdapter(child: _refreshButton(context)),
+      ],
+    );
+  }
+
+  Widget _staleNotice(BuildContext context) => Notice(
+    '${tr(context, '刷新失败，保留上一快照')} · ${tr(context, describeError(error))}',
+  );
+  Widget _refreshButton(BuildContext context) => TextButton.icon(
+    onPressed: loading ? null : refresh,
+    icon: const Icon(Icons.refresh, size: 18),
+    label: Text(tr(context, loading ? '正在读取' : '刷新数据')),
+  );
+
+  Widget _build(BuildContext context) {
     if (data == null) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -243,19 +276,13 @@ class AsyncPanelState extends State<AsyncPanel> {
         ),
       );
     }
+    if (widget.sliver) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (error != null)
-          Notice(
-            '${tr(context, '刷新失败，保留上一快照')} · ${tr(context, describeError(error))}',
-          ),
+        if (error != null) _staleNotice(context),
         widget.builder(data!),
-        TextButton.icon(
-          onPressed: loading ? null : refresh,
-          icon: const Icon(Icons.refresh, size: 18),
-          label: Text(tr(context, loading ? '正在读取' : '刷新数据')),
-        ),
+        _refreshButton(context),
       ],
     );
   }
@@ -313,34 +340,39 @@ class Chips extends StatelessWidget {
   final ValueChanged<String> onSelected;
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 38,
+    height: touchRowHeight(context, 14),
     child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: values.entries
             .map(
-              (e) => InkWell(
-                onTap: () => onSelected(e.key),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 13),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: selected == e.key ? ink : Colors.transparent,
-                        width: 1.5,
+              (e) => Semantics(
+                button: true,
+                selected: selected == e.key,
+                child: InkWell(
+                  onTap: () => onSelected(e.key),
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 44),
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 13),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: selected == e.key ? ink : Colors.transparent,
+                          width: 1.5,
+                        ),
                       ),
                     ),
-                  ),
-                  child: Text(
-                    tr(context, e.value),
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1,
-                      color: selected == e.key ? ink : muted,
-                      fontWeight: selected == e.key
-                          ? FontWeight.w600
-                          : FontWeight.normal,
+                    child: Text(
+                      tr(context, e.value),
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1,
+                        color: selected == e.key ? ink : muted,
+                        fontWeight: selected == e.key
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
                     ),
                   ),
                 ),
@@ -379,8 +411,8 @@ class PageTitle extends StatelessWidget {
   final String title, subtitle;
   final Widget? trailing;
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 42,
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 44),
     child: Row(
       children: [
         Expanded(
@@ -425,7 +457,7 @@ class PeriodSelector extends StatelessWidget {
   final ValueChanged<String> onChanged;
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 36,
+    height: touchRowHeight(context, 14),
     child: Row(
       children: [
         for (final pair in [
@@ -435,23 +467,28 @@ class PeriodSelector extends StatelessWidget {
           ('month', '月 K'),
         ])
           Expanded(
-            child: InkWell(
-              onTap: () => onChanged(pair.$1),
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(
-                      width: 2,
-                      color: value == pair.$1 ? up : Colors.transparent,
+            child: Semantics(
+              button: true,
+              selected: value == pair.$1,
+              child: InkWell(
+                onTap: () => onChanged(pair.$1),
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        width: 2,
+                        color: value == pair.$1 ? up : Colors.transparent,
+                      ),
                     ),
                   ),
-                ),
-                child: Text(
-                  tr(context, pair.$2),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: value == pair.$1 ? ink : muted,
+                  child: Text(
+                    tr(context, pair.$2),
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: value == pair.$1 ? ink : muted,
+                    ),
                   ),
                 ),
               ),
