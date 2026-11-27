@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { CATALOG } from '../../shared/catalog';
+import { usePreferences } from '../preferences';
 
 type Kind='advanced'|'tape'|'quotes';
 export default function TradingViewWidget({kind='advanced',symbol='NVDA',symbols=[]}:{kind?:Kind;symbol?:string;symbols?:string[]}){
- const ref=useRef<HTMLDivElement>(null);
+ const ref=useRef<HTMLDivElement>(null),theme=usePreferences().theme;
  useEffect(()=>{
   const holder=ref.current;if(!holder)return;
   const inner=document.createElement('div');inner.className='tradingview-widget-container__widget';
@@ -30,13 +31,13 @@ export default function TradingViewWidget({kind='advanced',symbol='NVDA',symbols
      {proName:'TVC:GOLD',title:'Gold'},{proName:'NASDAQ:AAPL',title:'Apple'},
      {proName:'FX_IDC:USDCNY',title:'USD/CNY'},{proName:'NASDAQ:NVDA',title:'NVIDIA'}
     ],
-    showSymbolLogo:false,isTransparent:false,displayMode:'adaptive',colorTheme:'dark',locale:'en'
+    showSymbolLogo:false,isTransparent:false,displayMode:'adaptive',colorTheme:theme,locale:'en'
    });
   }else if(kind==='quotes'){
    script.src='https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js';
    script.text=JSON.stringify({
     title:'Watchlist · 参考报价',width:'100%',height:'100%',
-    locale:'en',showSymbolLogo:false,colorTheme:'dark',
+    locale:'en',showSymbolLogo:false,colorTheme:theme,
     symbolsGroups:[{name:'Personal Focus',symbols:symbols.slice(0,10).map(s=>({
      name:toTv(s),displayName:CATALOG.find(x=>x.symbol===s)?.name||s
     }))}]
@@ -44,7 +45,7 @@ export default function TradingViewWidget({kind='advanced',symbol='NVDA',symbols
   }else{
    script.src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
    script.text=JSON.stringify({
-    autosize:true,symbol:tvSymbol,interval:'D',timezone:'exchange',theme:'dark',
+    autosize:true,symbol:tvSymbol,interval:'D',timezone:'exchange',theme,
     style:'1',locale:'en',withdateranges:true,hide_side_toolbar:true,
     allow_symbol_change:false,save_image:false,details:false,
     calendar:false,support_host:'https://www.tradingview.com'
@@ -52,7 +53,7 @@ export default function TradingViewWidget({kind='advanced',symbol='NVDA',symbols
   }
   holder.appendChild(script);
   return ()=>{holder.replaceChildren();};
- },[kind,symbol,symbols.join('|')]);
+ },[kind,symbol,symbols.join('|'),theme]);
  return <div className={'tv-widget-shell '+(kind==='tape'?'tv-widget-tape':kind==='quotes'?'tv-widget-quotes':'tv-widget-chart')}>
   <div ref={ref} className="tradingview-widget-container tv-widget-inner"/>
   <span className="tv-attribution">Chart data &amp; widgets by TradingView · third-party reference</span>

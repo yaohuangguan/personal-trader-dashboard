@@ -1,3 +1,4 @@
+import {readJson} from './http';
 import {validWatch,type WatchState} from '../shared/watch-sync';
 import {planWatchImport,parseWatchTransfer,serializeWatchTransfer,type WatchTransfer} from '../shared/watch-transfer';
 type Store=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
@@ -16,7 +17,7 @@ export function importLocalWatch(incoming:WatchTransfer,storage:Store=localStora
 }
 /** Share codes: an 8-character snapshot of stocks and groups that anyone can import for 30 days. */
 export const SHARE_CODE_PATTERN=/^[A-HJKMNP-Z2-9]{4}-?[A-HJKMNP-Z2-9]{4}$/i;
-async function shareRequest(path:string,init?:RequestInit){const r=await fetch(path,{...init,signal:AbortSignal.timeout(15000)});const data=await r.json();if(!r.ok)throw new Error(data.error||'分享码服务暂不可用');return data;}
+async function shareRequest(path:string,init?:RequestInit){const r=await fetch(path,{...init,signal:AbortSignal.timeout(15000)});const data=await readJson<any>(r);if(!r.ok)throw new Error(data.error||'分享码服务暂不可用');return data;}
 export async function createShareCode(storage:Store=localStorage):Promise<{code:string;expiresAt:string;count:number}>{
  return shareRequest('/api/watch-share',{method:'POST',headers:{'content-type':'application/json'},body:serializeWatchTransfer(readLocalWatch(storage))});
 }

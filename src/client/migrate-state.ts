@@ -1,3 +1,5 @@
+import {writeStored} from './storage';
+import {readJson} from './http';
 import {CLIENT_STATE_KEYS,MIGRATED_KEY,NEW_SITE,mergedClientState} from '../shared/client-state';
 const pending='atlas.client-migration.nonce';
 const decode=(s:string)=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
@@ -10,7 +12,7 @@ export async function migrateClientState(){
   const [id,key]=claim.split('.'),nonce=sessionStorage.getItem(pending);
   if(id==='empty'){if(!nonce||key!==nonce)throw new Error('恢复会话不匹配');localStorage.setItem(MIGRATED_KEY,'1');sessionStorage.removeItem(pending);return true;}
   if(!nonce||!/^[A-Za-z0-9_-]{22}$/.test(id)||!/^[A-Za-z0-9_-]{43}$/.test(key))throw new Error('恢复会话不匹配，请重新打开恢复入口');
-  let encrypted;for(let attempt=0;attempt<4;attempt++){const r=await fetch('/api/client-migration/'+id,{cache:'no-store'});if(r.ok){encrypted=await r.json();break;}await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));}
+  let encrypted;for(let attempt=0;attempt<4;attempt++){const r=await fetch('/api/client-migration/'+id,{cache:'no-store'});if(r.ok){encrypted=await readJson<{iv:string;cipher:string}>(r);break;}await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));}
   if(!encrypted)throw new Error('暂时未取得迁移资料，请重试');
   const secret=await crypto.subtle.importKey('raw',decode(key),'AES-GCM',false,['decrypt']),plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:decode(encrypted.iv)},secret,decode(encrypted.cipher));
   const data=JSON.parse(new TextDecoder().decode(plain));if(data.nonce!==nonce||!data.entries||typeof data.entries!=='object')throw new Error('恢复资料校验失败');
@@ -20,9 +22,10 @@ export async function migrateClientState(){
  // The old Worker is retired. Redirecting fresh visitors there blocks all charts.
  if(u.searchParams.get('restore')==='1'){
   u.searchParams.delete('restore');
-  localStorage.setItem(MIGRATED_KEY,'1');
+  writeStored(MIGRATED_KEY,'1');
   history.replaceState(null,'',u.pathname+u.search+u.hash);
  }
- if(localStorage.getItem(MIGRATED_KEY)!=='1')localStorage.setItem(MIGRATED_KEY,'1');
+ // Private mode / full quota must not block the app from booting.
+ try{if(localStorage.getItem(MIGRATED_KEY)!=='1')localStorage.setItem(MIGRATED_KEY,'1');}catch{/* storage unavailable */}
  return true;
 }

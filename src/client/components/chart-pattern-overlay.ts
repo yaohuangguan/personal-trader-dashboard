@@ -23,19 +23,22 @@ export function chartPatternOverlay(element:HTMLDivElement,chart:IChartApi,serie
   for(const time of trades){const index=indices.get(time);if(index===undefined)continue;const px=x(time),hi=series.priceToCoordinate(bars[index].high),lo=series.priceToCoordinate(bars[index].low);if(px===null||hi===null||lo===null)continue;occupied.push({x:px-18,y:hi-31,w:36,h:27},{x:px-18,y:lo+3,w:36,h:27});}
   for(const m of primaries){if(!m.kind.startsWith('stage-')||m.kind==='stage-turning')continue;const i=indices.get(m.time)!;if(riskIndices.some(old=>i-old<10))suppressed.add(m.time);else riskIndices.push(i);}
   const visible=primaries.filter(m=>(!suppressed.has(m.time)||m.time===bars.at(-1)?.time)&&(!range||((indices.get(m.time)??-1)>=range.from&&(indices.get(m.time)??-1)<=range.to)));
-  let count=0;
+  // Candle bodies/wicks count as occupied so labels are not drawn over price; narrow charts show fewer labels.
+  const spacing=Math.max(3,chart.timeScale().options().barSpacing),from=Math.max(0,Math.floor(range?.from??0)),to=Math.min(bars.length-1,Math.ceil(range?.to??bars.length-1));
+  for(let i=from;i<=to;i++){const px=x(bars[i].time),hi=series.priceToCoordinate(bars[i].high),lo=series.priceToCoordinate(bars[i].low);if(px===null||hi===null||lo===null)continue;occupied.push({x:px-spacing*.45,y:hi-2,w:spacing*.9,h:lo-hi+4});}
+  const limit=plotWidth<520?3:6;let count=0;
   for(const mark of visible.sort((a,b)=>Number(b.time===bars.at(-1)?.time)-Number(a.time===bars.at(-1)?.time)||b.priority-a.priority||b.time.localeCompare(a.time))){
-   if(count>=6)break;
+   if(count>=limit)break;
    const index=indices.get(mark.time)!,bar=bars[index],px=x(mark.time),high=series.priceToCoordinate(bar.high),low=series.priceToCoordinate(bar.low);
    if(px===null||high===null||low===null||px<axis+3||px>width-3)continue;
    const label=translate(mark.label)+(mark.provisional?' · '+translate('待收盘'):''),font=11.5,labelWidth=Math.min(plotWidth-10,[...label].reduce((n,c)=>n+(/[\u2e80-\u9fff]/.test(c)?font:font*.6),0)+10),lx=Math.max(axis+3,Math.min(width-labelWidth-3,px-labelWidth/2));
-   const above=mark.position==='above',ys=above?[high-27,high-57,low+11,low+41]:[low+11,low+41,high-27,high-57];
+   const above=mark.position==='above',ys=above?[high-27,high-57,high-87,low+11,low+41,low+71]:[low+11,low+41,low+71,high-27,high-57,high-87];
    const ly=ys.find(y=>y>=4&&y+19<height-4&&!occupied.some(o=>lx<o.x+o.w+8&&lx+labelWidth+8>o.x&&y<o.y+o.h+5&&y+24>o.y));
    if(ly===undefined)continue;
    const colour=mark.direction==='bullish'?(light?'#bc2939':'#f04a55'):mark.direction==='bearish'?(light?'#087c62':'#28cdb6'):(light?'#65707c':'#9ba0aa');
    const g=node('g',{'data-pattern-time':mark.time,'data-pattern-kind':mark.kind});
    g.append(node('circle',{cx:px,cy:Math.max(3,Math.min(height-3,ly<high?high-5:low+5)),r:2.2,fill:colour}));
-   g.append(node('rect',{x:lx,y:ly,width:labelWidth,height:19,rx:3,fill:light?'#fffffff0':'#0c0c0de8'}));
+   g.append(node('rect',{x:lx,y:ly,width:labelWidth,height:19,rx:3,fill:light?'#fffffff0':'#0c0c0de8',stroke:colour,'stroke-opacity':.25}));
    const text=node('text',{x:lx+5,y:ly+13.5,fill:colour,'font-size':font,'font-family':'Inter, Microsoft YaHei, sans-serif'});text.textContent=label;g.append(text);svg.append(g);
    occupied.push({x:lx,y:ly,w:labelWidth,h:19});count++;
   }

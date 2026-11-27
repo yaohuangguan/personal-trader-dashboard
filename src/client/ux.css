@@ -1,0 +1,192 @@
+/* Review fixes (2026-11): error states, layout, semantic theme tokens, touch targets. Loaded last. */
+
+/* ---- Error boundaries ---- */
+.panel-error{display:flex;gap:12px;align-items:center;padding:14px 16px;margin:8px 0;border:1px solid var(--stroke);border-radius:8px;background:var(--panel);color:var(--text)}
+.panel-error>svg{flex:none;color:var(--warm)}
+.panel-error>div{display:grid;gap:2px;min-width:0;flex:1}
+.panel-error b{color:var(--fg);font-size:.9rem}
+.panel-error small{color:var(--muted);font-size:.78rem}
+.panel-error button{display:inline-flex;gap:6px;align-items:center;min-height:40px;padding:6px 12px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel-raised);color:var(--fg);white-space:nowrap}
+.panel-error.is-compact{padding:10px 12px}
+.app-crash{min-height:100vh;display:grid;place-content:center;gap:12px;padding:32px;text-align:center;background:var(--bg);color:var(--text)}
+.app-crash h1{margin:0;color:var(--fg);font-size:1.4rem}
+.app-crash button{justify-self:center;min-height:44px;padding:8px 20px;border:1px solid var(--stroke);border-radius:8px;background:var(--panel-raised);color:var(--fg)}
+
+/* ---- Topbar clocks ---- */
+.time-label time{font-variant-numeric:tabular-nums}
+.time-label .time-secondary{color:var(--muted);font-size:.78rem;font-variant-numeric:tabular-nums}
+
+/* ---- Semantic tokens (both themes) ---- */
+:root{--up:#f04a55;--down:#28cdb6;--surface:var(--panel-raised);--panel-bg:var(--panel);--text-muted:var(--muted);--border:var(--stroke)}
+html[data-theme="light"]{--up:#c52c40;--down:#00806a}
+
+/* ---- Watch rows: portal menu, sparkline, full names ---- */
+.watch-sidebar-row .watch-row-menu{position:absolute;right:4px;bottom:4px;min-width:32px;min-height:28px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;letter-spacing:1px}
+.watch-sidebar-row .watch-row-menu:hover,.watch-sidebar-row .watch-row-menu[aria-expanded="true"]{background:var(--panel-raised);color:var(--fg)}
+.watch-row-popover{position:fixed;z-index:var(--z-popover,1500);width:220px;max-height:min(60dvh,420px);overflow:auto;display:grid;gap:8px;padding:12px;background:var(--panel-raised);color:var(--fg);border:1px solid var(--stroke);border-radius:10px;box-shadow:0 10px 30px #0006}
+.watch-row-popover label{display:flex;align-items:center;gap:8px;min-height:36px}
+.watch-row-popover button{min-height:40px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel);color:var(--fg);font:inherit}
+.watch-spark.is-empty{visibility:hidden}
+.has-watch-sidebar .watch-sidebar-row b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow:hidden;line-height:1.3;word-break:break-word}
+
+/* ---- Chart chrome ---- */
+:root{--chart-label-bg:#0c0c0de8}
+html[data-theme="light"]{--chart-label-bg:#ffffffeb}
+.terminal-readouts{display:flex;align-items:center;flex-wrap:wrap;min-width:0}
+.terminal-readouts .terminal-ohlc{flex:0 1 auto;min-height:30px;padding-top:4px;padding-bottom:4px}
+.terminal-readouts .terminal-pattern-readout{flex:1 1 160px;min-width:0}
+.terminal-status .terminal-older{border:0;background:none;color:var(--fg);text-decoration:underline;padding:0 4px;font:inherit;min-height:24px}
+.chart-attribution{display:block;padding:4px 12px 8px;font-size:.7rem;color:var(--muted);text-align:right}
+.chart-attribution:hover{color:var(--fg);text-decoration:underline}
+.terminal-compact .chart-attribution{padding:2px 4px 0}
+.terminal-expanded-overlay{position:fixed;inset:0;z-index:var(--z-modal,1600);background:#000a}
+.terminal-expanded-dialog{position:fixed;inset:0;z-index:calc(var(--z-modal,1600) + 1);pointer-events:none}
+.terminal-expanded-dialog>.terminal-expanded{pointer-events:auto;z-index:auto}
+
+/* ---- Research desk: chart-first layout ---- */
+.research-desk .desk-center{gap:10px}
+/* Index tape: one line per index instead of two. */
+.research-desk .desk-market-tape{margin-bottom:10px}
+.research-desk .desk-market-tape>button{grid-template-columns:auto auto auto;align-items:baseline;gap:0 10px;padding:7px 14px;min-width:0;white-space:nowrap}
+.research-desk .desk-market-tape>button>span{grid-column:auto}
+.research-desk .desk-market-tape>button>b{font-size:.9rem}
+.research-desk .desk-market-tape small{font-size:.8rem}
+/* One-line research summary above the chart; full panels live below it. */
+.desk-summary-strip{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding:3px;border:1px solid var(--desk-border,var(--stroke));border-radius:7px;background:var(--desk-panel,var(--panel))}
+.desk-summary-strip::-webkit-scrollbar{display:none}
+.desk-summary-strip>button{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;min-height:36px;padding:6px 12px;border:0;border-radius:5px;background:transparent;color:var(--text);white-space:nowrap;font:inherit;text-align:left}
+.desk-summary-strip>button+button{box-shadow:-1px 0 0 var(--desk-border,var(--stroke))}
+.desk-summary-strip>button:hover{background:var(--panel-raised)}
+.desk-summary-strip span{font-size:.75rem;color:var(--muted)}
+.desk-summary-strip b{font-size:.875rem;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums}
+.desk-summary-strip small{margin-left:1px;font-size:.7rem;font-weight:400;color:var(--muted)}
+.desk-summary-strip em{margin-left:6px;font-style:normal;font-weight:500}
+.desk-summary-strip .has-alerts{color:var(--warm)}
+.desk-insights{display:grid;gap:10px;min-width:0}
+.desk-insights>div{scroll-margin-top:96px;min-width:0}
+.desk-insights .daily-trend-panel{margin:0}
+.desk-insights .guide-summary{width:100%}
+/* Live alerts (was inline dark styles). */
+.live-alerts{padding:10px 14px;border:1px solid var(--desk-border,var(--stroke));border-radius:7px;background:var(--desk-panel,var(--panel));color:var(--text)}
+.live-alerts>summary,.live-alerts-head{display:flex;align-items:baseline;gap:10px;min-height:28px;cursor:pointer;flex-wrap:wrap}
+.live-alerts-head{cursor:default}
+.live-alerts b{color:var(--fg)}
+.live-alerts small{color:var(--muted)}
+.live-alerts-count{min-width:20px;padding:0 6px;border-radius:10px;background:var(--panel-raised);color:var(--warm);font-style:normal;font-size:.75rem;text-align:center}
+.live-alert{margin-top:10px;padding-left:10px;border-left:2px solid var(--muted)}
+.live-alert.is-bullish{border-color:var(--up)}.live-alert.is-bullish strong{color:var(--up)}
+.live-alert.is-bearish{border-color:var(--down)}.live-alert.is-bearish strong{color:var(--down)}
+.live-alert p{margin:4px 0;font-size:.9em;line-height:1.6}
+.live-alerts-empty{margin:6px 0;color:var(--muted)}
+/* Quote header (tablet/phone) and key figures moved below the chart. */
+.desk-quote-head{padding:12px 14px}
+.desk-quote-head .desk-security-top{gap:8px}
+.desk-quote-head .desk-security-main{margin-top:8px;gap:10px}
+.desk-quote-stats{padding:12px 14px}
+.desk-quote-stats .desk-stat-grid{padding-top:0}
+.desk-company h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Sticky name bar: zero-height anchor so it overlays content without shifting it; opaque; hidden until the header scrolls away. */
+.desk-sticky-anchor{position:sticky;top:calc(60px + env(safe-area-inset-top,0px));z-index:28;height:0}
+.desk-sticky-anchor .desk-mobile-sticky{position:absolute;inset:0 0 auto 0;margin:0;background:var(--panel);backdrop-filter:none;-webkit-backdrop-filter:none;opacity:0;transform:translateY(-8px);pointer-events:none;visibility:hidden;transition:opacity .15s,transform .15s,visibility .15s}
+.desk-sticky-anchor .desk-mobile-sticky.is-visible{opacity:1;transform:none;pointer-events:auto;visibility:visible}
+@media(max-width:900px){
+ .desk-sticky-anchor{top:calc(60px + env(safe-area-inset-top,0px))}
+ .research-desk .desk-market-tape{margin:0}
+ .desk-quote-head{padding:10px 12px}
+ .desk-quote-head .desk-company h1{font-size:1.15rem}
+ .desk-quote-head .desk-big-price>strong{font-size:1.9rem}
+ .desk-quote-head .desk-security-main{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+ .desk-quote-head .desk-live-actions{flex-wrap:nowrap}
+ html .desk-chart-heading>span{display:none}
+ html .desk-context-tabs>button{padding-top:10px;padding-bottom:10px}
+ html .desk-chart-heading{min-height:40px}
+ html .desk-chart-heading .desk-tabs>button{padding-top:9px;padding-bottom:9px}
+}
+/* Chart toolbars on phones: one scrolling row each instead of 3–4 wrapped rows. */
+@media(max-width:600px){
+ html .desk-chart-card .terminal-toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:8px;padding:6px 8px}
+ html .desk-chart-card .terminal-toolbar::-webkit-scrollbar{display:none}
+ html .desk-chart-card .terminal-range,.desk-chart-card .terminal-tools{flex:none;flex-wrap:nowrap}
+ html .desk-chart-card .terminal-ma-legend{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:2px 12px;padding:5px 10px 0}
+ html .desk-chart-card .terminal-ma-legend::-webkit-scrollbar{display:none}
+ html .desk-chart-card .terminal-ma-legend>button{flex:none;min-width:0}
+ html .desk-chart-card .terminal-readouts{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+ html .desk-chart-card .terminal-readouts .terminal-ohlc{flex-wrap:nowrap;overflow:visible}
+ html .desk-chart-card .terminal-readouts .terminal-pattern-readout{flex:none;padding-left:0}
+}
+.research-desk .desk-market-tape>button{flex:1 0 auto}
+html .desk-chart-card .terminal-ma-legend{gap:2px 14px}
+html .desk-chart-card .terminal-ma-legend>button{flex:0 0 auto;min-width:7.4em}
+@media(max-width:900px){
+ .research-desk .desk-quote-head .desk-security-main{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:space-between;margin-top:6px}
+ .research-desk .desk-quote-head .desk-big-price{gap:10px;min-width:0}
+ /* Icon-only actions on phones; the visible text stays the accessible name. */
+ .research-desk .desk-quote-head .desk-live-actions{flex-wrap:nowrap;gap:4px}
+ .research-desk .desk-quote-head .desk-live-actions button{font-size:0;gap:0;min-width:38px;min-height:38px;padding:0}
+ .research-desk .desk-quote-head .desk-live-actions button svg{width:16px;height:16px}
+}
+@media(max-width:900px){
+ .research-desk .desk-quote-head .desk-security-main>.desk-live-actions{width:auto;flex:none}
+ .research-desk .desk-quote-head .desk-big-price{flex:1 1 auto}
+ .research-desk .desk-quote-head .desk-security-top{flex-wrap:nowrap}
+ .research-desk .desk-quote-head .desk-company{min-width:0;flex:1 1 auto}
+ .research-desk .desk-quote-head .desk-session{flex:none;width:auto}
+}
+
+/* ---- Semantic theme tokens: every light-theme fix below reads these instead of hard-coded dark values ---- */
+:root{--foreground:var(--fg);--heat-up:#df4b5b;--heat-down:#168b76;--heat-base:#191b21;--heat-empty:#2b2e35;--heat-scale:1;--heat-text:#fff;--heat-muted:#ffffffa8;--heat-border:#ffffff0a;--heat-outline:#f4dde1}
+html[data-theme="light"]{--foreground:var(--fg);--heat-up:#d0394b;--heat-down:#0b8a71;--heat-base:#ffffff;--heat-empty:#eceef2;--heat-scale:.5;--heat-text:#141417;--heat-muted:#55555a;--heat-border:#0000000f;--heat-outline:#7a1f2b}
+html .stock-sector-tiles button[aria-pressed=true]{outline-color:var(--heat-outline)}
+/* Price colours: the old #28cdb6 on white was ~2:1. */
+html .terminal-up{color:var(--up)!important}html .terminal-down{color:var(--down)!important}
+/* Dropdown menus used an undefined --foreground (light text on a light menu). */
+html .compact-select-menu{background:var(--surface);color:var(--foreground);border-color:var(--stroke)}
+html .compact-select>button{background:var(--surface);color:var(--fg);border-color:var(--stroke)}
+html[data-theme="light"] .compact-select-menu{box-shadow:0 8px 30px #0002}
+html[data-theme="light"] .desk-chart-card .terminal-tools>button,html[data-theme="light"] .desk-chart-card .terminal-toolbar,html[data-theme="light"] .desk-chart-card .terminal-panel-controls{background:var(--panel)}
+
+/* ---- Screener / signals notices ---- */
+.screen-stale-banner{margin:10px 0;padding:10px 14px;border:1px solid color-mix(in srgb,var(--warm) 55%,transparent);border-left-width:3px;border-radius:7px;background:color-mix(in srgb,var(--warm) 10%,var(--panel));color:var(--fg);font-size:.9rem}
+.screen-notice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0;padding:10px 14px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel);color:var(--text)}
+.screen-notice button{min-height:36px;padding:4px 12px;border:1px solid var(--stroke);border-radius:6px;background:var(--panel-raised);color:var(--fg);font:inherit}
+.desk-stale-tag{font-style:normal;color:var(--warm)}
+
+/* ---- One z-index scale: content < sticky < drawer < floating < toast < modal < popover < tooltip ---- */
+:root{--z-sticky:30;--z-drawer:40;--z-floating:50;--z-toast:1000;--z-modal:1400;--z-modal-nested:1450;--z-popover:1500;--z-tooltip:1600}
+.screen-running-indicator{z-index:var(--z-floating)!important}
+.pwa-toast-stack,.pwa-update-banner,.pwa-state-message,.desk-alert-toast{z-index:var(--z-toast)!important}
+.reader-backdrop,.search-overlay,.settings-overlay,.pwa-help-backdrop,.desk-dialog-overlay,.projection-dialog-overlay,.snapshot-overlay,.terminal-expanded-overlay{z-index:var(--z-modal)!important}
+.command-modal,.settings-modal,.pwa-help-modal,.desk-dialog,.projection-explanation-dialog,.snapshot-dialog,.terminal-expanded-dialog{z-index:calc(var(--z-modal) + 1)!important}
+.watch-transfer-overlay{z-index:var(--z-modal-nested)!important}.watch-transfer-dialog{z-index:calc(var(--z-modal-nested) + 1)!important}
+.compact-select-menu,.watch-row-popover{z-index:var(--z-popover)!important}
+.desk-tooltip{z-index:var(--z-tooltip)!important}
+
+/* ---- Dates and numbers never split across lines ---- */
+time,.desk-security-footer span,.desk-stat-grid b,.desk-chart-source span,.terminal-ohlc span,.terminal-ohlc strong,.screen-overview b,.signal-status b,.daily-trend-panel summary span,.watch-price,.desk-big-price b,.desk-big-price span{white-space:nowrap}
+.guide-summary strong,.guide-summary b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.guide-summary strong{display:block}
+
+/* ---- iOS standalone: notch / home indicator (viewport-fit=cover) ---- */
+.topbar{padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px;padding-left:max(13px,env(safe-area-inset-left,0px));padding-right:max(13px,env(safe-area-inset-right,0px));height:auto;min-height:calc(60px + env(safe-area-inset-top,0px))}
+.sidebar{padding-top:max(20px,env(safe-area-inset-top,0px));padding-bottom:max(20px,env(safe-area-inset-bottom,0px))}
+.pwa-toast-stack{bottom:max(16px,env(safe-area-inset-bottom,0px))!important}
+.desk-alert-toast{bottom:max(16px,env(safe-area-inset-bottom,0px))!important}
+.main{padding-bottom:max(18px,env(safe-area-inset-bottom,0px))}
+@media(max-width:600px){.reader-modal{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}}
+
+/* ---- Touch targets ≥40–44px on coarse pointers ---- */
+@media (pointer:coarse){
+ .icon-button,.desk-icon,.watch-tools>summary,.news-save{min-width:44px;min-height:44px}
+ .watch-sidebar-row .watch-row-menu{min-width:44px;min-height:40px;right:0;bottom:0}
+ .terminal-range button,.terminal-tools>button,.terminal-panel-controls button,.desk-live-actions button,.compact-select>button{min-height:40px}
+ .terminal-panel-controls button{min-width:44px}
+ .terminal-panel-controls label{min-height:40px;display:inline-flex;align-items:center;gap:6px}
+ .terminal-ma-legend>button{min-height:36px}
+ .desk-tabs>button,.screen-mode-tabs button,.chip,.desk-summary-strip>button{min-height:44px}
+ .desk-sector-row,.desk-news-item,.desk-watch-filters button{min-height:44px}
+ .watch-group-bar select,.watch-sidebar-search{min-height:44px}
+ input[type=checkbox]{min-width:20px;min-height:20px}
+}
+
+/* ---- Lazy view fallback ---- */
+.view-loading{display:flex;align-items:center;justify-content:center;gap:10px;min-height:40vh;color:var(--muted)}

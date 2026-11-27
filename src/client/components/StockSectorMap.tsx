@@ -5,7 +5,8 @@ import {t} from '../preferences';
 import './StockSectorMap.css';
 
 const pct=(value:number|null)=>value===null?'—':(value>=0?'+':'')+value.toFixed(2)+'%';
-const heat=(value:number|null)=>value===null?'#2b2e35':`color-mix(in srgb, ${value>=0?'#df4b5b':'#168b76'} ${Math.min(82,25+Math.abs(value)*6)}%, #191b21)`;
+// Theme tokens: tile base/text and a strength scale keep labels readable on both themes.
+const heat=(value:number|null)=>value===null?'var(--heat-empty)':`color-mix(in srgb, ${value>=0?'var(--heat-up)':'var(--heat-down)'} calc(${Math.min(82,25+Math.abs(value)*6)}% * var(--heat-scale)), var(--heat-base))`;
 export default function StockSectorMap({symbol,name,boards,selected,onBoard,onStock,peers,loading,error,memberLoading,memberError,onRetry}:{symbol:string;name?:string;boards:Sector[];selected?:Sector;onBoard:(code:string)=>void;onStock:(symbol:string)=>void;peers:PeersPayload|null;loading:boolean;error:string;memberLoading:boolean;memberError:string;onRetry:()=>void}){
  const [query,setQuery]=useState(''),[expanded,setExpanded]=useState(false);
  const matching=useMemo(()=>boards.filter(board=>!query||board.name.toLowerCase().includes(query.toLowerCase())),[boards,query]);
