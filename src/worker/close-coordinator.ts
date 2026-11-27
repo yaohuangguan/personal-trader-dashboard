@@ -1,4 +1,5 @@
-import {ResearchScreen} from './research-screen';
+import {ResearchScreen,statusView} from './research-screen';
+import {screenJobDecision} from './screen-job';
 import {watchVault} from './watch-sync';
 import {accountStore} from './account';
 import {beijingParts} from '../shared/monitor';
@@ -24,8 +25,19 @@ export class CloseCoordinator{
  async fetch(req:Request){const action=new URL(req.url).pathname.slice(1),s=this.state.storage;
   if(action==='cloud-watch')return this.state.blockConcurrencyWhile(()=>watchVault(req,s));
   if(action==='account')return this.state.blockConcurrencyWhile(()=>accountStore(req,s));
-  if(action==='research-status'){const job=await s.get<import('./research-screen').ResearchJob>('research:v1:job'),url=new URL(req.url),same=job&&url.searchParams.get('id')===job.id&&Number(url.searchParams.get('count')??-1)===job.candidateCount;return json(await new ResearchScreen(s).read(!same));}
-  if(action==='research-start'&&req.method==='POST'){const body=await req.json() as {retry?:boolean};return this.state.blockConcurrencyWhile(async()=>json(await new ResearchScreen(s).start(body.retry===true)));}
+  if(action==='research-status'){const job=await s.get<import('./research-screen').ResearchJob>('research:v1:job'),p=new URL(req.url).searchParams;return json(await new ResearchScreen(s).read(statusView(job,{id:p.get('id'),count:p.get('count'),since:p.get('since')})));}
+  if(action==='research-start'&&req.method==='POST'){
+   const body=await req.json() as {retry?:boolean;symbols?:string[];authorized?:boolean};
+   return this.state.blockConcurrencyWhile(async()=>{
+    const screen=new ResearchScreen(s),job=await s.get<import('./research-screen').ResearchJob>('research:v1:job');
+    const decision=screenJobDecision(job,{authorized:body.authorized===true,retry:body.retry===true,symbols:Array.isArray(body.symbols)?body.symbols:undefined},Date.now(),await s.get<number>('research:v1:retry-at'));
+    if(decision.kind==='unauthorized')return json({error:'登录后可发起全市场扫描',code:'AUTH_REQUIRED'},401);
+    if(decision.kind==='rate-limited')return json({error:'失败标的重试过于频繁，请稍后再试',code:'RATE_LIMITED',retryAfter:decision.retryAfter},429);
+    if(decision.kind==='existing'){if(job&&['universe','quotes','cache','history','screening'].includes(job.phase)&&!await s.getAlarm())await s.setAlarm(Date.now()+100);return json(await screen.read());}
+    if(decision.kind==='retry'){await s.put('research:v1:retry-at',Date.now());return json(await screen.start(true,decision.symbols));}
+    return json(await screen.start(false));
+   });
+  }
   if(action==='status'){const m=await s.get<CloseManifest>('close:latest');return json({phase:m?'complete':'closed',registered:m?.total||0,total:m?.total||0,pages:0,universeComplete:!!m?.complete,countMatches:!!m?.complete,shards:0,ready:m?.checked||0,checked:m?.checked||0,freshShards:0,lastRun:m?.generatedAt||null,lastQuoteAt:m?.date||null,failures:m?.failed||0,failureSample:m?.failureSample||[],events:[],source:m?.source||'共享收盘任务',notice:'每个交易日15:20北京时间启动一次收盘筛选，完成后合并推送。盘中不轮询行情；非交易日以来源日期跳过。',active:await this.leaseStore.active(),date:m?.date,report:m} satisfies FullMarketStatus);}
   if(action==='manifest')return json(await this.manifest());
   if(action==='results')return this.results(new URL(req.url).searchParams.get('view'));

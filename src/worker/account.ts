@@ -107,6 +107,13 @@ export async function accountStore(req:Request,s:Storage):Promise<Response>{
  return json({error:'Unknown operation'},400);
 }
 
+/** Resolves an account session token through the registry; null when invalid or expired. */
+export async function verifyAccountSession(ns:MonitorNamespace,token:string):Promise<PublicAccount|null>{
+ if(!validToken(token))return null;
+ const r=await ns.get(ns.idFromName('accounts:v1')).fetch(new Request('https://internal/account',{method:'POST',body:JSON.stringify({op:'session',token})}));
+ if(!r.ok)return null;
+ return (await r.json() as {account?:PublicAccount}).account??null;
+}
 const attempts=new Map<string,{at:number;count:number}>();
 function limited(ip:string,kind:string,max:number,windowMs:number){
  const key=kind+':'+ip,old=attempts.get(key),v=old&&Date.now()-old.at<windowMs?old:{at:Date.now(),count:0};

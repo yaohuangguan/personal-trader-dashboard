@@ -8,7 +8,8 @@ import {chartPayload} from './chart-payload';
 import {computeCache,studySession} from './compute-cache';
 import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
-import {accountRoute} from './account';
+import {accountRoute,verifyAccountSession} from './account';
+import {parseScreenJobBody} from './screen-job';
 import {adminRoute} from './admin';
 import {watchShareRoute} from './watch-share';
 import {indicatorMarks} from '../shared/indicator-marks';
@@ -20,7 +21,7 @@ import {evaluateStrategyHistory} from '../shared/strategy-backtest';
 import {marketContext} from '../shared/market-context';
 import {scannerCall,scannerFetch} from './full-market-scanner';
 import {closeReportRoute} from './close-report-route';
-import {timingSafeEqual,bearer,type WaitUntil} from './http';
+import {timingSafeEqual,bearer,finalizeApiResponse,type WaitUntil} from './http';
 import {level2,type Level2Env} from './level2';
 import {shareRoute,type ShareStore} from './shares';
 import {clientMigrationRoute} from './client-migration';
@@ -381,6 +382,19 @@ async function inAppFilingDocument(symbol:string,form:string,date:string,env:Env
  return {available:content.length>0,content,title:symbol+' · '+form,provider:'SEC EDGAR',
   notice:'SEC 官方披露文本摘录（最多5万字符）；表格和脚注格式可能丢失，请谨慎解读。',sourceUrl:filings.sourceUrl,publishedAt:date};
 }
+/** Shared full-market job. GET is public; POST follows the contract in screen-job.ts. */
+async function screenJobRoute(request:Request,env:Env):Promise<Response>{
+ const ns=env.MARKET_SCANNER;if(!ns)return json({error:'扫描任务存储暂不可用'},503);
+ const noStore=(r:Response)=>new Response(r.body,{status:r.status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+ const url=new URL(request.url);
+ if(request.method==='GET'){const p=url.searchParams,query=new URLSearchParams();for(const k of ['id','count','since']){const v=p.get(k);if(v!==null)query.set(k,v.slice(0,40));}return noStore(await scannerFetch(ns,'research-status'+(query.size?'?'+query:'')));}
+ if(request.method!=='POST')return json({error:'Method not allowed'},405);
+ const parsed=parseScreenJobBody(await request.text());if('error' in parsed)return json({error:parsed.error,code:'BAD_REQUEST'},400);
+ // Only a request that may need to create a job checks credentials; retries are anonymous.
+ const token=bearer(request);let authorized=false;
+ if(token&&!parsed.retry)authorized=!!env.SCREEN_JOB_TOKEN&&await timingSafeEqual(token,env.SCREEN_JOB_TOKEN)||!!await verifyAccountSession(ns,token).catch(()=>null);
+ return noStore(await scannerFetch(ns,'research-start',{retry:parsed.retry,symbols:parsed.symbols,authorized}));
+}
 async function handle(req:Request,env:Env):Promise<Response>{
  const url=new URL(req.url),p=url.pathname;
  if(p==='/api/admin/ingest'){
@@ -519,8 +533,12 @@ async function handle(req:Request,env:Env):Promise<Response>{
  }
  return json({error:'Unknown API path'},404);
 }
-export default {
- async fetch(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
+/** Every /api/* response leaves through the error-envelope normaliser (no-store and Retry-After on errors). */
+async function fetchHandler(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
+ const response=await route(request,env,ctx);
+ return new URL(request.url).pathname.startsWith('/api/')?finalizeApiResponse(response):response;
+}
+async function route(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
   try {
    const incoming=new URL(request.url);
    if(['/sw.js','/version.json'].includes(incoming.pathname)&&env.ASSETS){const resource=await env.ASSETS.fetch(request),response=new Response(resource.body,resource);response.headers.set('cache-control','no-store, max-age=0');if(incoming.pathname==='/sw.js')response.headers.set('service-worker-allowed','/');return response;}
@@ -562,12 +580,7 @@ export default {
    const share=await shareRoute(request,env.SHARES,env.PUBLIC_ORIGIN);if(share)return share;
    const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
    const closeUrl=new URL(request.url);
-   if(closeUrl.pathname==='/api/desk/screen-job'){
-    if(!env.MARKET_SCANNER)return json({error:'扫描任务存储暂不可用'},503);
-    if(request.method==='GET'){const response=json(await scannerCall(env.MARKET_SCANNER,'research-status'+(closeUrl.search||'')));response.headers.set('cache-control','no-store');return response;}
-    if(request.method==='POST'){const body=await request.json() as {retry?:boolean};const response=json(await scannerCall(env.MARKET_SCANNER,'research-start',{retry:body.retry===true}));response.headers.set('cache-control','no-store');return response;}
-    return json({error:'Method not allowed'},405);
-   }
+   if(closeUrl.pathname==='/api/desk/screen-job')return screenJobRoute(request,env);
    if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET')return closeReportRoute(request,env.MARKET_SCANNER,ctx);
    if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||!await timingSafeEqual(bearer(request),env.SCREEN_JOB_TOKEN))return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);let body:unknown;try{body=JSON.parse(raw);}catch{return json({error:'Invalid JSON',code:'BAD_JSON'},400);}const result=await scannerFetch(env.MARKET_SCANNER,action!,body);return new Response(result.body,{status:result.status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
    if(['/api/desk/insight','/api/desk/trend'].includes(incoming.pathname)&&request.method==='GET'){
@@ -599,8 +612,10 @@ export default {
    if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v1:'+studySession()+':'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env));
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
-  }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details))return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:new Date(new Date().setUTCHours(24,0,0,0)).toISOString()},503);return json({error:'Unexpected server error',details},500);}
- },
+  }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details)){const retryAt=new Date(new Date().setUTCHours(24,0,0,0));return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:retryAt.toISOString(),retryAfter:Math.max(60,Math.ceil((retryAt.getTime()-Date.now())/1000))},503);}return json({error:'Unexpected server error',code:'INTERNAL',details},500);}
+}
+export default {
+ fetch:fetchHandler,
  async scheduled(controller:{cron?:string}|undefined,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){
   // The close cron only dispatches the GitHub closing workflow; it is a no-op without GITHUB_DISPATCH_TOKEN.
   if(controller?.cron===CLOSE_DISPATCH_CRON){ctx.waitUntil(dispatchCloseWorkflow(env).then(r=>console.log('Close workflow dispatch:',JSON.stringify(r))));return;}
