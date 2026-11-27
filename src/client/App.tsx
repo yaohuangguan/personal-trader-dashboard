@@ -8,31 +8,34 @@ import ResizeRail,{cssVarPreview,usePanelWidth} from './components/ResizeRail';
 const watchPreview=cssVarPreview('.app-shell','--watch-rail');
 import type {CSSProperties} from 'react';
 import WatchSidebar from './components/WatchSidebar';
-import SignalCenter from './components/SignalCenter';
 import {t as uiText} from './preferences';
 import Settings from './components/Settings';
-import MarketOverview from './components/MarketOverview';
-import EarningsBoard from './components/EarningsBoard';
 import {usePreferences} from './preferences';
 import * as Dialog from '@radix-ui/react-dialog';
-import ScreenerWorkspace from './components/ScreenerWorkspace';
-import ResearchDesk, { FlashNewsDesk } from './components/ResearchDesk';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Bookmark, BookmarkCheck, CalendarDays,
  Check, ChevronRight, Clock3, Command, ExternalLink, FileText, Globe2, Layers3, BookOpen,
  LayoutDashboard, LineChart, LoaderCircle, Menu, Newspaper, Plus, Radar, RefreshCw,
  Star, Search, ShieldAlert, SlidersHorizontal, Target, TrendingUp, X, Zap
 } from 'lucide-react';
-import MarketChart from './components/MarketChart';
-import TradingViewWidget from './components/TradingViewWidget';
 import {useReader} from './components/InAppReader';
 import PWAControls from './components/PWAControls';
-import { OverviewIntelStrip, IntelHistory, StockResearchExtras } from './components/IntelPanels';
 import { analyzeGuide } from '../shared/guide-analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
 import type { MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
 import {formatMarketTime,relativeAge,validDate,zoneClock,ZONE_LABELS} from './time-format';
+// Views load on demand (React.lazy); the shell, sidebar and dialogs stay in the main chunk.
+const SignalCenter=lazy(()=>import('./components/SignalCenter'));
+const MarketOverview=lazy(()=>import('./components/MarketOverview'));
+const EarningsBoard=lazy(()=>import('./components/EarningsBoard'));
+const ScreenerWorkspace=lazy(()=>import('./components/ScreenerWorkspace'));
+const ResearchDesk=lazy(()=>import('./components/ResearchDesk'));
+const FlashNewsDesk=lazy(()=>import('./components/ResearchDesk').then(m=>({default:m.FlashNewsDesk})));
+const MarketChart=lazy(()=>import('./components/MarketChart'));
+const TradingViewWidget=lazy(()=>import('./components/TradingViewWidget'));
+const OverviewIntelStrip=lazy(()=>import('./components/IntelPanels').then(m=>({default:m.OverviewIntelStrip})));
+const IntelHistory=lazy(()=>import('./components/IntelPanels').then(m=>({default:m.IntelHistory})));
 
 type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved'|'screener'|'signals';
 const NAV:[View,string,typeof Globe2][]=[
@@ -54,6 +57,7 @@ function matchSectors(item:NewsItem){
 }
 function sourceDomain(url:string):string{try{return new URL(url).hostname.replace('www.','');}catch{return '';}}
 
+function ViewFallback(){return <div className="view-loading" role="status"><LoaderCircle size={22} className="spin"/><span>{uiText('正在加载页面…')}</span></div>;}
 function Logo(){return <div className="brand-mark"><Activity size={22} strokeWidth={2.8}/></div>;}
 function SectionHeading({eyebrow,title,right,className=''}:{eyebrow:string;title:string;right?:React.ReactNode;className?:string}){
  return <div className={'section-heading '+className}><div><div className="eyebrow">{uiText(eyebrow)}</div><h2>{uiText(title)}</h2></div>{uiText(right)}</div>;
@@ -236,8 +240,8 @@ export default function App(){
      <button className="search-trigger" onClick={()=>{setSearchOpen(true);searchRef.current?.focus();}}><Search size={16}/><span>{uiText("搜索全球股票 / 代码")}</span><kbd>⌘ K</kbd></button>
     </div>
    </header>
-   <main className={'main '+(view==='research'?'desk-main':'')}><ErrorBoundary label={NAV.find(n=>n[0]===view)?.[1]} resetKey={view+':'+selected}>
-    {uiText(<ScreenerWorkspace active={view==='screener'} onOpen={()=>changeView('screener')} watchlist={watchlist} onStock={chooseSymbol} onWatch={toggleWatch}/>)}
+   <main className={'main '+(view==='research'?'desk-main':'')}><ErrorBoundary label={NAV.find(n=>n[0]===view)?.[1]} resetKey={view+':'+selected}><Suspense fallback={<ViewFallback/>}>
+    {uiText(<Suspense fallback={view==='screener'?<ViewFallback/>:null}><ScreenerWorkspace active={view==='screener'} onOpen={()=>changeView('screener')} watchlist={watchlist} onStock={chooseSymbol} onWatch={toggleWatch}/></Suspense>)}
     {uiText(view==='overview'&&<>
      <section className="page-heading">
       <div><div className="eyebrow"><span className="eyebrow-accent">●</span> YOUR GLOBAL INTELLIGENCE TERMINAL</div><h1>{uiText("全局情报")}<span className="title-dim">{uiText("，尽在掌握。")}</span></h1><p>{uiText("从世界事件到产业链，从上市公司披露到股价信号。先看事实，再判断影响。")}</p></div>
@@ -325,7 +329,7 @@ export default function App(){
      <p className="section-subtitle">{uiText("快速保存值得二次验证的原始报道；只存当前浏览器，不会上传你的研究列表。")}</p>
      <div className="panel article-panel">{uiText(saved.length?saved.map(x=><NewsRow key={x.url} item={x} save={toggleSave} saved/>):<Blank title={uiText("还没有收藏情报")} detail={uiText("打开全球快讯，点击书签图标保存重要新闻")}/>)}</div>
     </>)}
-    </ErrorBoundary><footer className="app-footer"><span>观澜 · MARKET ATLAS <i>·</i> PERSONAL RESEARCH</span><span>{uiText("公开来源研究 · 非实时交易数据 · 非投资建议")}</span></footer>
+    </Suspense></ErrorBoundary><footer className="app-footer"><span>观澜 · MARKET ATLAS <i>·</i> PERSONAL RESEARCH</span><span>{uiText("公开来源研究 · 非实时交易数据 · 非投资建议")}</span></footer>
    </main>
   </div>
   <Dialog.Root open={searchOpen} onOpenChange={setSearchOpen}><Dialog.Portal><Dialog.Overlay className="search-overlay"/>

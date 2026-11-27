@@ -30,5 +30,6 @@
   "请求过于频繁，请稍后重试": "Too many requests, please try again later",
   "网络连接失败，请检查网络后重试": "Network error, please check your connection and retry",
   "数据源返回异常响应，请稍后重试": "The data source returned an invalid response, please retry later",
-  "数据暂不可用（HTTP {status}）": "Data unavailable (HTTP {status})"
+  "数据暂不可用（HTTP {status}）": "Data unavailable (HTTP {status})",
+  "正在加载页面…": "Loading page…"
 }

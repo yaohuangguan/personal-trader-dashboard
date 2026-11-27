@@ -187,3 +187,6 @@ time,.desk-security-footer span,.desk-stat-grid b,.desk-chart-source span,.termi
  .watch-group-bar select,.watch-sidebar-search{min-height:44px}
  input[type=checkbox]{min-width:20px;min-height:20px}
 }
+
+/* ---- Lazy view fallback ---- */
+.view-loading{display:flex;align-items:center;justify-content:center;gap:10px;min-height:40vh;color:var(--muted)}

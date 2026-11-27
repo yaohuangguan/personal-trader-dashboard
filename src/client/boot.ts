@@ -14,5 +14,5 @@ void(async()=>{
  if(!ready)return;
  // English mode: load the dictionary chunk first so the first paint is already translated.
  const dictionary=storedLocale()==='en'?loadDictionary():Promise.resolve(true);
- try{await dictionary;await import('./main');startWatchSync();}catch{failed('页面资源未加载完成，请联网后检查更新。自选与分组仍保留。',()=>{void checkUpdate().then(applyUpdate);});}
+ try{await dictionary;await import('./main');startWatchSync();}catch(error){console.error('[atlas] boot failed',error);failed('页面资源未加载完成，请联网后检查更新。自选与分组仍保留。',()=>{void checkUpdate().then(applyUpdate);});}
 })();
