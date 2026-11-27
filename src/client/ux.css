@@ -86,11 +86,11 @@ html[data-theme="light"]{--chart-label-bg:#ffffffeb}
 .desk-quote-stats .desk-stat-grid{padding-top:0}
 .desk-company h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* Sticky name bar: zero-height anchor so it overlays content without shifting it; opaque; hidden until the header scrolls away. */
-.desk-sticky-anchor{position:sticky;top:calc(72px + env(safe-area-inset-top,0px));z-index:28;height:0}
+.desk-sticky-anchor{position:sticky;top:calc(60px + env(safe-area-inset-top,0px));z-index:28;height:0}
 .desk-sticky-anchor .desk-mobile-sticky{position:absolute;inset:0 0 auto 0;margin:0;background:var(--panel);backdrop-filter:none;-webkit-backdrop-filter:none;opacity:0;transform:translateY(-8px);pointer-events:none;visibility:hidden;transition:opacity .15s,transform .15s,visibility .15s}
 .desk-sticky-anchor .desk-mobile-sticky.is-visible{opacity:1;transform:none;pointer-events:auto;visibility:visible}
 @media(max-width:900px){
- .desk-sticky-anchor{top:calc(66px + env(safe-area-inset-top,0px))}
+ .desk-sticky-anchor{top:calc(60px + env(safe-area-inset-top,0px))}
  .research-desk .desk-market-tape{margin:0}
  .desk-quote-head{padding:10px 12px}
  .desk-quote-head .desk-company h1{font-size:1.15rem}
@@ -160,3 +160,30 @@ html[data-theme="light"] .desk-chart-card .terminal-tools>button,html[data-theme
 .watch-transfer-overlay{z-index:var(--z-modal-nested)!important}.watch-transfer-dialog{z-index:calc(var(--z-modal-nested) + 1)!important}
 .compact-select-menu,.watch-row-popover{z-index:var(--z-popover)!important}
 .desk-tooltip{z-index:var(--z-tooltip)!important}
+
+/* ---- Dates and numbers never split across lines ---- */
+time,.desk-security-footer span,.desk-stat-grid b,.desk-chart-source span,.terminal-ohlc span,.terminal-ohlc strong,.screen-overview b,.signal-status b,.daily-trend-panel summary span,.watch-price,.desk-big-price b,.desk-big-price span{white-space:nowrap}
+.guide-summary strong,.guide-summary b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.guide-summary strong{display:block}
+
+/* ---- iOS standalone: notch / home indicator (viewport-fit=cover) ---- */
+.topbar{padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px;padding-left:max(13px,env(safe-area-inset-left,0px));padding-right:max(13px,env(safe-area-inset-right,0px));height:auto;min-height:calc(60px + env(safe-area-inset-top,0px))}
+.sidebar{padding-top:max(20px,env(safe-area-inset-top,0px));padding-bottom:max(20px,env(safe-area-inset-bottom,0px))}
+.pwa-toast-stack{bottom:max(16px,env(safe-area-inset-bottom,0px))!important}
+.desk-alert-toast{bottom:max(16px,env(safe-area-inset-bottom,0px))!important}
+.main{padding-bottom:max(18px,env(safe-area-inset-bottom,0px))}
+@media(max-width:600px){.reader-modal{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}}
+
+/* ---- Touch targets ≥40–44px on coarse pointers ---- */
+@media (pointer:coarse){
+ .icon-button,.desk-icon,.watch-tools>summary,.news-save{min-width:44px;min-height:44px}
+ .watch-sidebar-row .watch-row-menu{min-width:44px;min-height:40px;right:0;bottom:0}
+ .terminal-range button,.terminal-tools>button,.terminal-panel-controls button,.desk-live-actions button,.compact-select>button{min-height:40px}
+ .terminal-panel-controls button{min-width:44px}
+ .terminal-panel-controls label{min-height:40px;display:inline-flex;align-items:center;gap:6px}
+ .terminal-ma-legend>button{min-height:36px}
+ .desk-tabs>button,.screen-mode-tabs button,.chip,.desk-summary-strip>button{min-height:44px}
+ .desk-sector-row,.desk-news-item,.desk-watch-filters button{min-height:44px}
+ .watch-group-bar select,.watch-sidebar-search{min-height:44px}
+ input[type=checkbox]{min-width:20px;min-height:20px}
+}
