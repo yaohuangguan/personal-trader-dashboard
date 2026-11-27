@@ -336,7 +336,7 @@ export async function stockNews(raw: string, signal?:AbortSignal) {
   if (begin < 0 || end <= begin) throw new Error('个股新闻响应格式异常');
   const data = JSON.parse(text.slice(begin + 1, end)) as { result?: { cmsArticleWebOld?: Row[] } };
   if (!Array.isArray(data.result?.cmsArticleWebOld)) throw new Error('来源未提供个股新闻，可能暂时限流');
-  return { ...stamp('东方财富个股新闻检索', url), warnings: [], sources: ['东方财富'], items: data.result.cmsArticleWebOld.map(r => ({ id: 'em-' + String(r.code || r.url), title: clean(r.title), summary: clean(r.content).slice(0, 260), publishedAt: String(r.date || '').replace(' ', 'T') + '+08:00', source: clean(r.mediaName) || '东方财富', url: String(r.url || ''), category: 'all', originalTitle: clean(r.title) })) };
+  return { ...stamp('东方财富个股新闻检索', url), warnings: [], sources: ['东方财富'], items: data.result.cmsArticleWebOld.map(r => ({ id: 'em-' + String(r.code || r.url), title: clean(r.title), summary: clean(r.content).slice(0, 260), publishedAt: /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(String(r.date || '')) ? String(r.date).replace(' ', 'T') + '+08:00' : null, source: clean(r.mediaName) || '东方财富', url: String(r.url || ''), category: 'all', originalTitle: clean(r.title) })) };
 }
 
 

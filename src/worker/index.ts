@@ -32,7 +32,7 @@ import {guideScore} from '../shared/guide-score';
 import {analyzeGuide,analyzeGuideResonance} from '../shared/guide-analysis';
 import {stockCharacter} from '../shared/stock-character';
 import {screenCandidate} from '../shared/screening';
-import {history as deskHistory,quotes as deskQuotes} from './desk-data';
+import {history as deskHistory,quotes as deskQuotes,memo as deskMemo,stockNews} from './desk-data';
 export {CloseCoordinator as MarketScanner} from './close-coordinator';
 import {monitorRoute,type MonitorNamespace} from './signal-monitor';
 export {CloseSignalMonitor as SignalMonitor} from './close-monitor';
@@ -47,7 +47,6 @@ import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalend
 interface Env extends Level2Env, DispatchEnv { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
-const pending=new Map<string,Promise<unknown>>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
 /** JSON response that names the trade date its data covers, for the compute cache's closed-session TTL. */
 const dated=(data:unknown)=>{const response=json(data),day=dataDateOf(data);if(day)response.headers.set(DATA_DATE_HEADER,day);return response;};
@@ -56,11 +55,19 @@ const num=(v:unknown)=>{const n=Number(v);return Number.isFinite(n)?n:0;};
 function withTimeout(url:string, opts:RequestInit={},timeout=9000):Promise<Response>{
   return fetch(url,{...opts,signal:AbortSignal.timeout(timeout),headers:{'accept':'application/json, text/plain, text/xml, application/xml, */*',...(opts.headers||{})}});
 }
+/**
+ * Isolate memory cache of completed values only. In-flight promises are not shared across
+ * requests: a Workers request's I/O belongs to that request, and a cancelled request could leave
+ * other waiters hanging or failing with "Cannot perform I/O on behalf of a different request".
+ */
 async function cached<T>(key:string,ttl:number,fn:()=>Promise<T>):Promise<T>{
   const value=memory.get(key);if(value&&value.until>Date.now())return value.body as T;
-  const current=pending.get(key);if(current)return current as Promise<T>;
-  const task=(async()=>{const result=await fn();if(memory.size>250)memory.clear();memory.set(key,{until:Date.now()+ttl*1000,body:result});return result;})();pending.set(key,task);
-  try{return await task;}finally{pending.delete(key);}
+  const result=await fn();if(memory.size>250)memory.clear();memory.set(key,{until:Date.now()+ttl*1000,body:result});return result;
+}
+/** Resolves to `fallback` when `task` has not settled within `ms` (the task keeps its own timeouts). */
+function withDeadline<T>(task:Promise<T>,ms:number,fallback:()=>T):Promise<T>{
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  return Promise.race([task,new Promise<T>(resolve=>{timer=setTimeout(()=>resolve(fallback()),ms);})]).finally(()=>clearTimeout(timer));
 }
 function csv(text:string):Candle[]{
  const lines=text.trim().split(/\r?\n/),candles:Candle[]=[];
@@ -218,21 +225,14 @@ const publicRss = {
  technology:'https://feeds.bbci.co.uk/news/technology/rss.xml',
  cnbc:'https://www.cnbc.com/id/100003114/device/rss/rss.html'
 } as const;
-const pendingRss = new Map<string,Promise<NewsItem[]>>();
 async function publicFeed(key:keyof typeof publicRss):Promise<NewsItem[]>{
- const source=publicRss[key],cacheKey='public-rss:'+key;
- let job=pendingRss.get(cacheKey);
- if(!job){
-  job=cached(cacheKey,240,async()=>{
-   const response=await withTimeout(source,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},10000);
-   if(!response.ok)throw new Error(key+' RSS HTTP '+response.status);
-   const xml=await response.text();if(!xml.includes('<rss'))throw new Error(key+' feed did not return RSS');
-   return parseFeed(xml,'world',key==='cnbc'?'CNBC':'BBC News');
-  });
-  pendingRss.set(cacheKey,job);
-  void job.finally(()=>pendingRss.delete(cacheKey)).catch(()=>{});
- }
- return job;
+ const source=publicRss[key];
+ return cached('public-rss:'+key,240,async()=>{
+  const response=await withTimeout(source,{headers:{accept:'application/rss+xml, application/xml, text/xml'}},10000);
+  if(!response.ok)throw new Error(key+' RSS HTTP '+response.status);
+  const xml=await response.text();if(!xml.includes('<rss'))throw new Error(key+' feed did not return RSS');
+  return parseFeed(xml,'world',key==='cnbc'?'CNBC':'BBC News');
+ });
 }
 async function fallbackPublicLane(category:string):Promise<NewsItem[]>{
  const keys:(keyof typeof publicRss)[] = category==='world'
@@ -288,9 +288,11 @@ async function fetchNewsLane(category:string):Promise<NewsItem[]>{
  }catch{}
  throw new Error(category+' feed unavailable: '+firstError);
 }
-async function news(category:string):Promise<NewsPayload>{
+/** deadlineMs bounds the whole fan-out: lanes still running after it are reported as warnings. */
+async function news(category:string,deadlineMs?:number):Promise<NewsPayload>{
  const keys=category==='all'?Object.keys(feeds):[category];if(!keys.every(k=>feeds[k]))throw new Error('Unknown news category');
- const results=await Promise.allSettled(keys.map(k=>cached('feed:'+k,180,()=>fetchNewsLane(k))));
+ const lane=(k:string)=>cached('feed:'+k,180,()=>fetchNewsLane(k));
+ const results=await Promise.allSettled(keys.map(k=>deadlineMs?withDeadline(lane(k),deadlineMs,()=>{throw new Error('timed out after '+deadlineMs+'ms');}):lane(k)));
  const warnings:string[]=[],items:NewsItem[]=[];
  for(let i=0;i<results.length;i++){
   const r=results[i];if(r.status==='fulfilled')items.push(...r.value);
@@ -514,13 +516,20 @@ async function handle(req:Request,env:Env):Promise<Response>{
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');
   if(!validSymbol(symbol))return json({error:'Invalid ticker'},400);
   try{
-   let source:NewsItem[]=[];
+   // A-shares: English headline matching can never find Chinese companies. Use the same
+   // Eastmoney stock-news index as /api/desk/stock-news, in the shape this endpoint returns.
+   if(/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)){
+    const feed=await deskMemo('stock-news'+symbol,120,()=>stockNews(symbol,AbortSignal.timeout(6000)));
+    return json({items:feed.items.slice(0,25),source:'index',notice:'东方财富个股新闻检索（与个股资讯同源）；相关性以来源检索为准，需核验是否为公司实质利好。',sources:feed.sources,fetchedAt:feed.fetchedAt});
+   }
+   let source:NewsItem[]=[],origin:'stored'|'index'='stored';
    if(env.DB){
     const history=await listEvents(env.DB,{category:'all',symbol,limit:60});
     source=history;
    }
-   if(!source.length)source=(await news('all')).items;
-   return json(await companyNews(symbol,source));
+   // Live feeds are bounded to 6 s overall; slower lanes are skipped rather than holding the page.
+   if(!source.length){source=(await news('all',6000)).items;origin='index';}
+   return json(await companyNews(symbol,source,origin));
   }catch(e){return json({error:'Stock news unavailable',details:String(e)},502);}
  }
  if(p==='/api/news'){

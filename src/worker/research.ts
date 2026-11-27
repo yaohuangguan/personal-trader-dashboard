@@ -112,7 +112,7 @@ export async function officialFilings(symbol:string,env:ResearchEnv):Promise<{
  return {available:true,provider:'SEC EDGAR',sourceUrl:'https://www.sec.gov/edgar/browse/?CIK='+cik,
   notice:'SEC 官方披露日期，不是下一次财报发布日期预测。',items};
 }
-export async function companyNews(symbol:string,items:NewsItem[]):Promise<{items:NewsItem[];source:'stored'|'index';notice:string}>{
+export async function companyNews(symbol:string,items:NewsItem[],source:'stored'|'index'='stored'):Promise<{items:NewsItem[];source:'stored'|'index';notice:string}>{
  const company=CATALOG.find(c=>c.symbol===symbol),name=company?.name.toLowerCase();
  const narrow=items.filter(item=>{
   const title=item.title.toLowerCase();
@@ -121,7 +121,7 @@ export async function companyNews(symbol:string,items:NewsItem[]):Promise<{items
    && new RegExp('(^|[^a-z0-9])'+symbol.toLowerCase()+'([^a-z0-9]|$)').test(title);
   return matchName||matchTicker;
  });
- return {items:narrow.slice(0,25),source:'stored',notice:'只匹配已入库标题中的证券代码/公司名称；可能漏报，同名公司需要手动核验。'};
+ return {items:narrow.slice(0,25),source,notice:source==='stored'?'只匹配已入库标题中的证券代码/公司名称；可能漏报，同名公司需要手动核验。':'只匹配当前公开新闻索引标题中的证券代码/公司名称；可能漏报，同名公司需要手动核验。'};
 }
 
 export async function tencentAshares(symbol:string):Promise<{candles:Candle[];url:string;name?:string}>{
