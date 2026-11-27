@@ -215,9 +215,10 @@ class _MarketChartState extends State<MarketChart> {
   String? projectionError;
 
   /// Candle structure a projection was computed for. Live ticks of the last
-  /// candle keep it; paging history or a new candle date invalidates it.
+  /// candle (and a horizon change, until its result arrives) keep it drawn;
+  /// paging history, a new candle date or other MAs invalidate it.
   String get projectionFrame =>
-      '$currentStudyParams|${bars.length}|${bars.firstOrNull?.time}|${bars.lastOrNull?.time}|$projectionHorizon';
+      '$currentStudyParams|${bars.length}|${bars.firstOrNull?.time}|${bars.lastOrNull?.time}';
   bool get drawProjection =>
       projectionOn &&
       projection?['available'] == true &&
