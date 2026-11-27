@@ -91,6 +91,8 @@ class _FullscreenChartState extends State<FullscreenChart> {
       if (mounted) refreshQuote();
     });
     timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      // No polling while the app is in the background.
+      if (!mounted || !context.read<AtlasStore>().foreground) return;
       refreshQuote();
       if (++refreshTick % 12 == 0) refresh();
     });

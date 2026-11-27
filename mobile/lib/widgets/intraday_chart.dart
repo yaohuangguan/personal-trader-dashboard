@@ -73,11 +73,8 @@ class _IntradayChartState extends State<IntradayChart> {
       }
     });
     timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted ||
-          !context.read<AtlasStore>().foreground ||
-          !(ModalRoute.of(context)?.isCurrent ?? true)) {
-        return;
-      }
+      // Tabs stay mounted in an IndexedStack: skip offstage tabs too.
+      if (!mounted || !visibleHere(context)) return;
       if (benchmarkOn || board != null) refreshOverlays();
       if (auctionOpen) refreshAuction();
       if (isMarketIndex(symbol)) refreshYellow();

@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../core/api.dart';
-import '../core/store.dart';
 import 'common.dart';
 
 /// Refreshes the visible chart without replacing it with a loading screen.
@@ -33,11 +31,8 @@ class _LiveChartFeedState extends State<LiveChartFeed> {
     loading = true;
     refresh();
     timer = Timer.periodic(Duration(seconds: widget.refreshSeconds), (_) {
-      if (mounted &&
-          context.read<AtlasStore>().foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        refresh();
-      }
+      // Tabs stay mounted in an IndexedStack: skip offstage tabs too.
+      if (mounted && visibleHere(context)) refresh();
     });
   }
 
