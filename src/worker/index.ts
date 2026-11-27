@@ -3,7 +3,7 @@ import {usHistory} from './us-market';
 import {chartStudy} from '../shared/chart-study';
 import {projectMarket} from '../shared/market-projection';
 import {loadChartBundle,loadChartFrame} from './chart-bundle';
-import {historicalSnapshot} from './history-cache';
+import {historicalSnapshot,lastGoodMarket} from './history-cache';
 import {chartPayload} from './chart-payload';
 import {computeCache,dataDateOf,DATA_DATE_HEADER} from './compute-cache';
 import {offload,registerInlineHandler} from './compute-offload';
@@ -37,6 +37,7 @@ export {CloseCoordinator as MarketScanner} from './close-coordinator';
 import {monitorRoute,type MonitorNamespace} from './signal-monitor';
 export {CloseSignalMonitor as SignalMonitor} from './close-monitor';
 import { deskRoute } from './desk-api';
+import {firstSuccess} from './provider-chain';
 import {CLOSE_DISPATCH_CRON,dispatchCloseWorkflow,type DispatchEnv} from './close-dispatch';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
@@ -120,66 +121,31 @@ async function alphaVantage(symbol:string,key:string):Promise<{candles:Candle[];
  })).filter(c=>c.close>0&&c.open>0).sort((a,b)=>a.time.localeCompare(b.time));
  return {candles,url:'https://www.alphavantage.co/documentation/'};
 }
+/** Overall budget for one market() call; a provider still pending after 1.5 s gets the next one started alongside it. */
+const MARKET_DEADLINE_MS=20000,MARKET_HEDGE_MS=1500;
 async function market(symbolRaw:string,env:Env):Promise<MarketPayload>{
  const symbol=normalizeSymbol(symbolRaw);if(!validSymbol(symbol))throw new Error('Invalid ticker');
  const cn=/^\d{6}\.(SH|SZ|BJ)$/.test(symbol);
  const known=CATALOG.find(c=>c.symbol===symbol);
- let source:{candles:Candle[];url:string;name?:string}|null=null,provider='',notice='',failure='';
+ type Source={candles:Candle[];url:string;name?:string};
+ const attempts:{name:string;provider:string;notice:string;run:()=>Promise<Source>}[]=[];
  // Prefer licensed, auditable price-history APIs. Never suggest unlicensed feeds are guaranteed.
- if(env.FMP_API_KEY){
-  try{
-   source=await fmpDaily(symbol,env.FMP_API_KEY);
-   provider='Financial Modeling Prep';
-   notice='FMP EOD OHLCV. Delay and exchange entitlements depend on your subscription.';
-  }catch(e){failure+=' FMP: '+(e instanceof Error?e.message:String(e));}
+ if(env.FMP_API_KEY)attempts.push({name:'FMP',provider:'Financial Modeling Prep',notice:'FMP EOD OHLCV. Delay and exchange entitlements depend on your subscription.',run:()=>fmpDaily(symbol,env.FMP_API_KEY!)});
+ if(env.TWELVE_DATA_API_KEY)attempts.push({name:'Twelve Data',provider:'Twelve Data',notice:'Provider daily candles. Exchange entitlements and delay depend on your plan.',run:()=>twelveData(symbol,env.TWELVE_DATA_API_KEY!)});
+ if(env.ALPHA_VANTAGE_API_KEY)attempts.push({name:'Alpha Vantage',provider:'Alpha Vantage (daily)',notice:'免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。',run:()=>alphaVantage(symbol,env.ALPHA_VANTAGE_API_KEY!)});
+ if(cn&&!symbol.endsWith('.BJ')){
+  attempts.push({name:'Tencent CN',provider:'腾讯财经公开日线（非授权接口，前复权）',notice:'500根左右的前复权日线；成交量使用原始接口单位（通常为手）。研究使用，非交易所实时或受保证的授权数据。',run:()=>tencentAshares(symbol)});
+  attempts.push({name:'Sina adjusted CN',provider:'新浪公开日线（前复权因子校正，成交量为股）',notice:'公开原始日线按新浪逐日有效前复权因子校正OHLC，成交量保持原始股数；非授权实时行情。',run:()=>sinaAdjustedDaily(symbol)});
  }
- if(!source&&env.TWELVE_DATA_API_KEY){
-  try{source=await twelveData(symbol,env.TWELVE_DATA_API_KEY);provider='Twelve Data';notice='Provider daily candles. Exchange entitlements and delay depend on your plan.';}
-  catch(e){failure=e instanceof Error?e.message:String(e);}
- }
- if(!source&&env.ALPHA_VANTAGE_API_KEY){
-  try{
-   source=await alphaVantage(symbol,env.ALPHA_VANTAGE_API_KEY);
-   provider='Alpha Vantage (daily)';
-   notice='免费方案通常只提供100根日线，不足以计算121根完整五线开花。非实时交易所行情。';
-  }catch(e){failure+=' Alpha Vantage: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&cn&&!symbol.endsWith('.BJ')){
-  try{
-   source=await tencentAshares(symbol);
-   provider='腾讯财经公开日线（非授权接口，前复权）';
-   notice='500根左右的前复权日线；成交量使用原始接口单位（通常为手）。研究使用，非交易所实时或受保证的授权数据。';
-  }catch(e){failure+=' Tencent CN: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&cn&&!symbol.endsWith('.BJ')){
-  try{source=await sinaAdjustedDaily(symbol);provider='新浪公开日线（前复权因子校正，成交量为股）';notice='公开原始日线按新浪逐日有效前复权因子校正OHLC，成交量保持原始股数；非授权实时行情。';}
-  catch(e){failure+=' Sina adjusted CN: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&symbol.endsWith('.BJ')){
-  try{source=await sinaBeijingDaily(symbol);provider='新浪公开日线（北交所，不复权）';notice='公开日线，不复权；送转和除权可能影响均线结构，需复核。成交量为股。';}
-  catch(e){failure+=' Sina BJ: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source&&isUSStock(symbol)){
-  try{source=await usHistory(symbol,'day');provider='腾讯财经美股前复权日线';notice='美股前复权OHLC，成交量为原始股数；USD，交易日按纽约时区。公开延迟数据。';}
-  catch(e){failure+=' Tencent US: '+String(e);}
- }
- if(!source){
-  try{
-   source=await yahooDaily(symbol);
-   provider='Yahoo Finance (unofficial daily endpoint)';
-   notice='Unlicensed public endpoint, may rate limit (429) without warning; not suitable for production financial feeds.';
-  }catch(e){failure+=' Yahoo: '+(e instanceof Error?e.message:String(e));}
- }
- if(!source){
-  try{
-   const candidate=cn?await eastmoney(symbol):await stooq(symbol);
-   if(candidate.candles.length) {
-    source=candidate;
-    provider=cn?'东方财富（非官方公开历史行情接口）':'Stooq（日线历史行情）';
-    notice='日线历史数据，非交易所实时或逐笔报价。属于非SLA来源，服务可能拒绝自动访问。';
-   }
-  }catch(e){failure+=' Public source: '+(e instanceof Error?e.message:String(e));}
- }
+ if(symbol.endsWith('.BJ'))attempts.push({name:'Sina BJ',provider:'新浪公开日线（北交所，不复权）',notice:'公开日线，不复权；送转和除权可能影响均线结构，需复核。成交量为股。',run:()=>sinaBeijingDaily(symbol)});
+ if(isUSStock(symbol))attempts.push({name:'Tencent US',provider:'腾讯财经美股前复权日线',notice:'美股前复权OHLC，成交量为原始股数；USD，交易日按纽约时区。公开延迟数据。',run:()=>usHistory(symbol,'day')});
+ attempts.push({name:'Yahoo',provider:'Yahoo Finance (unofficial daily endpoint)',notice:'Unlicensed public endpoint, may rate limit (429) without warning; not suitable for production financial feeds.',run:()=>yahooDaily(symbol)});
+ attempts.push({name:'Public source',provider:cn?'东方财富（非官方公开历史行情接口）':'Stooq（日线历史行情）',notice:'日线历史数据，非交易所实时或逐笔报价。属于非SLA来源，服务可能拒绝自动访问。',run:()=>cn?eastmoney(symbol):stooq(symbol)});
+ let source:Source|null=null,provider='',notice='',failure='';
+ try{
+  const chosen=await firstSuccess(attempts,{hedgeAfterMs:MARKET_HEDGE_MS,deadlineMs:MARKET_DEADLINE_MS,valid:v=>!!v?.candles?.length});
+  source=chosen.value;provider=attempts[chosen.index].provider;notice=attempts[chosen.index].notice;
+ }catch(e){failure=e instanceof Error?e.message:String(e);}
  if(!source||!source.candles.length)throw new Error('No permitted OHLCV source available for '+symbol+'. Configure a licensed FMP / Twelve Data / Alpha Vantage API key. '+failure);
  const candles=validateDailyBars(source.candles);
  if(candles.length<2)throw new Error('Source returned insufficient valid candles for '+symbol);
@@ -420,7 +386,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
  if(p==='/api/level2'){const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid symbol'},400);return json(await level2(symbol,env));}
  if(p==='/api/analysis'){
   const symbol=normalizeSymbol(url.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
-  let data=await cached('mobile-analysis:'+symbol,60,()=>market(symbol,env));
+  let data=await lastGoodMarket(url.origin,symbol,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)));
   const selectedMA=parseMAPeriods(url.searchParams.get('ma'));
   const decision=url.searchParams.get('review')==='1'?await loadTradeReview(symbol,data,selectedMA):null;
   if(decision)data=decision.market;
@@ -458,9 +424,9 @@ async function handle(req:Request,env:Env):Promise<Response>{
    const saved=env.DB?await readSnapshot(env.DB,symbol):null;
    if(saved?.fetchedAt && Date.now()-Date.parse(saved.fetchedAt)<40*60000)return json({...saved,cacheSource:'D1'});
    try{
-    const result=await cached('market:'+symbol+':'+Boolean(env.FMP_API_KEY)+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),900,()=>market(symbol,env));
+    const result=await lastGoodMarket(url.origin,symbol,()=>cached('market:'+symbol+':'+Boolean(env.FMP_API_KEY)+':'+Boolean(env.TWELVE_DATA_API_KEY)+':'+Boolean(env.ALPHA_VANTAGE_API_KEY),900,()=>market(symbol,env)));
     if(env.DB)try{await saveSnapshot(env.DB,result);}catch(err){console.warn('Quote persistence:',String(err));}
-    return json({...result,stale:false,cacheSource:'upstream'});
+    return json({...result,stale:result.stale===true,cacheSource:result.stale?'last-good':'upstream'});
    }catch(e){
     if(saved)return json({...saved,stale:true,notice:saved.notice+' | Live update failed; historical last-success snapshot shown.'});
     throw e;
@@ -585,7 +551,7 @@ async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promis
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
     const periods=parseMAPeriods(incoming.searchParams.get('ma'))??CLASSIC_MA;
-    return heavy('chart-bundle-v4:'+JSON.stringify([symbol,periods]),3,symbol,async()=>dated(await loadChartBundle(symbol,periods,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))),{market:marketOf(symbol)});
+    return heavy('chart-bundle-v4:'+JSON.stringify([symbol,periods]),3,symbol,async()=>dated(await loadChartBundle(symbol,periods,()=>lastGoodMarket(incoming.origin,symbol,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),ctx),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))),{market:marketOf(symbol)});
    }
 
    // Old installed PWAs must download their same-origin shell before the new
@@ -625,7 +591,7 @@ async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promis
     if(isUSStock(symbol)){
       const ma=parseMAPeriods(p.get('ma'))??CLASSIC_MA;
       return computeCache(request,'us-analysis-v3-client:'+JSON.stringify([symbol,ma]),15,async()=>{
-        const frame=await loadChartFrame(symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
+        const frame=await loadChartFrame(symbol,()=>lastGoodMarket(incoming.origin,symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),ctx),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
         // The browser already runs the shared study rules. Repeating the full
         // study here can exhaust the edge CPU budget on an uncached symbol.
         return dated({...frame,available:true,maPeriods:ma,calculation:'client'});
