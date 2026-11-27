@@ -1,3 +1,4 @@
+import {formatMarketTime} from '../time-format';
 import {t as uiText} from '../preferences';
 import CompactSelect from './CompactSelect';
 import { useMemo, useState } from 'react';
@@ -35,6 +36,6 @@ export default function SectorOutlook({ symbol, onStock }: { symbol?: string; on
     {uiText(scenario.data && <div className="outlook-scenarios"><div><b>{uiText("延续条件")}</b><p>{uiText(scenario.data.conditions.continuation)}</p></div><div><b>{uiText("降级条件")}</b><p>{uiText(scenario.data.conditions.invalidation)}</p></div></div>)}
     <div className="outlook-catalysts"><h3>{uiText("原始催化线索")}<span>{uiText("行业词典/公司名关联，尚未验证因果")}</span></h3>{uiText(headlines.length ? headlines.map(item => <button type="button" key={item.id} onClick={() => openNews(item)}><span>{uiText(item.source)}</span><b>{(item.title)}</b><ArrowRight size={13} /></button>) : <p>{uiText(news.error || '当前快讯未命中行业关键词或领涨公司名。可以继续在个股资讯和公告中核验催化。')}</p>)}</div>
     <div className="outlook-leaders">{uiText(scenario.data?.leaders.slice(0, 6).map(stock => <button type="button" key={stock.symbol} onClick={() => onStock(stock.symbol)}><span>{(stock.name)}<small>{uiText(stock.symbol)}</small></span><b className={(stock.changePercent || 0) >= 0 ? 'is-up' : 'is-down'}>{uiText(stock.changePercent === null ? '—' : stock.changePercent.toFixed(2) + '%')}</b><ArrowRight size={12} /></button>))}</div>
-    <footer>{uiText(industries.error || scenario.error || '新浪行业独立分类；不代替东方财富板块归属。行业来源没有交易日期，与大盘日期的一致性仍待核对。')}<br />{uiText(scenario.data?.conditions.verification || '情景条件为观察阈值，不输出未经校准的上涨概率。')} {uiText(scenario.data && '读取于 ' + new Date(scenario.data.fetchedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) + '（北京时间）')}</footer>
+    <footer>{uiText(industries.error || scenario.error || '新浪行业独立分类；不代替东方财富板块归属。行业来源没有交易日期，与大盘日期的一致性仍待核对。')}<br />{uiText(scenario.data?.conditions.verification || '情景条件为观察阈值，不输出未经校准的上涨概率。')} {uiText(scenario.data && '读取于 ' + formatMarketTime(scenario.data.fetchedAt, 'dateTime') + '（北京时间）')}</footer>
   </section>;
 }

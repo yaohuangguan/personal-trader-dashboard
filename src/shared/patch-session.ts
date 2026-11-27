@@ -10,6 +10,8 @@ export function patchSession<T extends {candles:Candle[];provider:string}>(data:
  const volume=q.volume!*(q.volumeUnit==='手'?100:1)/(unit==='手'?100:1);
  if(volume<0||same&&volume+Math.max(1,last.volume*.001)<last.volume)return null;
  const bar={time:day,open:q.open!,high:q.high!,low:q.low!,close:q.price,volume};
+ // Unchanged session bar: return the input itself so callers' memoized chains keep their identity.
+ if(same&&last.open===bar.open&&last.high===bar.high&&last.low===bar.low&&last.close===bar.close&&last.volume===bar.volume)return data;
  const candles=same?[...data.candles.slice(0,-1),bar]:[...data.candles,bar].slice(-Math.max(500,data.candles.length));
  return {...data,candles};
 }

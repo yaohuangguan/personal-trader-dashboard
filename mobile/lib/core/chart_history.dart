@@ -39,6 +39,29 @@ List<Bar> mergeChartHistory(
   }.values.toList()..sort((a, b) => a.time.compareTo(b.time));
 }
 
+/// Applies a refreshed candle list to the chart's current (possibly paged)
+/// history. The refreshed list replaces every candle it covers and only
+/// strictly older paged candles are kept: the server labels an in-progress
+/// week/month with its latest trading day, so the same period can arrive under
+/// a new date and a union by time would show it twice.
+List<Bar> mergeLatestBars(List<Bar> current, List<Bar> incoming) {
+  if (incoming.isEmpty) return current;
+  var sorted = true;
+  for (var i = 1; i < incoming.length && sorted; i++) {
+    sorted = incoming[i - 1].time.compareTo(incoming[i].time) < 0;
+  }
+  final fresh = sorted
+      ? incoming
+      : ({for (final b in incoming) b.time: b}.values.toList()
+          ..sort((a, b) => a.time.compareTo(b.time)));
+  final first = fresh.first.time;
+  var keep = 0;
+  while (keep < current.length && current[keep].time.compareTo(first) < 0) {
+    keep++;
+  }
+  return keep == 0 ? fresh : [...current.take(keep), ...fresh];
+}
+
 Json normalizeHistoryVolume(Json page, String target) {
   final source = str(page['volumeUnit']);
   if (rows(page['candles']).isEmpty || source == target) return page;

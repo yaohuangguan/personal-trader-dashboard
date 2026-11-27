@@ -1,6 +1,11 @@
+import * as Dialog from '@radix-ui/react-dialog';
+import {useHistoryLayer} from '../hooks/useHistoryLayer';
+import {errorText,readJson} from '../http';
+import ErrorBoundary from './ErrorBoundary';
 import {SharedArticle,SharedAnnouncement} from './SharedArticle';
 import {newsLink,readNewsLink} from '../../shared/news-link';
 import {t as uiText} from '../preferences';
+import {formatMarketTime,validDate,ZONE_LABELS} from '../time-format';
 import {createContext,useCallback,useContext,useEffect,useMemo,useState,type ReactNode} from 'react';
 import {ArrowLeft,BookOpen,CalendarDays,Copy,FileText,Info,LoaderCircle,Newspaper,ShieldCheck,X} from 'lucide-react';
 import type {FundamentalsPayload,MarketPayload,NewsItem} from '../../shared/types';
@@ -14,7 +19,7 @@ type ReadingItem =
 type ReaderContextValue={openNews:(news:NewsItem)=>void;openFiling:(symbol:string,form:string,date:string,title?:string)=>void;openFinance:(data:FundamentalsPayload)=>void;openMarket:(data:MarketPayload)=>void};
 const ReaderContext=createContext<ReaderContextValue|null>(null);
 export function useReader(){const context=useContext(ReaderContext);if(!context)throw new Error('InAppReader provider missing');return context;}
-const pretty=(raw:string|null|undefined)=>raw?new Intl.DateTimeFormat('zh-CN',{timeZone:'Pacific/Auckland',dateStyle:'medium',timeStyle:'short'}).format(new Date(raw)):'时间未提供';
+const pretty=(raw:string|null|undefined)=>validDate(raw)?formatMarketTime(raw,'dateTime')+' '+uiText(ZONE_LABELS.cn):'时间未提供';
 type FilingDocument={available:boolean;content:string;title:string;notice:string;provider:string;publishedAt:string;sourceUrl:string};
 function OfficialDocument({symbol,form,date}:{symbol:string;form:string;date:string}){
  const [state,setState]=useState<{loading:boolean;data:FilingDocument|null;error:string}>({loading:true,data:null,error:''});
@@ -22,9 +27,9 @@ function OfficialDocument({symbol,form,date}:{symbol:string;form:string;date:str
   const ctrl=new AbortController();
   setState({loading:true,data:null,error:''});
   fetch('/api/filing-document?symbol='+encodeURIComponent(symbol)+'&form='+encodeURIComponent(form)+'&date='+encodeURIComponent(date),{signal:ctrl.signal})
-  .then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.details||data.error||'披露数据暂不可用');return data as FilingDocument;})
+  .then(async r=>{const data=await readJson<any>(r);if(!r.ok)throw new Error(data.details||data.error||'披露数据暂不可用');return data as FilingDocument;})
   .then(data=>{if(!ctrl.signal.aborted)setState({loading:false,data,error:''});})
-  .catch(err=>{if(!ctrl.signal.aborted)setState({loading:false,data:null,error:String(err)});});
+  .catch(err=>{if(!ctrl.signal.aborted)setState({loading:false,data:null,error:errorText(err)});});
   return ()=>ctrl.abort();
  },[symbol,form,date]);
  if(state.loading)return <div className="reader-state"><LoaderCircle className="spin" size={22}/> {uiText("正在从披露源获取文件…")}</div>;
@@ -83,16 +88,11 @@ function ReaderContents({selection}:{selection:ReadingItem}){
 export function InAppReaderProvider({children}:{children:ReactNode}){
  const [selected,setSelected]=useState<ReadingItem|null>(null);
  const [sharing,setSharing]=useState(false),[shareMessage,setShareMessage]=useState('');
- const copyShare=async()=>{if(selected?.kind!=='news')return;setSharing(true);setShareMessage('');try{const r=await fetch('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:selected.item})}),j=await r.json();if(!r.ok)throw new Error(j.error||'分享失败');await navigator.clipboard.writeText(j.url);setShareMessage('站内短链接已复制');}catch(e){setShareMessage(e instanceof Error?e.message:'分享失败');}finally{setSharing(false);}};
- const close=useCallback(()=>{setSelected(null);const u=new URL(location.href);u.searchParams.delete('article');if(/^\/n\//.test(u.pathname))u.pathname='/';history.replaceState(null,'',u);},[]);
- useEffect(()=>{const short=/^\/n\/([A-Za-z0-9_-]{16})$/.exec(location.pathname);if(short){setSelected({kind:'shared',id:short[1]});return;}const raw=new URLSearchParams(location.search).get('article');if(raw){const item=readNewsLink(raw);if(item)setSelected({kind:'news',item});}},[]);
- useEffect(()=>{
-  if(!selected)return;
-  const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.stopPropagation();close();}};
-  window.addEventListener('keydown',onKey);
-  const old=document.body.style.overflow;document.body.style.overflow='hidden';
-  return ()=>{window.removeEventListener('keydown',onKey);document.body.style.overflow=old;};
- },[selected,close]);
+ const copyShare=async()=>{if(selected?.kind!=='news')return;setSharing(true);setShareMessage('');try{const r=await fetch('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:selected.item})}),j=await readJson<any>(r);if(!r.ok)throw new Error(j.error||'分享失败');await navigator.clipboard.writeText(j.url);setShareMessage('站内短链接已复制');}catch(e){setShareMessage(e instanceof Error?e.message:'分享失败');}finally{setSharing(false);}};
+ const close=useCallback(()=>setSelected(null),[]);
+ useHistoryLayer(!!selected,close);
+ // Shared links open the reader once; the address is cleaned first so Back/close return to the normal page.
+ useEffect(()=>{const u=new URL(location.href),short=/^\/n\/([A-Za-z0-9_-]{16})$/.exec(u.pathname),raw=u.searchParams.get('article');if(!short&&!raw)return;u.searchParams.delete('article');if(short)u.pathname='/';history.replaceState(history.state,'',u);if(short){setSelected({kind:'shared',id:short[1]});return;}const item=readNewsLink(raw!);if(item)setSelected({kind:'news',item});},[]);
  const actions=useMemo<ReaderContextValue>(()=>({
   openNews:item=>setSelected({kind:'news',item}),
   openFiling:(symbol,form,date,title)=>setSelected({kind:'filing',symbol,form,date,title}),
@@ -101,12 +101,14 @@ export function InAppReaderProvider({children}:{children:ReactNode}){
  }),[]);
  return <ReaderContext.Provider value={actions}>
   {uiText(children)}
-  {uiText(selected&&<div className="reader-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
-   <div className="reader-modal" role="dialog" aria-modal="true" aria-label={uiText("站内资料阅读器")}>
-    <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><button onClick={close} aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></header>
-    <div className="reader-scroll"><ReaderContents selection={selected}/></div>
+  {/* Radix dialog: initial focus, focus trap, Esc / outside click to close, scroll lock, focus restored on close. */}
+  <Dialog.Root open={!!selected} onOpenChange={open=>{if(!open)close();}}><Dialog.Portal><Dialog.Overlay className="reader-backdrop">
+   {selected&&<Dialog.Content className="reader-modal" aria-describedby={undefined}>
+    <Dialog.Title className="sr-only">{uiText("站内资料阅读器")}</Dialog.Title>
+    <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><Dialog.Close asChild><button aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></Dialog.Close></header>
+    <div className="reader-scroll"><ErrorBoundary label="阅读内容" resetKey={selected}><ReaderContents selection={selected}/></ErrorBoundary></div>
     <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button>{selected.kind==='news'&&<button disabled={sharing} onClick={copyShare}><Copy size={15}/>{uiText("复制站内链接")}</button>}<span role="status">{uiText(shareMessage||'站内阅读 · 来源可追溯')}</span></footer>
-   </div>
-  </div>)}
+   </Dialog.Content>}
+  </Dialog.Overlay></Dialog.Portal></Dialog.Root>
  </ReaderContext.Provider>;
 }

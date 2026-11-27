@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../core/api.dart';
 import '../core/store.dart';
 import '../core/indicators.dart';
+import '../core/market_hours.dart';
 import '../widgets/common.dart';
 import '../widgets/market_chart.dart';
 import '../widgets/live_chart_feed.dart';
@@ -39,7 +40,13 @@ class _MarketPageState extends State<MarketPage> {
     super.initState();
     refresh();
     timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && context.read<AtlasStore>().foreground) refresh();
+      // Skipped while the tab is offstage, a page covers it, or the
+      // index market is closed.
+      if (mounted &&
+          visibleHere(context) &&
+          cnPhase(DateTime.now()) == MarketPhase.open) {
+        refresh();
+      }
     });
   }
 
@@ -62,7 +69,7 @@ class _MarketPageState extends State<MarketPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 
@@ -80,7 +87,8 @@ class _MarketPageState extends State<MarketPage> {
   );
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<AtlasStore>(), quotes = rows(indices?['items']);
+    final store = context.read<AtlasStore>(), quotes = rows(indices?['items']);
+    context.select<AtlasStore, String>((s) => s.locale);
     final sourceDate = quotes.isEmpty
         ? null
         : str(quotes.first['asOf']).split('T').first;
@@ -209,7 +217,7 @@ class _MarketPageState extends State<MarketPage> {
             ),
           ),
           SizedBox(
-            height: 24,
+            height: 44,
             child: Row(
               children: [
                 const SizedBox(width: 12),
@@ -220,7 +228,7 @@ class _MarketPageState extends State<MarketPage> {
                   ),
                 ),
                 IconButton(
-                  padding: EdgeInsets.zero,
+                  tooltip: store.t('刷新'),
                   onPressed: () {
                     setState(() => feedRevision++);
                     refresh();
@@ -232,88 +240,101 @@ class _MarketPageState extends State<MarketPage> {
           ),
         ] else
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              children: [
-                if (error != null) Notice(error!),
-                if (view == 'sector') const SectorExplorer(),
-                if (view == 'mood' && sourceDate != null)
-                  AsyncPanel(
-                    load: () => store.api.get(
-                      '/api/desk/market-pools',
-                      parameters: {'date': sourceDate},
-                    ),
-                    builder: (r) => _sentiment(context, r),
-                  ),
-                if (view == 'stocks') ...[
-                  Chips(
-                    values: {
-                      'gainers': '涨幅榜',
-                      'dragon': '近期龙虎榜',
-                      'yesterday': '昨日涨停',
-                      'up': '本日涨停',
-                    },
-                    selected: ranking,
-                    onSelected: (v) => setState(() => ranking = v),
-                  ),
-                  if (ranking == 'gainers' || sourceDate != null)
+            child: RefreshIndicator(
+              onRefresh: () async {
+                setState(() => feedRevision++);
+                await refresh();
+              },
+              child: ListView(
+                key: PageStorageKey('market-$view'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                children: [
+                  if (error != null) Notice(error!),
+                  if (view == 'sector') const SectorExplorer(),
+                  if (view == 'mood' && sourceDate != null)
                     AsyncPanel(
-                      key: ValueKey('$ranking-$sourceDate'),
                       load: () => store.api.get(
-                        ranking == 'gainers'
-                            ? '/api/desk/gainers'
-                            : ranking == 'dragon'
-                            ? '/api/desk/dragon'
-                            : '/api/desk/market-pools',
-                        parameters: ranking == 'gainers'
-                            ? null
-                            : {'date': sourceDate!},
+                        '/api/desk/market-pools',
+                        parameters: {'date': sourceDate},
                       ),
-                      builder: (r) {
-                        final pool = obj(obj(r['pools'])[ranking]),
-                            items = ranking == 'yesterday' || ranking == 'up'
-                                ? rows(pool['items'])
-                                : rows(r['items']);
-                        items.sort(
-                          (a, b) => (numOf(b['changePercent']) ?? 0).compareTo(
-                            numOf(a['changePercent']) ?? 0,
-                          ),
-                        );
-                        return Column(
-                          children: [
-                            if (items.isEmpty)
-                              Notice(str(pool['reason'], store.t('此范围暂无记录'))),
-                            ...items.map(
-                              (q) => ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 2,
-                                ),
-                                title: Text(
-                                  str(q['name']),
-                                  style: const TextStyle(fontSize: 17),
-                                ),
-                                subtitle: Text(
-                                  '${q['symbol']}${q['date'] != null ? ' · ${q['date']}' : ''}',
-                                  style: TextStyle(fontSize: 11, color: muted),
-                                ),
-                                trailing: Text(
-                                  '${fixed(q['price'])}  ${percent(q['changePercent'])}',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: tone(q['changePercent']),
-                                  ),
-                                ),
-                                onTap: () =>
-                                    openStock(context, str(q['symbol'])),
-                              ),
-                            ),
-                            SourceLine(r),
-                          ],
-                        );
-                      },
+                      key: ValueKey('mood-$feedRevision'),
+                      builder: (r) => _sentiment(context, r),
                     ),
+                  if (view == 'stocks') ...[
+                    Chips(
+                      values: {
+                        'gainers': '涨幅榜',
+                        'dragon': '近期龙虎榜',
+                        'yesterday': '昨日涨停',
+                        'up': '本日涨停',
+                      },
+                      selected: ranking,
+                      onSelected: (v) => setState(() => ranking = v),
+                    ),
+                    if (ranking == 'gainers' || sourceDate != null)
+                      AsyncPanel(
+                        key: ValueKey('$ranking-$sourceDate-$feedRevision'),
+                        load: () => store.api.get(
+                          ranking == 'gainers'
+                              ? '/api/desk/gainers'
+                              : ranking == 'dragon'
+                              ? '/api/desk/dragon'
+                              : '/api/desk/market-pools',
+                          parameters: ranking == 'gainers'
+                              ? null
+                              : {'date': sourceDate!},
+                        ),
+                        builder: (r) {
+                          final pool = obj(obj(r['pools'])[ranking]),
+                              items = ranking == 'yesterday' || ranking == 'up'
+                                  ? rows(pool['items'])
+                                  : rows(r['items']);
+                          items.sort(
+                            (a, b) => (numOf(b['changePercent']) ?? 0)
+                                .compareTo(numOf(a['changePercent']) ?? 0),
+                          );
+                          return Column(
+                            children: [
+                              if (items.isEmpty)
+                                Notice(str(pool['reason'], store.t('此范围暂无记录'))),
+                              ...items.map(
+                                (q) => ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                  ),
+                                  title: Text(
+                                    str(q['name']),
+                                    style: const TextStyle(fontSize: 17),
+                                  ),
+                                  subtitle: Text(
+                                    '${q['symbol']}${q['date'] != null ? ' · ${q['date']}' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: muted,
+                                    ),
+                                  ),
+                                  trailing: Text(
+                                    '${fixed(q['price'])}  ${percent(q['changePercent'])}',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: tone(q['changePercent']),
+                                    ),
+                                  ),
+                                  onTap: () =>
+                                      openStock(context, str(q['symbol'])),
+                                ),
+                              ),
+                              SourceLine(r),
+                            ],
+                          );
+                        },
+                      ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
       ],

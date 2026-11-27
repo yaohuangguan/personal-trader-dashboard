@@ -1,3 +1,4 @@
+import {formatMarketTime} from '../time-format';
 import {t} from '../preferences';
 import {RefreshCw,LoaderCircle} from 'lucide-react';
 import type {FlowPayload,SourceStamp} from '../../shared/desk-types';
@@ -8,7 +9,7 @@ import './FlowPanel.css';
 const cash=(v:number|null|undefined)=>v==null?'—':Math.abs(v)>=1e8?(v/1e8).toFixed(2)+t("亿"):(v/1e4).toFixed(2)+t("万");
 const tone=(v:number|null|undefined)=>v==null||v===0?'':v>0?'is-up':'is-down';
 const pct=(v:number|null|undefined)=>v==null?'—':(v*100).toFixed(1)+'%';
-function Attribution({data}:{data?:SourceStamp|null}){return data?<p className="flow-attribution"><a href={data.sourceUrl} target="_blank" rel="noreferrer">{data.source}</a>{t("· 获取")}{new Date(data.fetchedAt).toLocaleTimeString('zh-CN',{hour12:false})}{data.notice&&<span>{data.notice}</span>}</p>:null;}
+function Attribution({data}:{data?:SourceStamp|null}){return data?<p className="flow-attribution"><a href={data.sourceUrl} target="_blank" rel="noreferrer">{data.source}</a>{t("· 获取")}{formatMarketTime(data.fetchedAt,'clock')+' '+t('北京时间')}{data.notice&&<span>{data.notice}</span>}</p>:null;}
 export default function FlowPanel({symbol,auto}:{symbol:string;auto:boolean}){
  const current=useLiveEndpoint<FlowPayload>('/api/desk/flow?symbol='+symbol,60000,auto);
  const history=useLiveEndpoint<FlowPayload>('/api/desk/flow-history?symbol='+symbol,300000,auto);

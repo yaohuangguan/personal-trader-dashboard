@@ -60,7 +60,7 @@ export class SignalMonitor {
   return response({error:'Unknown action'},404);
  }
  protected async push(data:{title:string;body:string;url:string;tag:string},ttl=300){
-  const sub=await this.state.storage.get<PushSubscription>('subscription'),native=await this.state.storage.get<string>('native-token');if(!sub){if(native&&this.env?.FIREBASE_SERVICE_ACCOUNT){await sendNativePush(this.env.FIREBASE_SERVICE_ACCOUNT,native,data,this.state.storage);return;}throw new Error('尚未订阅设备通知');}
+  const sub=await this.state.storage.get<PushSubscription>('subscription'),native=await this.state.storage.get<string>('native-token');if(!sub){if(native&&this.env?.FIREBASE_SERVICE_ACCOUNT){await sendNativePush(this.env.FIREBASE_SERVICE_ACCOUNT,native,data,this.state.storage,ttl);return;}throw new Error('尚未订阅设备通知');}
   if(!validPushEndpoint(sub.endpoint))throw new Error('通知服务地址无效');
   const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl}},sub,await this.keys());
   const r=await fetch(sub.endpoint,{...payload,redirect:'error',signal:AbortSignal.timeout(7000)});
@@ -140,11 +140,15 @@ export class SignalMonitor {
   }finally{this.busy=false;}
  }
 }
-export async function monitorRoute(req:Request,namespace?:MonitorNamespace){
+/** Actions that can create device state; limited per client address so random tokens cannot mint objects freely. */
+export const MONITOR_WRITE_ACTIONS=['public-key','config','subscribe','native-subscribe','test','check'];
+export async function monitorRoute(req:Request,namespace?:MonitorNamespace,limit?:(key:string)=>Promise<number>){
  const path=new URL(req.url).pathname;if(!path.startsWith('/api/monitor/'))return null;
  if(!namespace)return response({available:false,error:'后台监控尚未部署'},503);
  const token=(req.headers.get('Authorization')||'').replace(/^Bearer /,'');if(!/^[a-f0-9]{64}$/.test(token))return response({error:'缺少设备监控凭证'},401);
  const origin=req.headers.get('Origin');if(origin&&origin!==new URL(req.url).origin)return response({error:'Invalid origin'},403);
- if(!['status','public-key','config','subscribe','unsubscribe','test','check','global','native-subscribe','native-unsubscribe'].includes(path.split('/').at(-1)||''))return response({error:'Unknown action'},404);
+ const action=path.split('/').at(-1)||'';
+ if(!['status','public-key','config','subscribe','unsubscribe','test','check','global','native-subscribe','native-unsubscribe'].includes(action))return response({error:'Unknown action'},404);
+ if(limit&&MONITOR_WRITE_ACTIONS.includes(action)){const wait=await limit('monitor:'+(req.headers.get('cf-connecting-ip')||'unknown'));if(wait)return Response.json({error:'设备监控请求过于频繁，请稍后再试',code:'RATE_LIMITED',retryAfter:wait},{status:429,headers:{'cache-control':'no-store','retry-after':String(wait)}});}
  return namespace.get(namespace.idFromName(token)).fetch(req);
 }

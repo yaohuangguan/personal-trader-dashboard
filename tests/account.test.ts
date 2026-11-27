@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {accountRoute,accountStore,type AccountRecord} from '../src/worker/account';
+import {accountRoute,accountStore,failureDelayMs,type AccountRecord} from '../src/worker/account';
 import {watchVault} from '../src/worker/watch-sync';
 import {watchDiff,emptyWatch,type WatchState} from '../src/shared/watch-sync';
 
@@ -52,12 +52,44 @@ test('login accepts email or username, sessions resolve and logout revokes',asyn
  assert.equal((await call(ns,'/api/account/me')).status,401);
 });
 
-test('repeated wrong passwords lock the account for 15 minutes',async()=>{
+test('repeated wrong passwords slow that address down progressively without locking the owner out',async ctx=>{
  const {ns}=namespace();
  await call(ns,'/api/account/register',{body:{email:'lock@example.com',username:'locked',password:'right-password'}});
- for(let i=0;i<8;i++)assert.equal((await call(ns,'/api/account/login',{body:{login:'locked',password:'wrong-'+i},ip:'198.51.100.'+i})).status,401);
- const blocked=await read(await call(ns,'/api/account/login',{body:{login:'locked',password:'right-password'}}));
- assert.equal(blocked.status,429);assert.ok(blocked.data.retryAt);
+ ctx.mock.timers.enable({apis:['Date'],now:Date.now()});
+ try{
+  for(let i=0;i<5;i++)assert.equal((await call(ns,'/api/account/login',{body:{login:'locked',password:'wrong-'+i},ip:'198.51.100.7'})).status,401);
+  const blocked=await call(ns,'/api/account/login',{body:{login:'locked',password:'right-password'},ip:'198.51.100.7'});
+  assert.equal(blocked.status,429);const body=await blocked.json() as {retryAt:string;retryAfter:number;code:string};
+  assert.ok(body.retryAt);assert.equal(body.retryAfter,1);assert.equal(body.code,'RATE_LIMITED');assert.equal(blocked.headers.get('retry-after'),'1');
+  assert.equal((await call(ns,'/api/account/login',{body:{login:'locked',password:'right-password'},ip:'203.0.113.200'})).status,200,'the owner on another address is not locked out');
+  ctx.mock.timers.tick(1100);
+  assert.equal((await call(ns,'/api/account/login',{body:{login:'locked',password:'right-password'},ip:'198.51.100.7'})).status,200,'the delay is short and clears on success');
+  for(let i=0;i<20;i++)await call(ns,'/api/account/login',{body:{login:'locked',password:'spray-'+i},ip:'192.0.2.'+(100+i)});
+  const sprayed=await call(ns,'/api/account/login',{body:{login:'locked',password:'right-password'},ip:'203.0.113.201'});
+  assert.equal(sprayed.status,429,'many addresses together get a bounded pause');assert.ok((await sprayed.json() as {retryAfter:number}).retryAfter<=30);
+  ctx.mock.timers.tick(31000);
+  assert.equal((await call(ns,'/api/account/login',{body:{login:'locked',password:'right-password'},ip:'203.0.113.201'})).status,200);
+ }finally{ctx.mock.timers.reset();}
+});
+
+test('failure delays grow per address and stay bounded for the whole account',()=>{
+ assert.deepEqual([0,4,5,6,7,14,30].map(n=>failureDelayMs(n,0)),[0,0,1000,2000,4000,512000,900000]);
+ assert.equal(failureDelayMs(0,19),0);assert.equal(failureDelayMs(0,500),30000);
+});
+
+test('a failed vault purge keeps the account so deletion can be retried, and the vault is tombstoned',async()=>{
+ const {ns,objects}=namespace();
+ const {data:{token,account}}=await read(await call(ns,'/api/account/register',{body:{email:'retry@example.com',username:'retrier',password:'retry-pass-1'}}));
+ await call(ns,'/api/account/watch',{token,body:{id:'upload-before-delete-2',baseRevision:0,ops:[{kind:'add',symbol:'NVDA'}]}});
+ const flaky={idFromName:ns.idFromName,get:(name:unknown)=>String(name).startsWith('watch-account:')?{fetch:async(r:Request)=>r.method==='DELETE'?new Response('down',{status:500}):ns.get(name).fetch(r)}:ns.get(name)};
+ const failed=await accountRoute(new Request(origin+'/api/account/delete',{method:'POST',body:JSON.stringify({password:'retry-pass-1'}),headers:{origin,authorization:'Bearer '+token,'cf-connecting-ip':'198.51.100.50'}}),flaky as never) as Response;
+ assert.equal(failed.status,503);assert.equal((await failed.json() as {code:string}).code,'DELETE_INCOMPLETE');
+ assert.equal((await call(ns,'/api/account/me',{token})).status,200,'the account survives a failed purge');
+ assert.equal((await call(ns,'/api/account/delete',{token,body:{password:'retry-pass-1'}})).status,200,'retrying works');
+ const vault=objects.get('watch-account:'+account.id)!;assert.equal(vault.has('watch:v1'),false);assert.ok(vault.has('watch:v1:deleted'));
+ const recreated=await watchVault(new Request('https://internal/cloud-watch?ensure=1'),{get:async<T>(k:string)=>vault.get(k) as T|undefined,put:async<T>(k:string,v:T)=>{vault.set(k,v);},delete:async(k:string)=>vault.delete(k)});
+ assert.equal(recreated.status,410,'a stale session cannot recreate a deleted vault');assert.equal(vault.has('watch:v1'),false);
+ assert.ok(![...objects.get('accounts:v1')!.keys()].some(k=>k.startsWith('sess:')||k.startsWith('acct')),'every session and index is removed');
 });
 
 test('first login uploads every local stock and a second device merges into the same account watchlist',async()=>{

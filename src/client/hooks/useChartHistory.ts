@@ -1,3 +1,4 @@
+import {readJson} from '../http';
 import {supportedStock} from '../../shared/market-clock';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {Candle} from '../../shared/types';
@@ -25,7 +26,7 @@ export function useChartHistory(initial:Candle[],symbol:string|undefined,unit:st
     setState(old=>({...old,key,loading:true,error:''}));
     try{
       const response=await fetch('/api/desk/history?'+new URLSearchParams({symbol:symbol!,period:unit,before,basis}),{signal:controller.signal});
-      const page=await response.json() as HistoryPage&{error?:string;reason?:string};
+      const page=await readJson(response) as HistoryPage&{error?:string;reason?:string};
       if(!response.ok)throw new Error(page.reason||page.error||'历史行情暂不可用');
       if(current.current.key!==snapshot.key||controller.signal.aborted)return;
       const normalized=normalizeHistoryPage(page,snapshot.volumeUnit);

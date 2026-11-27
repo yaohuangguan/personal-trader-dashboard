@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 abstract final class AtlasPalette {
@@ -34,10 +36,39 @@ Color atlasColor(int value) {
   );
 }
 
-Color chartColor(Color c) {
-  if (!AtlasPalette.light) return c;
-  final h = HSLColor.fromColor(c);
-  return h
-      .withLightness(h.saturation < 0.15 ? 0.18 : h.lightness.clamp(0.25, 0.4))
-      .toColor();
+double _contrast(Color a, Color b) {
+  final x = a.computeLuminance(), y = b.computeLuminance();
+  return (math.max(x, y) + .05) / (math.min(x, y) + .05);
 }
+
+final _chartColors = <(int, double), Color>{};
+
+/// Series colour for the active theme. Dark mode keeps the configured colour;
+/// light mode darkens it (same hue) until it reaches [contrast] against the
+/// white chart surface: 3:1 for lines and marks, 4.5:1 via [chartTextColor].
+Color chartColor(Color c, {double contrast = 3}) {
+  if (!AtlasPalette.light) return c;
+  return _chartColors.putIfAbsent((c.toARGB32(), contrast), () {
+    final h = HSLColor.fromColor(c);
+    var out = h.withLightness(
+      h.saturation < 0.15 ? 0.18 : h.lightness.clamp(0.25, 0.4),
+    );
+    while (_contrast(out.toColor(), Colors.white) < contrast &&
+        out.lightness > .04) {
+      out = out.withLightness(math.max(0, out.lightness - .02));
+    }
+    return out.toColor();
+  });
+}
+
+/// Legend/readout text colour for a series (≥4.5:1 on the light surface).
+Color chartTextColor(Color c) => chartColor(c, contrast: 4.5);
+
+/// Favourite star / bookmark. Plain amber is 1.6:1 on white; the light value
+/// keeps ≥4.5:1 so the filled star reads as "on".
+Color get favorite =>
+    AtlasPalette.light ? const Color(0xff946200) : const Color(0xffffc94d);
+
+/// Caution text and icons (risk notes, intraday alerts) in both themes.
+Color get warning =>
+    AtlasPalette.light ? const Color(0xff8a5a00) : const Color(0xffd5ae58);

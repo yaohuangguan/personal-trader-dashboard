@@ -56,156 +56,292 @@ List<double?> sma(List<Bar> rows, int period, {bool volume = false}) {
   });
 }
 
+/// Same OHLCV values; identity is irrelevant for chart updates.
+bool sameBar(Bar a, Bar b) =>
+    identical(a, b) ||
+    a.time == b.time &&
+        a.open == b.open &&
+        a.high == b.high &&
+        a.low == b.low &&
+        a.close == b.close &&
+        a.volume == b.volume;
+
+/// Whether [next] equals [previous] except for the values of the final candle.
+bool onlyLastBarChanged(List<Bar> previous, List<Bar> next) {
+  if (previous.length != next.length || next.isEmpty) return false;
+  if (previous.last.time != next.last.time) return false;
+  for (var i = next.length - 2; i >= 0; i--) {
+    if (!sameBar(previous[i], next[i])) return false;
+  }
+  return true;
+}
+
+bool sameBars(List<Bar> a, List<Bar> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = a.length - 1; i >= 0; i--) {
+    if (!sameBar(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+/// Running state of every recursive indicator, captured before the final
+/// candle so a live tick can recompute that candle alone.
+class _Walk {
+  _Walk(Iterable<int> periods) : sums = {for (final p in periods) p: 0.0};
+  _Walk._copy(_Walk w)
+    : sums = Map.of(w.sums),
+      boll = w.boll,
+      vol5 = w.vol5,
+      vol20 = w.vol20,
+      gain = w.gain,
+      loss = w.loss,
+      sarRising = w.sarRising,
+      sarPoint = w.sarPoint,
+      sarExtreme = w.sarExtreme,
+      sarAf = w.sarAf,
+      fast = w.fast,
+      slow = w.slow,
+      signal = w.signal,
+      k = w.k,
+      d = w.d,
+      expanded = w.expanded;
+  final Map<int, double> sums;
+  double boll = 0, vol5 = 0, vol20 = 0, gain = 0, loss = 0;
+  bool sarRising = false;
+  double sarPoint = 0, sarExtreme = 0, sarAf = .02;
+  double? fast, slow;
+  double signal = 0, k = 50, d = 50;
+  bool expanded = false;
+  _Walk copy() => _Walk._copy(this);
+}
+
 class IndicatorData {
   IndicatorData(this.bars, this.mas) {
-    for (final ma in mas) {
-      averages[ma.period] = sma(bars, ma.period);
+    final n = bars.length;
+    for (final p in _periods) {
+      averages[p] = List<double?>.filled(n, null);
     }
-    bollMid = sma(bars, 20);
-    bollUpper = List<double?>.filled(bars.length, null);
-    bollLower = List<double?>.filled(bars.length, null);
-    rsi14 = List<double?>.filled(bars.length, null);
-    sar = List<double?>.filled(bars.length, null);
-    var gain = 0.0, loss = 0.0;
-    for (var i = 0; i < bars.length; i++) {
-      if (i >= 19) {
-        final mid = bollMid[i]!,
-            sd = math.sqrt(
-              bars
-                      .sublist(i - 19, i + 1)
-                      .fold(0.0, (s, b) => s + math.pow(b.close - mid, 2)) /
-                  20,
-            );
-        bollUpper[i] = mid + 2 * sd;
-        bollLower[i] = mid - 2 * sd;
-      }
-      if (i > 0) {
-        final delta = bars[i].close - bars[i - 1].close,
-            g = math.max(0.0, delta),
-            l = math.max(0.0, -delta);
-        if (i <= 14) {
-          gain += g / 14;
-          loss += l / 14;
-        } else {
-          gain = (gain * 13 + g) / 14;
-          loss = (loss * 13 + l) / 14;
-        }
-        if (i >= 14) {
-          rsi14[i] = gain + loss == 0 ? 50 : 100 * gain / (gain + loss);
-        }
-      }
+    bollMid = List<double?>.filled(n, null);
+    bollUpper = List<double?>.filled(n, null);
+    bollLower = List<double?>.filled(n, null);
+    rsi14 = List<double?>.filled(n, null);
+    sar = List<double?>.filled(n, null);
+    vol5 = List<double?>.filled(n, null);
+    vol20 = List<double?>.filled(n, null);
+    dif = List<double>.filled(n, 0);
+    dea = List<double>.filled(n, 0);
+    hist = List<double>.filled(n, 0);
+    kdjK = List<double>.filled(n, 0);
+    kdjD = List<double>.filled(n, 0);
+    kdjJ = List<double>.filled(n, 0);
+    _walk(_Walk(_periods), 0);
+  }
+
+  IndicatorData._tail(IndicatorData previous, this.bars) : mas = previous.mas {
+    for (final e in previous.averages.entries) {
+      averages[e.key] = List.of(e.value);
     }
-    if (bars.length >= 2) {
-      var rising = bars[1].close >= bars[0].close,
-          point = rising ? bars[0].low : bars[0].high,
-          extreme = rising ? bars[0].high : bars[0].low,
-          af = .02;
-      for (var i = 1; i < bars.length; i++) {
-        var next = point + af * (extreme - point);
-        if (rising) {
-          next = math.min(
-            next,
-            math.min(bars[i - 1].low, bars[math.max(0, i - 2)].low),
-          );
-          if (bars[i].low < next) {
-            rising = false;
-            next = extreme;
-            extreme = bars[i].low;
-            af = .02;
-          } else if (bars[i].high > extreme) {
-            extreme = bars[i].high;
-            af = math.min(.2, af + .02);
-          }
-        } else {
-          next = math.max(
-            next,
-            math.max(bars[i - 1].high, bars[math.max(0, i - 2)].high),
-          );
-          if (bars[i].high > next) {
-            rising = true;
-            next = extreme;
-            extreme = bars[i].high;
-            af = .02;
-          } else if (bars[i].low < extreme) {
-            extreme = bars[i].low;
-            af = math.min(.2, af + .02);
-          }
-        }
-        point = next;
-        sar[i] = point;
-      }
-    }
-    vol5 = sma(bars, 5, volume: true);
-    vol20 = sma(bars, 20, volume: true);
-    double? fast, slow;
-    var signal = 0.0, k = 50.0, d = 50.0;
-    for (var i = 0; i < bars.length; i++) {
-      final close = bars[i].close;
-      fast = fast == null ? close : fast + (close - fast) * 2 / 13;
-      slow = slow == null ? close : slow + (close - slow) * 2 / 27;
-      final difference = fast - slow;
-      signal = i == 0 ? difference : signal + (difference - signal) * 2 / 10;
-      dif.add(difference);
-      dea.add(signal);
-      hist.add(2 * (difference - signal));
-      final window = bars.sublist(math.max(0, i - 8), i + 1),
-          high = window.map((c) => c.high).reduce(math.max),
-          low = window.map((c) => c.low).reduce(math.min);
-      final rsv = high == low ? 50.0 : (close - low) / (high - low) * 100;
-      k = k * 2 / 3 + rsv / 3;
-      d = d * 2 / 3 + k / 3;
-      kdjK.add(k);
-      kdjD.add(d);
-      kdjJ.add(3 * k - 2 * d);
-    }
-    final periods =
-        mas.where((m) => m.enabled).map((m) => m.period).toSet().toList()
-          ..sort();
-    var expanded = false;
-    for (var i = 1; i < bars.length; i++) {
-      if (periods.length >= 2) {
-        final a = averages[periods[0]]![i],
-            b = averages[periods[1]]![i],
-            pa = averages[periods[0]]![i - 1],
-            pb = averages[periods[1]]![i - 1];
-        if (a != null && b != null && pa != null && pb != null) {
-          if (pa <= pb && a > b) signals.add({'index': i, 'kind': 'golden'});
-          if (pa >= pb && a < b) signals.add({'index': i, 'kind': 'death'});
-        }
-      }
-      final values = periods.map((p) => averages[p]![i]).toList(),
-          complete = periods.length >= 2 && values.every((v) => v != null);
-      final ordered =
-          complete &&
-          List.generate(
-            values.length - 1,
-            (k) => values[k]! > values[k + 1]!,
-          ).every((v) => v);
-      final rising =
-          i >= 5 &&
-          complete &&
-          periods.every(
-            (p) =>
-                averages[p]![i - 5] != null &&
-                averages[p]![i]! > averages[p]![i - 5]!,
-          );
-      final now =
-          ordered && rising && bars[i].close > values[0]! && hist[i] > 0;
-      if (now && !expanded) signals.add({'index': i, 'kind': 'bloom'});
-      expanded = now;
+    bollMid = List.of(previous.bollMid);
+    bollUpper = List.of(previous.bollUpper);
+    bollLower = List.of(previous.bollLower);
+    rsi14 = List.of(previous.rsi14);
+    sar = List.of(previous.sar);
+    vol5 = List.of(previous.vol5);
+    vol20 = List.of(previous.vol20);
+    dif = List.of(previous.dif);
+    dea = List.of(previous.dea);
+    hist = List.of(previous.hist);
+    kdjK = List.of(previous.kdjK);
+    kdjD = List.of(previous.kdjD);
+    kdjJ = List.of(previous.kdjJ);
+    final last = bars.length - 1;
+    signals.addAll(previous.signals.where((s) => s['index'] != last));
+    _timeIndex = previous._timeIndex;
+    _times = previous._times;
+    _walk(previous._beforeLast!.copy(), last);
+  }
+
+  /// Recomputes only the final candle when [bars] differs from
+  /// [previous.bars] in that candle alone; otherwise rebuilds everything.
+  /// The result is identical to a full pass over [bars].
+  factory IndicatorData.updateLast(IndicatorData previous, List<Bar> bars) =>
+      bars.length >= 3 &&
+          previous._beforeLast != null &&
+          onlyLastBarChanged(previous.bars, bars)
+      ? IndicatorData._tail(previous, bars)
+      : IndicatorData(bars, previous.mas);
+
+  late final List<int> _periods = mas.map((m) => m.period).toSet().toList();
+  late final List<int> _enabled =
+      mas.where((m) => m.enabled).map((m) => m.period).toSet().toList()..sort();
+  _Walk? _beforeLast;
+
+  void _walk(_Walk w, int from) {
+    final n = bars.length;
+    for (var i = from; i < n; i++) {
+      if (i == n - 1) _beforeLast = w.copy();
+      _step(w, i);
     }
   }
+
+  void _step(_Walk w, int i) {
+    final bar = bars[i], close = bar.close;
+    for (final p in _periods) {
+      var s = w.sums[p]! + close;
+      if (i >= p) s -= bars[i - p].close;
+      w.sums[p] = s;
+      averages[p]![i] = i + 1 >= p ? s / p : null;
+    }
+    w.boll += close;
+    if (i >= 20) w.boll -= bars[i - 20].close;
+    bollMid[i] = i + 1 >= 20 ? w.boll / 20 : null;
+    if (i >= 19) {
+      final mid = bollMid[i]!;
+      var acc = 0.0;
+      for (var j = i - 19; j <= i; j++) {
+        acc += math.pow(bars[j].close - mid, 2).toDouble();
+      }
+      final sd = math.sqrt(acc / 20);
+      bollUpper[i] = mid + 2 * sd;
+      bollLower[i] = mid - 2 * sd;
+    }
+    if (i > 0) {
+      final delta = close - bars[i - 1].close,
+          g = math.max(0.0, delta),
+          l = math.max(0.0, -delta);
+      if (i <= 14) {
+        w.gain += g / 14;
+        w.loss += l / 14;
+      } else {
+        w.gain = (w.gain * 13 + g) / 14;
+        w.loss = (w.loss * 13 + l) / 14;
+      }
+      if (i >= 14) {
+        rsi14[i] = w.gain + w.loss == 0 ? 50 : 100 * w.gain / (w.gain + w.loss);
+      }
+      if (i == 1) {
+        w.sarRising = bars[1].close >= bars[0].close;
+        w.sarPoint = w.sarRising ? bars[0].low : bars[0].high;
+        w.sarExtreme = w.sarRising ? bars[0].high : bars[0].low;
+        w.sarAf = .02;
+      }
+      var next = w.sarPoint + w.sarAf * (w.sarExtreme - w.sarPoint);
+      if (w.sarRising) {
+        next = math.min(
+          next,
+          math.min(bars[i - 1].low, bars[math.max(0, i - 2)].low),
+        );
+        if (bar.low < next) {
+          w.sarRising = false;
+          next = w.sarExtreme;
+          w.sarExtreme = bar.low;
+          w.sarAf = .02;
+        } else if (bar.high > w.sarExtreme) {
+          w.sarExtreme = bar.high;
+          w.sarAf = math.min(.2, w.sarAf + .02);
+        }
+      } else {
+        next = math.max(
+          next,
+          math.max(bars[i - 1].high, bars[math.max(0, i - 2)].high),
+        );
+        if (bar.high > next) {
+          w.sarRising = true;
+          next = w.sarExtreme;
+          w.sarExtreme = bar.high;
+          w.sarAf = .02;
+        } else if (bar.low < w.sarExtreme) {
+          w.sarExtreme = bar.low;
+          w.sarAf = math.min(.2, w.sarAf + .02);
+        }
+      }
+      w.sarPoint = next;
+      sar[i] = next;
+    }
+    w.vol5 += bar.volume;
+    if (i >= 5) w.vol5 -= bars[i - 5].volume;
+    vol5[i] = i + 1 >= 5 ? w.vol5 / 5 : null;
+    w.vol20 += bar.volume;
+    if (i >= 20) w.vol20 -= bars[i - 20].volume;
+    vol20[i] = i + 1 >= 20 ? w.vol20 / 20 : null;
+    final fast = w.fast = w.fast == null
+        ? close
+        : w.fast! + (close - w.fast!) * 2 / 13;
+    final slow = w.slow = w.slow == null
+        ? close
+        : w.slow! + (close - w.slow!) * 2 / 27;
+    final difference = fast - slow;
+    w.signal = i == 0
+        ? difference
+        : w.signal + (difference - w.signal) * 2 / 10;
+    dif[i] = difference;
+    dea[i] = w.signal;
+    hist[i] = 2 * (difference - w.signal);
+    var high = bars[math.max(0, i - 8)].high,
+        low = bars[math.max(0, i - 8)].low;
+    for (var j = math.max(0, i - 8) + 1; j <= i; j++) {
+      high = math.max(high, bars[j].high);
+      low = math.min(low, bars[j].low);
+    }
+    final rsv = high == low ? 50.0 : (close - low) / (high - low) * 100;
+    w.k = w.k * 2 / 3 + rsv / 3;
+    w.d = w.d * 2 / 3 + w.k / 3;
+    kdjK[i] = w.k;
+    kdjD[i] = w.d;
+    kdjJ[i] = 3 * w.k - 2 * w.d;
+    if (i < 1) return;
+    final periods = _enabled;
+    if (periods.length >= 2) {
+      final a = averages[periods[0]]![i],
+          b = averages[periods[1]]![i],
+          pa = averages[periods[0]]![i - 1],
+          pb = averages[periods[1]]![i - 1];
+      if (a != null && b != null && pa != null && pb != null) {
+        if (pa <= pb && a > b) signals.add({'index': i, 'kind': 'golden'});
+        if (pa >= pb && a < b) signals.add({'index': i, 'kind': 'death'});
+      }
+    }
+    final values = periods.map((p) => averages[p]![i]).toList(),
+        complete = periods.length >= 2 && values.every((v) => v != null);
+    final ordered =
+        complete &&
+        List.generate(
+          values.length - 1,
+          (k) => values[k]! > values[k + 1]!,
+        ).every((v) => v);
+    final rising =
+        i >= 5 &&
+        complete &&
+        periods.every(
+          (p) =>
+              averages[p]![i - 5] != null &&
+              averages[p]![i]! > averages[p]![i - 5]!,
+        );
+    final now = ordered && rising && close > values[0]! && hist[i] > 0;
+    if (now && !w.expanded) signals.add({'index': i, 'kind': 'bloom'});
+    w.expanded = now;
+  }
+
   final List<Bar> bars;
   final List<MaLine> mas;
   final List<Json> signals = [];
   final Map<int, List<double?>> averages = {};
   late List<double?> vol5, vol20, bollMid, bollUpper, bollLower, rsi14, sar;
-  final List<double> dif = [],
-      dea = [],
-      hist = [],
-      kdjK = [],
-      kdjD = [],
-      kdjJ = [];
+  late List<double> dif, dea, hist, kdjK, kdjD, kdjJ;
+
+  Map<String, int>? _timeIndex;
+  List<String>? _times;
+  List<double?>? _volumes;
+
+  /// Candle time → index, built once per candle list (shared by live ticks).
+  Map<String, int> get timeIndex =>
+      _timeIndex ??= {for (var i = 0; i < bars.length; i++) bars[i].time: i};
+  List<String> get times =>
+      _times ??= List.unmodifiable(bars.map((b) => b.time));
+  List<double?> get volumes =>
+      _volumes ??= List<double?>.unmodifiable(bars.map((b) => b.volume));
+  int? indexOf(Object? time) => time is String ? timeIndex[time] : null;
 }
 
 Json? chipModel(List<Bar> input, List<double> turnover, {String? asOf}) {

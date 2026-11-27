@@ -37,7 +37,8 @@ export async function sectorDetail(code:string){
   notice:(board.count!==count?'分类快照成分数'+board.count+'与成分接口'+count+'不一致；扩散统计采用已读取的成分接口全量。':'')+'65%/35%为观察阈值，不是预测。相关概念仅表示当前领涨股相同，不代表统计相关性或未来涨幅。来源未提供完整交易日期，需核验个股行情。资金净额缺失保持为空。'};
 }
 export async function sectorNews(code:string){
- const maps=await memo('heat:concept',90,()=>sectorMap('concept')),board=maps.items.find(s=>s.code===code);if(!board)return {available:true,items:[]};
+ // Industry codes (SN:new_*) live in the industry map; only concepts (SN:gn_*) are in the concept map.
+ const kind=code.startsWith('SN:new_')?'industry':'concept',maps=await memo('heat:'+kind,90,()=>sectorMap(kind)),board=maps.items.find(s=>s.code===code);if(!board)return {available:true,items:[]};
  const aliases=board.name.match(/机器/)?['机器人','人形','减速器','丝杠']:board.name.match(/药/)?['创新药','医药','生物','临床']: [board.name.replace(/概念$/,'')];
  const news=await memo('flash',45,flash);return {...news,items:news.items.filter(n=>aliases.some(k=>n.title.includes(k)||n.summary?.includes(k))).slice(0,8),notice:'按主题关键词匹配公开快讯，不代表已确认的个股催化。'};
 }

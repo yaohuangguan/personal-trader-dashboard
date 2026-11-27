@@ -75,7 +75,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
           : str(r['text'], '');
       notice = (numOf(r['failedImages']) ?? 0) == 0 ? null : '部分图片未识别，请核对结果。';
     } catch (e) {
-      if (mounted) setState(() => error = '读取失败：$e');
+      if (mounted) setState(() => error = '读取失败：${describeError(e)}');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -141,11 +141,14 @@ class _WatchImportPageState extends State<WatchImportPage> {
           ..clear()
           ..addAll(symbols);
         verified = true;
-        notice =
-            '识别 ${parsed.length} 个，核验 ${symbols.length} 个；重复项自动合并。${parsed.length > symbols.length ? '未核验代码不会加入，请核对原图。' : ''}';
+        final t = context.read<AtlasStore>().t;
+        notice = [
+          t('识别 ${parsed.length} 个，核验 ${symbols.length} 个；重复项自动合并。'),
+          if (parsed.length > symbols.length) t('未核验代码不会加入，请核对原图。'),
+        ].join(' ');
       });
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -164,7 +167,9 @@ class _WatchImportPageState extends State<WatchImportPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '导入完成 · 新增股票 ${result.added} · 新建分组 ${result.groupsAdded}；已有自选保留。',
+              store.t(
+                '导入完成 · 新增股票 ${result.added} · 新建分组 ${result.groupsAdded}；已有自选保留。',
+              ),
             ),
           ),
         );
@@ -179,11 +184,11 @@ class _WatchImportPageState extends State<WatchImportPage> {
       final count = await store.mergeWatch(selected.toList(), groupId: id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已新增 $count 只，已有自选保留；已连接云同步时自动同步。')),
+        SnackBar(content: Text(store.t('已新增 $count 只，已有自选保留；已连接云同步时自动同步。'))),
       );
       Navigator.pop(context);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -198,7 +203,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
             ? null
             : planWatchImport(store.watchlist, store.groups, packet);
     return Scaffold(
-      appBar: AppBar(title: const Text('导入自选')),
+      appBar: AppBar(title: Text(store.t('导入自选'))),
       bottomNavigationBar: portable != null && verified
           ? SafeArea(
               child: Padding(
@@ -214,29 +219,29 @@ class _WatchImportPageState extends State<WatchImportPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Text(
-              '导入观澜自选文件，或从其他App迁入',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            Text(
+              store.t('导入观澜自选文件，或从其他App迁入'),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '在原App自选页显示股票代码并截图，可分多张；或复制代码名单。识别后先核对，再合并到自选。',
-              style: TextStyle(height: 1.6),
+            Text(
+              store.t('在原App自选页显示股票代码并截图，可分多张；或复制代码名单。识别后先核对，再合并到自选。'),
+              style: const TextStyle(height: 1.6),
             ),
             if (ios) ...[
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: busy ? null : () => pick(true),
                 icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('选择自选截图（可多张）'),
+                label: Text(store.t('选择自选截图（可多张）')),
               ),
               TextButton.icon(
                 onPressed: busy ? null : () => pick(false),
                 icon: const Icon(Icons.file_open_outlined),
-                label: const Text('选择 TXT / CSV / JSON 文件'),
+                label: Text(store.t('选择 TXT / CSV / JSON 文件')),
               ),
               Text(
-                '截图只在本机识别；仅代码用于查询名称，不上传图片。',
+                store.t('截图只在本机识别；仅代码用于查询名称，不上传图片。'),
                 style: TextStyle(color: muted, fontSize: 12, height: 1.5),
               ),
             ],
@@ -253,9 +258,9 @@ class _WatchImportPageState extends State<WatchImportPage> {
                     ? TextCapitalization.characters
                     : TextCapitalization.none,
                 decoration: InputDecoration(
-                  labelText: widget.enterCode
-                      ? '输入分享码，如 ABCD-2345'
-                      : '粘贴名单、分享码或查看识别原文',
+                  labelText: store.t(
+                    widget.enterCode ? '输入分享码，如 ABCD-2345' : '粘贴名单、分享码或查看识别原文',
+                  ),
                   hintText: widget.enterCode
                       ? 'ABCD-2345'
                       : '300750 宁德时代\n002594 比亚迪\n600036 招商银行',
@@ -272,11 +277,11 @@ class _WatchImportPageState extends State<WatchImportPage> {
                         await preview();
                       },
                 icon: const Icon(Icons.content_paste),
-                label: const Text('从剪贴板粘贴并识别'),
+                label: Text(store.t('从剪贴板粘贴并识别')),
               ),
               OutlinedButton(
                 onPressed: busy ? null : preview,
-                child: const Text('识别并预览'),
+                child: Text(store.t('识别并预览')),
               ),
             ],
             if (busy) const LinearProgressIndicator(),
@@ -285,7 +290,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Text(
-                  notice!,
+                  store.t(notice!),
                   style: TextStyle(color: muted, height: 1.5),
                 ),
               ),
@@ -294,15 +299,21 @@ class _WatchImportPageState extends State<WatchImportPage> {
                 DropdownButtonFormField<String>(
                   menuMaxHeight: compactMenuHeight(context),
                   initialValue: group,
-                  decoration: const InputDecoration(labelText: '导入到分组'),
+                  decoration: InputDecoration(labelText: store.t('导入到分组')),
                   items: [
-                    const DropdownMenuItem(value: 'all', child: Text('全部自选')),
+                    DropdownMenuItem(
+                      value: 'all',
+                      child: Text(store.t('全部自选')),
+                    ),
                     for (final g in store.groups)
                       DropdownMenuItem(
                         value: str(g['id']),
                         child: Text(str(g['name'])),
                       ),
-                    const DropdownMenuItem(value: 'new', child: Text('新建分组')),
+                    DropdownMenuItem(
+                      value: 'new',
+                      child: Text(store.t('新建分组')),
+                    ),
                   ],
                   onChanged: busy
                       ? null
@@ -312,7 +323,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
                 TextField(
                   controller: groupName,
                   maxLength: 24,
-                  decoration: const InputDecoration(labelText: '分组名称'),
+                  decoration: InputDecoration(labelText: store.t('分组名称')),
                 ),
               if (portable != null) ...[
                 CheckboxListTile(
@@ -334,7 +345,9 @@ class _WatchImportPageState extends State<WatchImportPage> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text(
-                      '新增股票 ${plan.added} · 已有股票 ${plan.existing} · 新建分组 ${plan.groupsAdded}',
+                      store.t(
+                        '新增股票 ${plan.added} · 已有股票 ${plan.existing} · 新建分组 ${plan.groupsAdded}',
+                      ),
                       style: TextStyle(color: muted, height: 1.7),
                     ),
                   ),
@@ -362,11 +375,15 @@ class _WatchImportPageState extends State<WatchImportPage> {
                   title: Text(names[symbol] ?? symbol),
                   subtitle: Text(
                     symbol +
-                        (store.watchlist.contains(symbol) ? ' · 已在自选' : ''),
+                        (store.watchlist.contains(symbol)
+                            ? store.t(' · 已在自选')
+                            : ''),
                   ),
                 ),
               Text(
-                '当前自选 ${store.watchlist.length}/60；已有股票不会重复加入，超出容量的新增项请分组整理后再导入。',
+                store.t(
+                  '当前自选 ${store.watchlist.length}/60；已有股票不会重复加入，超出容量的新增项请分组整理后再导入。',
+                ),
                 style: TextStyle(color: muted, fontSize: 12, height: 1.5),
               ),
               const SizedBox(height: 12),
@@ -376,7 +393,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
                   child: Text(
                     portable != null
                         ? store.t('一键合并导入')
-                        : '确认合并 ${selected.length} 只',
+                        : store.t('确认合并 ${selected.length} 只'),
                   ),
                 ),
             ],

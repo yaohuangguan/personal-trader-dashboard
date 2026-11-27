@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'quote_book.dart';
 
 const watchPhases = {
   'all': '全部状态',
@@ -17,8 +18,12 @@ const watchPhases = {
   'pending': '待更新',
 };
 
+/// Fresh for 90 s after it was received on this device (`receivedAt`, local
+/// clock). Snapshots without a receive time fall back to `generatedAt`.
 bool insightFresh(Json? data, [DateTime? at]) {
-  final stamp = DateTime.tryParse(str(data?['generatedAt'], ''));
+  final stamp = DateTime.tryParse(
+    str(data?['receivedAt'] ?? data?['generatedAt'], ''),
+  );
   final age = stamp == null ? null : (at ?? DateTime.now()).difference(stamp);
   return data?['quoteStale'] != true &&
       age != null &&
@@ -62,6 +67,10 @@ List<String> rankWatch(
 }
 
 /// Survives list item disposal; refreshes never remove the previous result.
+///
+/// Expiry and freshness use the local receive time: the server's
+/// `expiresAt - generatedAt` is a duration, so a fast or slow device clock
+/// can neither defeat the cache nor mark every row "待更新".
 class WatchInsights extends ChangeNotifier {
   WatchInsights(this.api, {DateTime Function()? clock})
     : clock = clock ?? DateTime.now;
@@ -69,11 +78,32 @@ class WatchInsights extends ChangeNotifier {
   final DateTime Function() clock;
   final Map<String, Json> values = {};
   final Map<String, Future<Json>> _pending = {};
+  final _expires = <String, DateTime>{};
+  final _rows = <String, ChangeNotifier>{};
+  final _fresh = <String, bool>{};
+  final _tracked = <String, int>{};
   bool _disposed = false;
+
+  /// Fires only when this symbol's visible insight changed.
+  Listenable listen(String symbol) =>
+      _rows.putIfAbsent(symbol, ChangeNotifier.new);
+
+  /// Symbols currently on screen; the store's scheduler refreshes these.
+  Iterable<String> get tracked => _tracked.keys;
+  void track(String symbol) =>
+      _tracked.update(symbol, (n) => n + 1, ifAbsent: () => 1);
+  void untrack(String symbol) {
+    final n = (_tracked[symbol] ?? 0) - 1;
+    if (n <= 0) {
+      _tracked.remove(symbol);
+    } else {
+      _tracked[symbol] = n;
+    }
+  }
+
   Future<Json> load(String symbol, {bool force = false}) async {
-    final saved = values[symbol], now = clock();
-    final until = DateTime.tryParse(str(saved?['expiresAt'], ''));
-    if (!force && saved != null && until != null && until.isAfter(now)) {
+    final saved = values[symbol], until = _expires[symbol];
+    if (!force && saved != null && until != null && until.isAfter(clock())) {
       return saved;
     }
     if (_pending[symbol] case final task?) return task;
@@ -93,12 +123,57 @@ class WatchInsights extends ChangeNotifier {
     );
     if (data['symbol'] != symbol) throw const FormatException('研判代码不匹配');
     if (_disposed) return data;
+    final received = clock();
+    final generated = DateTime.tryParse(str(data['generatedAt'], '')),
+        expires = DateTime.tryParse(str(data['expiresAt'], ''));
+    var ttl = generated == null || expires == null
+        ? const Duration(seconds: 20)
+        : expires.difference(generated);
+    if (ttl < const Duration(seconds: 5)) ttl = const Duration(seconds: 5);
+    if (ttl > const Duration(minutes: 2)) ttl = const Duration(minutes: 2);
+    _expires[symbol] = received.add(ttl);
+    data['receivedAt'] = received.toIso8601String();
     if (values.length >= 120 && !values.containsKey(symbol)) {
-      values.remove(values.keys.first);
+      final oldest = values.keys.first;
+      values.remove(oldest);
+      _expires.remove(oldest);
     }
+    final previous = values[symbol];
     values[symbol] = data;
-    notifyListeners();
+    final fresh = insightFresh(data, received);
+    if (!_sameContent(previous, data) || _fresh[symbol] != fresh) {
+      _fresh[symbol] = fresh;
+      _rows[symbol]?.notifyListeners();
+      notifyListeners();
+    }
     return data;
+  }
+
+  static bool _sameContent(Json? a, Json b) {
+    if (a == null) return false;
+    const volatile = {'generatedAt', 'expiresAt', 'receivedAt'};
+    Json strip(Json v) => {
+      for (final e in v.entries)
+        if (!volatile.contains(e.key)) e.key: e.value,
+    };
+    return jsonEquals(strip(a), strip(b));
+  }
+
+  /// Rows turn "待更新" when their snapshot ages out even if no new data
+  /// arrives (e.g. offline). Called by the scheduler on each tick.
+  void checkFreshness() {
+    final now = clock();
+    var changed = false;
+    for (final symbol in _rows.keys) {
+      final data = values[symbol];
+      if (data == null) continue;
+      final fresh = insightFresh(data, now);
+      if (_fresh[symbol] == fresh) continue;
+      _fresh[symbol] = fresh;
+      _rows[symbol]!.notifyListeners();
+      changed = true;
+    }
+    if (changed) notifyListeners();
   }
 
   Future<void> loadMany(List<String> symbols, {bool force = false}) async {
@@ -118,8 +193,16 @@ class WatchInsights extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
   void dispose() {
     _disposed = true;
+    for (final n in _rows.values) {
+      n.dispose();
+    }
     super.dispose();
   }
 }

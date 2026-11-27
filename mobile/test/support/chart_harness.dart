@@ -71,6 +71,15 @@ ChartPainter painter(WidgetTester tester) =>
             )
             .painter!
         as ChartPainter;
+
+/// The crosshair/readout layer painted above the candles.
+CrosshairPainter crosshair(WidgetTester tester) =>
+    tester
+            .widget<CustomPaint>(
+              find.byKey(const ValueKey('chart-crosshair')).last,
+            )
+            .painter!
+        as CrosshairPainter;
 Future<void> exerciseChart(
   WidgetTester tester, {
   Future<void> Function(String)? screenshot,
@@ -115,7 +124,7 @@ Future<void> exerciseChart(
   await hold.up();
   await tester.pumpAndSettle();
   expect(
-    painter(tester).hover,
+    crosshair(tester).hover,
     isNotNull,
     reason: 'Crosshair remains readable after lifting the finger',
   );

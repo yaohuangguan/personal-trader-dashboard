@@ -1,8 +1,9 @@
 import {t as copyText} from '../preferences';
 import {intradayStudy,isMarketIndex} from '../../shared/intraday-study';
 import {t,usePreferences} from '../preferences';
-import {useEffect,useRef,useState} from 'react';
-import {createChart,ColorType,CrosshairMode,LineStyle,type UTCTimestamp,type Time} from 'lightweight-charts';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {createChart,ColorType,CrosshairMode,LineStyle,type ISeriesApi,type UTCTimestamp,type Time} from 'lightweight-charts';
+const UP='#f04a55',DOWN='#28cdb6';
 import type {IntradayPayload,SectorsPayload} from '../../shared/desk-types';
 import type {AuctionSegment} from '../../shared/auction';
 import {sessionGrid,defaultBenchmark} from '../../shared/intraday-axis';
@@ -22,9 +23,26 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
  const auction=useLiveEndpoint<{date:string;segments:AuctionSegment[];source:string;notice:string}>(auctionOpen?'/api/desk/auction?symbol='+data.symbol:null,30000);
  const valid=(r:Comparison|null)=>r?.date===data.date&&(r.previous||0)>0;
  const comparison=[...(isMarketIndex(data.symbol)&&valid(yellow.data)?[{data:yellow.data!,color:'#d5ae58',label:yellow.data!.name}]:[]),...(marketOn&&valid(market.data)?[{data:market.data!,color:'#6a92dc',label:indexes[index as keyof typeof indexes]}]:[]),...(board&&valid(sector.data)?[{data:sector.data!,color:'#758eef',label:sector.data!.name||boardRef.current?.name}]:[])];
+ const comparisonKey=comparison.map(r=>r.color+':'+r.label).join('|');
+ const latest=useRef({data,comparison});latest.current={data,comparison};
+ type Series={price:ISeriesApi<'Area'>;compare:ISeriesApi<'Line'>[];vol:ISeriesApi<'Histogram'>;hist?:ISeriesApi<'Histogram'>;dif?:ISeriesApi<'Line'>;dea?:ISeriesApi<'Line'>;byTime:Map<number,ReturnType<typeof intradayStudy>[number]>;grid:ReturnType<typeof sessionGrid>;normalize:boolean};
+ const seriesRef=useRef<Series|null>(null);
+ /** Push the latest minute data into the existing series (polls every 15–30s no longer rebuild the panes). */
+ const apply=useCallback(()=>{
+  const s=seriesRef.current;if(!s)return;
+  const {data:d,comparison:rows}=latest.current,base=d.previous,grid=s.grid;
+  const studied=intradayStudy(d.points,d.previous),byTime=new Map(studied.map(p=>[p.time,p]));s.byTime=byTime;
+  const at=(p:{time:number})=>p.time as UTCTimestamp;
+  s.price.setData(grid.map(p=>{const row=byTime.get(p.time);return row?{time:at(p),value:s.normalize?(row.price/base!-1)*100:row.price}:{time:at(p)};}));
+  rows.forEach((r,i)=>{const line=s.compare[i];if(!line||!s.normalize)return;const points=new Map(r.data.points.map(p=>[p.time,p]));line.setData(grid.map(p=>{const row=points.get(p.time);return row?{time:at(p),value:(row.price/r.data.previous!-1)*100}:{time:at(p)};}));});
+  s.vol.setData(grid.map(p=>{const row=byTime.get(p.time);return row?{time:at(p),value:row.volume,color:row.rising?UP:DOWN}:{time:at(p)};}));
+  s.hist?.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:at(p),value:r.histogram,color:r.histogram>=0?UP:DOWN}:{time:at(p)};}));
+  for(const [key,line] of [['dif',s.dif],['dea',s.dea]] as const)line?.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:at(p),value:r[key]}:{time:at(p)};}));
+ },[]);
+ // Structure: panes and series per (symbol, trading day, theme, MACD toggle, comparison set).
  useEffect(()=>{
   if(!root.current||!data.date)return;
-  setHover(data.points.at(-1));const el=root.current,grid=sessionGrid(data.date),base=data.previous;
+  setHover(data.points.at(-1));const el=root.current,grid=sessionGrid(data.date),normalize=!!data.previous&&data.previous>0;
   if(!grid.length)return;
   const cn=new Intl.DateTimeFormat(display.locale,{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false});
   const format=(time:Time)=>typeof time==='number'?cn.format(new Date(time*1000)):String(time);
@@ -33,7 +51,7 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
    const pane=document.createElement('div');pane.style.position='relative';pane.style.height=height+'px';el.appendChild(pane);
    if(label){const tag=document.createElement('span');tag.textContent=label;tag.style.cssText='position:absolute;left:8px;top:2px;font-size:11px;z-index:1;color:#999;pointer-events:none';pane.appendChild(tag);}
    const chart=createChart(pane,{width:el.clientWidth,height,
-    layout:{background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.fontSize*.8)},
+    layout:{attributionLogo:false,background:{type:ColorType.Solid,color:light?'#fff':'#0c0c0d'},textColor:light?'#59616d':'#a1a1aa',fontSize:Math.round(display.rootPx*.82)},
     grid:{vertLines:{visible:false},horzLines:{color:light?'#e9ecf0':'#202023'}},
     rightPriceScale:{visible:true,textColor:label?'#00000000':light?'#59616d':'#a1a1aa',borderVisible:false,minimumWidth:65,scaleMargins:{top:.12,bottom:.08}},
     timeScale:{visible:last,borderVisible:false,timeVisible:true,secondsVisible:false,tickMarkFormatter:format,fixLeftEdge:true,fixRightEdge:false},
@@ -43,24 +61,22 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
   };
   el.replaceChildren();
   const chart=make(total*(macdOn?.60:.75),false),volChart=make(total*(macdOn?.16:.25),!macdOn,'VOL'),macdChart=macdOn?make(total*.24,true,'MACD (12,26,9)'):null;
-  const normalize=!!base&&base>0;
   const price=chart.addAreaSeries({lineColor:light?'#364f70':'#e4e4e7',topColor:'#d0d0d019',bottomColor:'#d0d0d000',lineWidth:2,priceLineVisible:false,lastValueVisible:false,priceFormat:normalize?{type:'percent'}:{type:'price',precision:2,minMove:.01}});
-  const studied=intradayStudy(data.points,data.previous),byTime=new Map(studied.map(p=>[p.time,p]));
-  price.setData(grid.map(p=>{const row=byTime.get(p.time);return row?{time:p.time as UTCTimestamp,value:normalize?(row.price/base!-1)*100:row.price}:{time:p.time as UTCTimestamp};}));
   if(normalize)price.createPriceLine({price:0,lineStyle:LineStyle.Dashed,lineWidth:1,color:'#73737c',axisLabelVisible:true,title:t('昨收')});
-  for(const r of comparison){if(!normalize)continue;const line=chart.addLineSeries({color:r.color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'percent'}}),points=new Map(r.data.points.map(p=>[p.time,p]));line.setData(grid.map(p=>{const row=points.get(p.time);return row?{time:p.time as UTCTimestamp,value:(row.price/r.data.previous!-1)*100}:{time:p.time as UTCTimestamp};}));}
+  const compare=normalize?latest.current.comparison.map(r=>chart.addLineSeries({color:r.color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,priceFormat:{type:'percent'}})):[];
   const vol=volChart.addHistogramSeries({priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false});
-  vol.setData(grid.map(p=>{const row=byTime.get(p.time);return row?{time:p.time as UTCTimestamp,value:row.volume,color:row.rising?'#f04a55':'#28cdb6'}:{time:p.time as UTCTimestamp};}));
-  if(macdChart){
-   const hist=macdChart.addHistogramSeries({lastValueVisible:false,priceLineVisible:false,base:0});
-   hist.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:p.time as UTCTimestamp,value:r.histogram,color:r.histogram>=0?'#f04a55':'#28cdb6'}:{time:p.time as UTCTimestamp};}));
-   for(const [key,color] of [['dif','#e4e4e7'],['dea','#d5ae58']] as const){const line=macdChart.addLineSeries({color,lineWidth:1,lastValueVisible:false,priceLineVisible:false});line.setData(grid.map(p=>{const r=byTime.get(p.time);return r&&!r.warmup?{time:p.time as UTCTimestamp,value:r[key]}:{time:p.time as UTCTimestamp};}));}
-  }
+  const hist=macdChart?.addHistogramSeries({lastValueVisible:false,priceLineVisible:false,base:0});
+  const [dif,dea]=macdChart?(['#e4e4e7','#d5ae58'] as const).map(color=>macdChart.addLineSeries({color,lineWidth:1,lastValueVisible:false,priceLineVisible:false})):[];
+  seriesRef.current={price,compare,vol,hist,dif,dea,byTime:new Map(),grid,normalize};
+  apply();
   const resize=()=>{for(const c of charts){c.applyOptions({width:el.clientWidth});c.timeScale().setVisibleLogicalRange({from:0,to:grid.length-1});}};
-  for(const c of charts)c.subscribeCrosshairMove(p=>setHover(typeof p.time==='number'?byTime.get(p.time):data.points.at(-1)));
+  let lastTime:number|undefined;
+  for(const c of charts)c.subscribeCrosshairMove(p=>{const time=typeof p.time==='number'?p.time:undefined;if(time===lastTime)return;lastTime=time;setHover(time!==undefined?seriesRef.current?.byTime.get(time):latest.current.data.points.at(-1));});
   resize();const observer=new ResizeObserver(resize);observer.observe(el);
-  return()=>{observer.disconnect();for(const c of charts)c.remove();el.replaceChildren();};
- },[data,display,market.data,sector.data,yellow.data,marketOn,board,macdOn]);
+  return()=>{observer.disconnect();for(const c of charts)c.remove();el.replaceChildren();seriesRef.current=null;};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[data.symbol,data.date,light,display.rootPx,display.locale,macdOn,comparisonKey,apply]);
+ useEffect(()=>{apply();setHover(old=>old&&old.time!==data.points.at(-1)?.time?old:data.points.at(-1));},[data,market.data,sector.data,yellow.data,apply]);
  const chosen=auction.data?.date===data.date?auction.data.segments.find(s=>s.key===segment):null;
  return <div className="intraday-chart">
   <div className="intraday-actions"><span>{data.date} · {t('北京时间')}</span><button type="button" aria-pressed={macdOn} onClick={()=>setMacdOn(v=>!v)}>MACD</button><button type="button" aria-pressed={auctionOpen} onClick={()=>setAuctionOpen(v=>!v)}>{t('竞价')}</button><button type="button" aria-pressed={overlayOpen} onClick={()=>setOverlayOpen(v=>!v)}>{t('叠加走势')}</button></div>
@@ -70,7 +86,7 @@ export default function IntradayChart({data}:{data:IntradayPayload}){
   {(marketOn&&market.data&&!valid(market.data)||board&&sector.data&&!valid(sector.data))&&<small>{t('叠加来源交易日或昨收不匹配，已隐藏')}</small>}
   {isMarketIndex(data.symbol)&&<small className="intraday-yellow-note">{yellow.data?.notice||yellow.error||'正在加载黄色成分等权参考线…'}</small>}
   <small className="intraday-indicator-note">{copyText("VOL 红：较上一分钟上涨／持平，绿：下跌")}{macdOn?copyText(' · MACD(12,26,9) 分钟价；前33个有效分钟预热'):''}</small>
-  <div ref={root} data-testid="intraday-pane"/>
+  <div ref={root} data-testid="intraday-pane"/><a className="chart-attribution" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">{t('图表引擎')}: TradingView Lightweight Charts™</a>
   {auctionOpen&&<section className="auction-panel"><div className="intraday-actions">{(['open','close','after'] as const).map((key,i)=><button type="button" key={key} aria-pressed={segment===key} onClick={()=>setSegment(key)}>{t(['盘前竞价','收盘竞价','盘后定价'][i])}</button>)}</div>{chosen?.points.length?<><AuctionSpark segment={chosen}/><p>{chosen.points.at(-1)!.sourceClock} · {chosen.points.at(-1)!.price.toFixed(2)} · {t(chosen.points.at(-1)!.observation?'分钟观测':chosen.points.at(-1)!.indicative?'虚拟撮合':'撮合成交')} · {chosen.points.at(-1)!.volume}{t('手')} · {chosen.points.at(-1)!.amount??'—'}{t('元')}</p><small>{chosen.notice}</small></>:<p>{auction.error||t(auction.loading?'正在核验竞价数据…':'该时段暂未取得可核验数据')}</p>}<small>{auction.data?.source} · {auction.data?.notice}</small></section>}
  </div>;
 }

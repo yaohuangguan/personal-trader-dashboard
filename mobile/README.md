@@ -30,10 +30,36 @@ For a different deployed service, add `--dart-define=ATLAS_API_BASE=https://your
 | Screener | Seven pattern modes (bloom, bullish alignment, multi-MA breakout, beauty shoulder, golden spider, bullish cannon, recent closing-limit estimate). Every scope requires >= CNY 200m traded value and concentrated model chips; default cap 1000亿 with active-character filtering. Quick sample, full-market and watch scopes; pause/resume persistence, character/ST filters, stage/risk/name filters, CSV sharing, selected candidate monitor import. |
 | Sector outlook | Market environment, full industry breadth and coverage, participation, continuation/invalidation conditions. No fabricated probability. |
 | Signal center | Defaults to all-market server scanner, coverage/warmup/failures/source dates, optional selected lists, on/off/renew, event details and native push hook. |
-| News / research | 7x24 feed, source/importance/topic filters, original-source reader with persistent short HTTPS in-site share links that open directly, bookmarks, global overview, seven industry chains, archived events. |
-| Settings | Neutral dark / light themes, Chinese/English, 18/20/22 text sizes plus system scaling, watchlist import/export, foreground price reminders. |
+| News / research | 7x24 feed, source/importance/topic filters, original-source reader (links and an "Open original" action open in the in-app browser), persistent short HTTPS share links (they open the web reader; inside the app via `guanlan://n/<id>` — see Deep links), bookmarks, global overview, seven industry chains, archived events. |
+| Settings | Match system / neutral dark / light themes (iOS sheets, pickers and keyboard follow the choice), Chinese/English, 18/20/22 text sizes times the iOS text size (80–150 %), watchlist import/export, foreground price reminders (also for stocks outside the watchlist). |
 
-Phone workspaces use portrait bottom navigation, sheets and push/pop details. Chart fullscreen unlocks device rotation and restores portrait on exit. Tablets use a navigation rail. Settings and coverage details in the screener/signal center are collapsed so candidates and events remain prominent. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app is inactive. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
+Phone workspaces use portrait bottom navigation, sheets and push/pop details. Tabs keep their state (scroll position, groups, filters, screener options) when switching; tapping the active tab scrolls to the top. Chart fullscreen unlocks device rotation and restores portrait on exit. Tablets use a navigation rail. Settings and coverage details in the screener/signal center are collapsed so candidates and events remain prominent. Data, bookmarks, preferences and foreground scan progress are stored on the device, independently of the web app. Server signal scanning continues without the app open; the foreground screener pauses when the app goes to the background and reconnects to the running server job on return. Starting a new full-market scan requires signing in; the shared closing report is visible without an account. Missing sources, unconfigured archives and unsupported market coverage remain explicit.
+
+## Polling, storage and credentials
+
+- One scheduler drives quote, insight and sync polling. Cadence follows market hours: every 5 s while a watched market trades (A-shares 09:15–11:30 / 13:00–15:00 Asia/Shanghai; US 09:30–16:00 America/New_York), 15 s in US pre-market/after-hours, and at most every 5 min otherwise (lunch break, nights, weekends, detected exchange holidays), never sleeping past the next open. Failures back off and honour `Retry-After`. Nothing polls while the app is in the background; `inactive` (Control Centre, call banner) is not background.
+- Quotes and watch insights have their own notifiers; a poll only rebuilds the rows whose data changed.
+- The account session token, sync key and device capability token are stored in the iOS Keychain (`flutter_secure_storage`, *after first unlock, this device only*; not in iCloud backups). Values from older builds are migrated out of NSUserDefaults once.
+- Cached daily chart frames and the screener scan state are files in Application Support (`path_provider`), not NSUserDefaults; scan state is written at most every 15 s and only when it changed.
+
+## Deep links
+
+The app registers the custom URL scheme `guanlan://` (Info.plist `CFBundleURLTypes`, `FlutterDeepLinkingEnabled`). Supported links, also as push payloads:
+
+| Link | Opens |
+| --- | --- |
+| `guanlan://stock/600519.SH`, `guanlan://stock?symbol=AAPL`, `/?symbol=…` | Stock page |
+| `guanlan://n/<16-char id>`, `/n/<id>` | Shared article reader |
+| `guanlan://open?article=…`, `/?article=…` | Article reader |
+| `guanlan://signals` (also `watch`, `market`, `screener`, `news`), `/?view=signals` | That tab (covering pages are closed first) |
+
+**Universal Links are not enabled**, so `https://guanlan.nzs.workers.dev/n/…` opens the website, not the app. Enabling them needs the owner to:
+
+1. Enable the *Associated Domains* capability for the App ID `io.github.yaohuangguan.guanlan` in the Apple Developer portal and regenerate the App Store provisioning profile (update the `IOS_PROVISION_PROFILE_BASE64` secret).
+2. Add `mobile/ios/Runner/Runner.entitlements` with `com.apple.developer.associated-domains` = `applinks:guanlan.nzs.workers.dev` and set `CODE_SIGN_ENTITLEMENTS` for the Runner target. (Do this only after step 1, otherwise TestFlight signing fails.)
+3. Serve `https://guanlan.nzs.workers.dev/.well-known/apple-app-site-association` (JSON, no redirect) from the Worker, e.g. `{"applinks":{"details":[{"appIDs":["<TEAM_ID>.io.github.yaohuangguan.guanlan"],"components":[{"/":"/n/*"},{"?":{"article":"*"}},{"?":{"symbol":"*"}}]}]}}`.
+
+The app already routes such https links once iOS delivers them.
 
 ## Watchlist file exchange
 

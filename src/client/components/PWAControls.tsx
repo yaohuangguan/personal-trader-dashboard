@@ -1,3 +1,4 @@
+import {useHistoryLayer} from '../hooks/useHistoryLayer';
 import {t as uiText} from '../preferences';
 import {useCallback,useEffect,useState,useSyncExternalStore} from 'react';
 import {createPortal} from 'react-dom';
@@ -14,6 +15,7 @@ function standalone(){
 export default function PWAControls(){
  const [offer,setOffer]=useState<InstallEvent|null>(null),[installed,setInstalled]=useState(standalone);
  const [open,setOpen]=useState(false),[online,setOnline]=useState(navigator.onLine);
+ useHistoryLayer(open,()=>setOpen(false));
  const [ios,setIos]=useState(false);
  const update=useSyncExternalStore(subscribeUpdate,updateSnapshot),[dismissed,setDismissed]=useState('');
  const busy=['checking','downloading','applying','reloading'].includes(update.phase),ready=update.phase==='ready',error=update.phase==='error';

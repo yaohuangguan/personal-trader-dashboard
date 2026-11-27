@@ -1,10 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../core/api.dart';
-import '../core/store.dart';
 import 'common.dart';
 
 /// Refreshes the visible chart without replacing it with a loading screen.
@@ -25,35 +23,44 @@ class LiveChartFeed extends StatefulWidget {
 class _LiveChartFeedState extends State<LiveChartFeed> {
   Json? data;
   Object? error;
-  bool loading = false;
+  bool loading = false, _inFlight = false;
   Timer? timer;
   @override
   void initState() {
     super.initState();
+    loading = true;
     refresh();
     timer = Timer.periodic(Duration(seconds: widget.refreshSeconds), (_) {
-      if (context.read<AtlasStore>().foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        refresh();
-      }
+      // Tabs stay mounted in an IndexedStack: skip offstage tabs too.
+      if (mounted && visibleHere(context)) refresh();
     });
   }
 
+  /// One rebuild per refresh: the loading flag only drives the first-load
+  /// spinner, so a refresh over an existing chart does not rebuild it before
+  /// and after the request.
   Future<void> refresh() async {
-    if (loading) return;
-    setState(() => loading = true);
+    if (_inFlight) return;
+    _inFlight = true;
+    if (data == null && !loading) setState(() => loading = true);
     try {
       final next = await widget.load();
       if (mounted) {
         setState(() {
           data = next;
           error = null;
+          loading = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = e);
+      if (mounted) {
+        setState(() {
+          error = e;
+          loading = false;
+        });
+      }
     } finally {
-      if (mounted) setState(() => loading = false);
+      _inFlight = false;
     }
   }
 

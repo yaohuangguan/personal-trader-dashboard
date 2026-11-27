@@ -41,15 +41,53 @@ async function request(url: string, timeout = 9000, signal?:AbortSignal) {
   if (!response.ok) throw new Error('数据源 HTTP ' + response.status);
   return response;
 }
-let nextEastmoneyStart = 0;
+/**
+ * Token bucket: `capacity` requests may start back to back, then one per `intervalMs`.
+ * reserve() returns the wait before the caller may start, or null when it would exceed `maxWaitMs`.
+ */
+export class TokenBucket {
+  private tokens: number; private updated: number;
+  constructor(private capacity: number, private intervalMs: number, now = Date.now()) { this.tokens = capacity; this.updated = now; }
+  reserve(maxWaitMs: number, now = Date.now()): number | null {
+    this.tokens = Math.min(this.capacity, this.tokens + (now - this.updated) / this.intervalMs); this.updated = now;
+    const wait = this.tokens >= 1 ? 0 : Math.ceil((1 - this.tokens) * this.intervalMs);
+    if (wait > maxWaitMs) return null;
+    this.tokens -= 1;
+    return wait;
+  }
+}
+const EASTMONEY_MAX_WAIT_MS = 4500, EASTMONEY_REUSE_MS = 3000;
+const eastmoneyGlobal = new TokenBucket(6, 250), eastmoneyEndpoints = new Map<string, TokenBucket>();
+const eastmoneyRecent = new Map<string, { until: number; status: number; type: string; body: string }>();
+/** host + path: one bucket per Eastmoney endpoint, so a burst on one panel does not delay the others. */
+export const eastmoneyEndpoint = (url: string) => { const u = new URL(url); return u.hostname + u.pathname; };
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, ms);
+    const abort = () => { clearTimeout(timer); reject(signal!.reason); };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
 export async function eastmoney(url: string, timeout = 9000, signal?:AbortSignal) {
-  // Keep the wait in the calling request's context. A cross-request promise
-  // queue can retain a timer after its owner request has already completed.
-  const delay = Math.max(0, nextEastmoneyStart - Date.now());
-  if (delay > 4500) throw new Error('数据源访问保护中，请稍后刷新');
-  nextEastmoneyStart = Date.now() + delay + 900;
-  if (delay) await new Promise<void>(resolve => setTimeout(resolve, delay));
-  return request(url, timeout,signal);
+  // Completed responses for the same URL are reused for a few seconds; in-flight requests are
+  // never shared across Workers requests (their I/O belongs to the request that started them).
+  const recent = eastmoneyRecent.get(url);
+  if (recent && recent.until > Date.now()) return new Response(recent.body, { status: recent.status, headers: { 'content-type': recent.type } });
+  const key = eastmoneyEndpoint(url);
+  let bucket = eastmoneyEndpoints.get(key);
+  if (!bucket) { if (eastmoneyEndpoints.size > 64) eastmoneyEndpoints.clear(); bucket = new TokenBucket(2, 900); eastmoneyEndpoints.set(key, bucket); }
+  const endpointWait = bucket.reserve(EASTMONEY_MAX_WAIT_MS), globalWait = endpointWait === null ? null : eastmoneyGlobal.reserve(EASTMONEY_MAX_WAIT_MS);
+  if (endpointWait === null || globalWait === null) throw new Error('数据源访问保护中，请稍后刷新');
+  // The wait stays in the calling request's context and stops when that request is aborted.
+  const delay = Math.max(endpointWait, globalWait);
+  if (delay) await sleep(delay, signal);
+  const response = await request(url, timeout, signal);
+  const length = Number(response.headers.get('content-length') || 0);
+  if (length > 262144) return response;
+  const body = await response.text();
+  if (body.length <= 262144) { if (eastmoneyRecent.size > 200) eastmoneyRecent.clear(); eastmoneyRecent.set(url, { until: Date.now() + EASTMONEY_REUSE_MS, status: response.status, type: response.headers.get('content-type') || 'application/json', body }); }
+  return new Response(body, { status: response.status, headers: { 'content-type': response.headers.get('content-type') || 'application/json' } });
 }
 async function listData(url: string) {
   let failure: unknown;
@@ -336,7 +374,7 @@ export async function stockNews(raw: string, signal?:AbortSignal) {
   if (begin < 0 || end <= begin) throw new Error('个股新闻响应格式异常');
   const data = JSON.parse(text.slice(begin + 1, end)) as { result?: { cmsArticleWebOld?: Row[] } };
   if (!Array.isArray(data.result?.cmsArticleWebOld)) throw new Error('来源未提供个股新闻，可能暂时限流');
-  return { ...stamp('东方财富个股新闻检索', url), warnings: [], sources: ['东方财富'], items: data.result.cmsArticleWebOld.map(r => ({ id: 'em-' + String(r.code || r.url), title: clean(r.title), summary: clean(r.content).slice(0, 260), publishedAt: String(r.date || '').replace(' ', 'T') + '+08:00', source: clean(r.mediaName) || '东方财富', url: String(r.url || ''), category: 'all', originalTitle: clean(r.title) })) };
+  return { ...stamp('东方财富个股新闻检索', url), warnings: [], sources: ['东方财富'], items: data.result.cmsArticleWebOld.map(r => ({ id: 'em-' + String(r.code || r.url), title: clean(r.title), summary: clean(r.content).slice(0, 260), publishedAt: /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(String(r.date || '')) ? String(r.date).replace(' ', 'T') + '+08:00' : null, source: clean(r.mediaName) || '东方财富', url: String(r.url || ''), category: 'all', originalTitle: clean(r.title) })) };
 }
 
 

@@ -1,6 +1,6 @@
 import type {Candle} from '../shared/types';
 import type {Snapshot} from '../shared/desk-types';
-import {isUSStock,marketClock,newYorkTimestamp} from '../shared/market-clock';
+import {isUSStock,marketClock,newYorkTimestamp,shareClassSymbol} from '../shared/market-clock';
 import {validHistoryDate} from '../shared/chart-history';
 import {requestTencentHistory} from './chart-history';
 
@@ -20,10 +20,12 @@ export function parseUSQuotes(text:string,now=new Date()):Array<Snapshot&{wire:s
 }
 export async function usQuotes(symbols:string[],signal?:AbortSignal){
  if(!symbols.length||symbols.some(s=>!isUSStock(s)))throw new RangeError('Invalid US stock symbol');
- const url='https://qt.gtimg.cn/q='+symbols.map(s=>'us'+s).join(',');
+ // Tencent spells share classes with a dot (BRK.B); answer with the caller's spelling (BRK-B).
+ const requested=new Map(symbols.map(s=>[shareClassSymbol(s,'.'),s]));
+ const url='https://qt.gtimg.cn/q='+[...requested.keys()].map(s=>'us'+s).join(',');
  const response=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0',Referer:'https://gu.qq.com/'},signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
  if(!response.ok)throw new Error('US quote source HTTP '+response.status);
- const items=parseUSQuotes(new TextDecoder('gbk').decode(await response.arrayBuffer()));
+ const items=parseUSQuotes(new TextDecoder('gbk').decode(await response.arrayBuffer())).map(q=>{const asked=requested.get(q.symbol);return asked&&asked!==q.symbol?{...q,symbol:asked}:q;});
  if(!items.length)throw new Error('US quote source returned no valid snapshots');
  return {items,source:'腾讯财经美股公开快照',sourceUrl:url,fetchedAt:new Date().toISOString(),available:true,unavailable:symbols.filter(s=>!items.some(q=>q.symbol===s)),level2:false as const,depth:5 as const};
 }
