@@ -28,3 +28,17 @@ html[data-theme="light"]{--up:#c52c40;--down:#00806a}
 .watch-row-popover button{min-height:40px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel);color:var(--fg);font:inherit}
 .watch-spark.is-empty{visibility:hidden}
 .has-watch-sidebar .watch-sidebar-row b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow:hidden;line-height:1.3;word-break:break-word}
+
+/* ---- Chart chrome ---- */
+:root{--chart-label-bg:#0c0c0de8}
+html[data-theme="light"]{--chart-label-bg:#ffffffeb}
+.terminal-readouts{display:flex;align-items:center;flex-wrap:wrap;min-width:0}
+.terminal-readouts .terminal-ohlc{flex:0 1 auto;min-height:30px;padding-top:4px;padding-bottom:4px}
+.terminal-readouts .terminal-pattern-readout{flex:1 1 160px;min-width:0}
+.terminal-status .terminal-older{border:0;background:none;color:var(--fg);text-decoration:underline;padding:0 4px;font:inherit;min-height:24px}
+.chart-attribution{display:block;padding:4px 12px 8px;font-size:.7rem;color:var(--muted);text-align:right}
+.chart-attribution:hover{color:var(--fg);text-decoration:underline}
+.terminal-compact .chart-attribution{padding:2px 4px 0}
+.terminal-expanded-overlay{position:fixed;inset:0;z-index:var(--z-modal,1600);background:#000a}
+.terminal-expanded-dialog{position:fixed;inset:0;z-index:calc(var(--z-modal,1600) + 1);pointer-events:none}
+.terminal-expanded-dialog>.terminal-expanded{pointer-events:auto;z-index:auto}
