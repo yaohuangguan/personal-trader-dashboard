@@ -5,7 +5,9 @@ import {projectMarket} from '../shared/market-projection';
 import {loadChartBundle,loadChartFrame} from './chart-bundle';
 import {historicalSnapshot} from './history-cache';
 import {chartPayload} from './chart-payload';
-import {computeCache,studySession} from './compute-cache';
+import {computeCache,dataDateOf,DATA_DATE_HEADER} from './compute-cache';
+import {offload,registerInlineHandler} from './compute-offload';
+import {parseChartStudy} from './chart-study-input';
 import {parseMAPeriods,CLASSIC_MA} from '../shared/ma-system';
 import {watchSyncRoute} from './watch-sync';
 import {accountRoute,verifyAccountSession} from './account';
@@ -47,6 +49,8 @@ type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 const pending=new Map<string,Promise<unknown>>();
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
+/** JSON response that names the trade date its data covers, for the compute cache's closed-session TTL. */
+const dated=(data:unknown)=>{const response=json(data),day=dataDateOf(data);if(day)response.headers.set(DATA_DATE_HEADER,day);return response;};
 const validSymbol=(s:string)=>/^[A-Z0-9^.-]{1,18}$/.test(s);
 const num=(v:unknown)=>{const n=Number(v);return Number.isFinite(n)?n:0;};
 function withTimeout(url:string, opts:RequestInit={},timeout=9000):Promise<Response>{
@@ -423,7 +427,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   let resonance=null;if(url.searchParams.get('resonance')==='1'){const periods=await Promise.allSettled(['week','month'].map(period=>deskHistory(symbol,period)));resonance=analyzeGuideResonance(periods[0].status==='fulfilled'?periods[0].value.candles:[],periods[1].status==='fulfilled'?periods[1].value.candles:[]);}
   const strategy=decision?.strategy||analyzeStrategy(data.candles,{symbol,name:data.name,maPeriods:selectedMA});
   const response=json({available:true,strategy,review:decision?.review,patternMarks:reviewedPatternMarks(data.candles,strategy,new Date(),{symbol,name:data.name,maPeriods:selectedMA}),indicatorMarks:indicatorMarks(data.candles),maPeriods:strategy.plan.maPeriods,patternCoverage:GUIDE_PATTERN_COVERAGE,strategyHistory:evaluateStrategyHistory(data.candles,strategy.signals,{riskStops:strategy.riskStops}),context:marketContext(data.candles,guide.provisional),strength:guideScore(guide,character),action:{...strategy.plan,notice:strategy.method},guideAction:guideAction(guide,character),tradeMarkers:strategy.signals,market:url.searchParams.get('compact')==='1'?{...data,candles:undefined}:data,guide,character,candidate,resonance});
-  response.headers.set('cache-control','no-store');return response;
+  response.headers.set('cache-control','no-store');const day=dataDateOf({market:data});if(day)response.headers.set(DATA_DATE_HEADER,day);return response;
  }
  if(p==='/api/health')return json({status:'ok',serverTime:new Date().toISOString(),persistentStorage:!!env.DB,
   providers:{licensed:'FMP, Twelve Data, Alpha Vantage (optional keys)',researchOnly:'Yahoo/Stooq/Eastmoney best effort',
@@ -538,7 +542,7 @@ async function fetchHandler(request:Request,env:Env,ctx?:WaitUntil):Promise<Resp
  const response=await route(request,env,ctx);
  return new URL(request.url).pathname.startsWith('/api/')?finalizeApiResponse(response):response;
 }
-async function route(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
+async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promise<Response>{
   try {
    const incoming=new URL(request.url);
    if(['/sw.js','/version.json'].includes(incoming.pathname)&&env.ASSETS){const resource=await env.ASSETS.fetch(request),response=new Response(resource.body,resource);response.headers.set('cache-control','no-store, max-age=0');if(incoming.pathname==='/sw.js')response.headers.set('service-worker-allowed','/');return response;}
@@ -547,29 +551,32 @@ async function route(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
    const account=await accountRoute(request,env.MARKET_SCANNER);if(account)return account;
    const watchShare=await watchShareRoute(request,env.SHARES);if(watchShare)return watchShare;
    const admin=await adminRoute(request,env);if(admin)return admin;
-   if(new URL(request.url).pathname==='/api/chart-study'){
+   /** Heavy public analysis: edge cache first, then a compute Durable Object; inside that object it computes inline. */
+   const heavy=(identity:string,ttl:number,shardKey:string,compute:()=>Promise<Response>|Response,options:{market?:'cn'|'us';body?:string}={})=>
+    inline?Promise.resolve(compute()):computeCache(request,identity,ttl,()=>offload(request,env.MARKET_SCANNER,shardKey,compute,options.body),{ctx,market:options.market});
+   const marketOf=(symbol:string)=>isUSStock(symbol)?'us' as const:'cn' as const;
+   if(incoming.pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);
-    const raw=await request.text();if(raw.length>2500000)return json({error:'图表样本过大'},413);const body=JSON.parse(raw) as {task?:string;horizon?:number;candles:import('../shared/types').Candle[];ma:number[];unit?:string;symbol?:string;name?:string;amount?:number|null};
-    if(!Array.isArray(body.candles)||body.candles.length>20000||body.candles.some(b=>![b.open,b.close,b.high,b.low,b.volume].every(Number.isFinite)||typeof b.time!=='string')||!Array.isArray(body.ma))return json({error:'无效图表参数'},400);
-    const ma=body.ma.length?parseMAPeriods(body.ma.join(',')):[];
-    if(body.task==='projection')return computeCache(request,'projection-v2:'+studySession()+':'+raw,60,()=>json({projection:projectMarket(body.candles,{maPeriods:ma,horizon:body.horizon,unit:body.unit,symbol:body.symbol,name:body.name})}));
-    return computeCache(request,'chart-study-v6:'+studySession()+':'+raw,300,()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))));
+    const raw=await request.text(),parsed=parseChartStudy(raw);if('error' in parsed)return json({error:parsed.error},parsed.status);
+    const body=parsed.body,ma=body.ma.length?parseMAPeriods(body.ma.join(',')):[],options={body:raw,market:marketOf(body.symbol||'')};
+    if(body.task==='projection')return heavy('projection-v3:'+raw,60,'study:'+(body.symbol||''),()=>json({projection:projectMarket(body.candles,{maPeriods:ma,horizon:body.horizon,unit:body.unit,symbol:body.symbol,name:body.name})}),options);
+    return heavy('chart-study-v7:'+raw,300,'study:'+(body.symbol||''),()=>json(chartPayload(chartStudy(body.candles,{maPeriods:ma,symbol:body.symbol,name:body.name,unit:body.unit,amount:typeof body.amount==='number'&&Number.isFinite(body.amount)&&body.amount>=0?body.amount:null}))),options);
    }
    if(incoming.pathname==='/api/chart-frame'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
-    return computeCache(request,'chart-frame-v1:'+studySession()+symbol,2,async()=>json(await loadChartFrame(symbol,()=>cached('mobile-analysis:'+symbol,60,()=>historicalSnapshot(incoming.origin,symbol,()=>market(symbol,env))),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
+    return computeCache(request,'chart-frame-v2:'+symbol,2,async()=>dated(await loadChartFrame(symbol,()=>cached('mobile-analysis:'+symbol,60,()=>historicalSnapshot(incoming.origin,symbol,()=>market(symbol,env))),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))),{ctx,market:marketOf(symbol)});
    }
    if(incoming.pathname==='/api/review-context'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
-    return computeCache(request,'review-context-v1:'+studySession()+symbol,15,async()=>json(await loadTradeContext(symbol)));
+    return computeCache(request,'review-context-v2:'+symbol,15,async()=>dated(await loadTradeContext(symbol)),{ctx});
    }
    if(incoming.pathname==='/api/chart-bundle'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(!supportedStock(symbol))return json({error:'Invalid stock symbol'},400);
     const periods=parseMAPeriods(incoming.searchParams.get('ma'))??CLASSIC_MA;
-    return computeCache(request,'chart-bundle-v3:'+studySession()+JSON.stringify([symbol,periods]),3,async()=>json(await loadChartBundle(symbol,periods,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))));
+    return heavy('chart-bundle-v4:'+JSON.stringify([symbol,periods]),3,symbol,async()=>dated(await loadChartBundle(symbol,periods,()=>cached('mobile-analysis:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol],AbortSignal.timeout(1800))).items.find(q=>q.symbol===symbol))),{market:marketOf(symbol)});
    }
 
    // Old installed PWAs must download their same-origin shell before the new
@@ -583,37 +590,49 @@ async function route(request:Request,env:Env,ctx?:WaitUntil):Promise<Response>{
    if(closeUrl.pathname==='/api/desk/screen-job')return screenJobRoute(request,env);
    if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET')return closeReportRoute(request,env.MARKET_SCANNER,ctx);
    if(closeUrl.pathname.startsWith('/api/close-report/')){const action=closeUrl.pathname.split('/').at(-1);if(request.method!=='POST'||!['chunk','publish'].includes(action||''))return json({error:'Not found'},404);if(!env.SCREEN_JOB_TOKEN||!await timingSafeEqual(bearer(request),env.SCREEN_JOB_TOKEN))return json({error:'Unauthorized'},401);if(!env.MARKET_SCANNER)return json({error:'Close storage missing'},503);const raw=await request.text();if(raw.length>130000)return json({error:'Report chunk too large'},413);let body:unknown;try{body=JSON.parse(raw);}catch{return json({error:'Invalid JSON',code:'BAD_JSON'},400);}const result=await scannerFetch(env.MARKET_SCANNER,action!,body);return new Response(result.body,{status:result.status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
+   const desk404=async()=>await deskRoute(request)||json({error:'Not found'},404);
    if(['/api/desk/insight','/api/desk/trend'].includes(incoming.pathname)&&request.method==='GET'){
     const symbol=normalizeSymbol(incoming.searchParams.get('symbol')||'');if(incoming.pathname.endsWith('/insight')?!supportedStock(symbol):!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({available:false,reason:'Invalid stock symbol'},400);
-    return computeCache(request,'desk-view-v3:'+incoming.pathname+':'+studySession()+':'+symbol,incoming.pathname.endsWith('/insight')?5:15,async()=>await deskRoute(request)||json({error:'Not found'},404));
+    return heavy('desk-view-v4:'+incoming.pathname+':'+symbol,incoming.pathname.endsWith('/insight')?5:15,symbol,desk404,{market:marketOf(symbol)});
+   }
+   if(incoming.pathname==='/api/desk/history'&&request.method==='GET'){
+    // Daily/weekly/monthly A-share history carries pattern marks computed on the server.
+    const p=incoming.searchParams,symbol=p.get('symbol')||'',period=p.get('period')||'';
+    if(/^\d{6}\.(SH|SZ|BJ)$/.test(symbol)&&['day','week','month'].includes(period)&&p.get('before')===null&&p.get('study')!=='client')return heavy('desk-history-v1:'+symbol+':'+period,60,symbol,desk404);
+   }
+   if(['/api/desk/screen','/api/desk/screen-batch'].includes(incoming.pathname)&&request.method==='GET'){
+    const p=incoming.searchParams,symbols=(p.get('symbol')||p.get('symbols')||'').slice(0,80);
+    return heavy('desk-screen-v1:'+incoming.pathname+'?'+[...p].sort(([a],[b])=>a<b?-1:1).map(([k,v])=>k+'='+v).join('&'),30,symbols,desk404);
    }
    if(incoming.pathname==='/api/desk/index-equal'&&request.method==='GET'){
     const symbol=incoming.searchParams.get('symbol')||'';
     if(!['000001.SH','399001.SZ','399006.SZ','000300.SH','000688.SH','899050.BJ'].includes(symbol))return json({error:'无效指数'},400);
-    return computeCache(request,'index-yellow-v1:'+studySession()+':'+symbol,90,async()=>await deskRoute(request)||json({error:'Not found'},404));
+    return computeCache(request,'index-yellow-v2:'+symbol,90,desk404,{ctx});
    }
-   if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,async()=>await deskRoute(request)||json({error:'Not found'},404));
+   if(incoming.pathname==='/api/desk/earnings'&&request.method==='GET')return computeCache(request,'earnings-v1:'+incoming.search,300,desk404,{ctx,phase:false});
    const desk=await deskRoute(request);if(desk)return desk;
    if(incoming.pathname==='/api/analysis'&&request.method==='GET'){
     const p=incoming.searchParams,symbol=normalizeSymbol(p.get('symbol')||'');
     if(isUSStock(symbol)){
       const ma=parseMAPeriods(p.get('ma'))??CLASSIC_MA;
-      return computeCache(request,'us-analysis-v2-client:'+studySession()+JSON.stringify([symbol,ma]),15,async()=>{
+      return computeCache(request,'us-analysis-v3-client:'+JSON.stringify([symbol,ma]),15,async()=>{
         const frame=await loadChartFrame(symbol,()=>cached('us-market:'+symbol,60,()=>market(symbol,env)),async()=>(await deskQuotes([symbol])).items.find(q=>q.symbol===symbol));
         // The browser already runs the shared study rules. Repeating the full
         // study here can exhaust the edge CPU budget on an uncached symbol.
-        return json({...frame,available:true,maPeriods:ma,calculation:'client'});
-      });
+        return dated({...frame,available:true,maPeriods:ma,calculation:'client'});
+      },{ctx,market:'us'});
     }
     if(!/^\d{6}\.(SH|SZ|BJ)$/.test(symbol))return json({error:'Invalid A-share symbol'},400);
     const periods=parseMAPeriods(p.get('ma'));
-    return computeCache(request,'analysis-v5:'+studySession()+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,()=>handle(request,env));
+    return heavy('analysis-v6:'+JSON.stringify([symbol,periods,p.get('review')==='1',p.get('resonance')==='1',p.get('compact')==='1']),15,symbol,()=>handle(request,env));
    }
-   if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v1:'+studySession()+':'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env));
+   if(incoming.pathname==='/api/market'&&request.method==='GET'&&/^\d{6}\.(SH|SZ|BJ)$/.test(normalizeSymbol(incoming.searchParams.get('symbol')||'')))return computeCache(request,'market-v2:'+normalizeSymbol(incoming.searchParams.get('symbol')!),120,()=>handle(request,env),{ctx});
    if(new URL(request.url).pathname.startsWith('/api/'))return await handle(request,env);
    return env.ASSETS?env.ASSETS.fetch(request):new Response('Not found',{status:404});
   }catch(e){const details=e instanceof Error?e.message:String(e);if(/Exceeded allowed .*Durable Objects free tier/i.test(details)){const retryAt=new Date(new Date().setUTCHours(24,0,0,0));return json({available:false,error:'后台监控额度已用尽，等待 Cloudflare 每日额度重置；当前无法核验全市场信号',code:'MONITOR_QUOTA_EXCEEDED',retryAt:retryAt.toISOString(),retryAfter:Math.max(60,Math.ceil((retryAt.getTime()-Date.now())/1000))},503);}return json({error:'Unexpected server error',code:'INTERNAL',details},500);}
 }
+// Inside a compute Durable Object the same routes run without forwarding again.
+registerInlineHandler((request,env,ctx)=>route(request,env as Env,ctx,true));
 export default {
  fetch:fetchHandler,
  async scheduled(controller:{cron?:string}|undefined,env:Env,ctx:{waitUntil(task:Promise<unknown>):void}){

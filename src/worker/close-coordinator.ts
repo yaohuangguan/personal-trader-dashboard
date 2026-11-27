@@ -10,6 +10,7 @@ import type {ScreenCandidate} from '../shared/screening';
 import type {MonitorNamespace} from './signal-monitor';
 import {LeaseStore} from './close-leases';
 import {sessionInfo} from './close-session';
+import {COMPUTE_HOST,runCompute} from './compute-offload';
 type Storage={get<T>(key:string):Promise<T|undefined>;put<T>(key:string,value:T):Promise<void>;delete(key:string):Promise<boolean>;setAlarm(t:number):Promise<void>;deleteAlarm():Promise<void>;getAlarm():Promise<number|null>;list?<T>(options:{prefix:string;limit?:number;start?:string}):Promise<Map<string,T>>};
 type State={storage:Storage;blockConcurrencyWhile<T>(fn:()=>Promise<T>):Promise<T>};
 type Env={MARKET_SCANNER:MonitorNamespace;SIGNAL_MONITOR?:MonitorNamespace};
@@ -22,7 +23,10 @@ export class CloseCoordinator{
  private reportText:{key:string;text:string}|null=null;
  private leaseStore:LeaseStore;
  constructor(private state:State,private env:Env){this.leaseStore=new LeaseStore(state.storage);}
- async fetch(req:Request){const action=new URL(req.url).pathname.slice(1),s=this.state.storage;
+ async fetch(req:Request){
+  // `compute:<shard>` instances run heavy public analysis with the Durable Object CPU budget.
+  if(new URL(req.url).hostname===COMPUTE_HOST)return runCompute(req,this.env,{waitUntil:task=>{void task.catch(()=>{});}});
+  const action=new URL(req.url).pathname.slice(1),s=this.state.storage;
   if(action==='cloud-watch')return this.state.blockConcurrencyWhile(()=>watchVault(req,s));
   if(action==='account')return this.state.blockConcurrencyWhile(()=>accountStore(req,s));
   if(action==='research-status'){const job=await s.get<import('./research-screen').ResearchJob>('research:v1:job'),p=new URL(req.url).searchParams;return json(await new ResearchScreen(s).read(statusView(job,{id:p.get('id'),count:p.get('count'),since:p.get('since')})));}
