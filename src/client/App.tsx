@@ -1,3 +1,4 @@
+import {fetchJson,errorText} from './http';
 import ErrorBoundary from './components/ErrorBoundary';
 import ResizeRail,{usePanelWidth} from './components/ResizeRail';
 import type {CSSProperties} from 'react';
@@ -44,12 +45,7 @@ const relative=(v:string|null|undefined)=>{
  const age=relativeAge(v);
  return age.unit==='unknown'?'时间未知':age.unit==='now'?'刚刚':age.count+(age.unit==='minute'?' 分钟前':age.unit==='hour'?' 小时前':' 天前');
 };
-async function api<T>(path:string,signal?:AbortSignal):Promise<T>{
- const r=await fetch(path,{signal,headers:{accept:'application/json'}});
- const data=await r.json() as T&{error?:string;details?:string};
- if(!r.ok)throw new Error(data.details?data.error+': '+data.details:data.error||('HTTP '+r.status));
- return data;
-}
+const api=<T,>(path:string,signal?:AbortSignal):Promise<T>=>fetchJson<T>(path,{signal});
 function matchSectors(item:NewsItem){
  const lower=item.title.toLowerCase();
  return SECTORS.filter(s=>item.category===s.id||s.words.some(w=>lower.includes(w.toLowerCase())));
@@ -144,7 +140,7 @@ export default function App(){
    try{
     const data=await api<MarketPayload>('/api/market?symbol='+encodeURIComponent(symbol),ac.signal);
     if(!ac.signal.aborted)setMarkets(prev=>({...prev,[symbol]:data}));
-   }catch(e){if(!ac.signal.aborted)setMarketErrors(prev=>({...prev,[symbol]:e instanceof Error?e.message:String(e)}));}
+   }catch(e){if(!ac.signal.aborted)setMarketErrors(prev=>({...prev,[symbol]:errorText(e)}));}
   })).catch(()=>{});
   return ()=>ac.abort();
  },[activeWatch,refreshKey]);
@@ -153,7 +149,7 @@ export default function App(){
   const ac=new AbortController();setNewsLoading(true);setNewsError('');setNewsData(null);
   api<NewsPayload>('/api/news?category='+encodeURIComponent(newsCategory),ac.signal)
    .then(data=>{if(!ac.signal.aborted)setNewsData(data);})
-   .catch(e=>{if(!ac.signal.aborted)setNewsError(e instanceof Error?e.message:String(e));})
+   .catch(e=>{if(!ac.signal.aborted)setNewsError(errorText(e));})
    .finally(()=>{if(!ac.signal.aborted)setNewsLoading(false);});
   return ()=>ac.abort();
  },[newsCategory,refreshKey,view]);

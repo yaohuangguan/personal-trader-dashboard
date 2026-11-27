@@ -1,3 +1,4 @@
+import {errorText,readJson} from '../http';
 import ErrorBoundary from './ErrorBoundary';
 import {SharedArticle,SharedAnnouncement} from './SharedArticle';
 import {newsLink,readNewsLink} from '../../shared/news-link';
@@ -24,9 +25,9 @@ function OfficialDocument({symbol,form,date}:{symbol:string;form:string;date:str
   const ctrl=new AbortController();
   setState({loading:true,data:null,error:''});
   fetch('/api/filing-document?symbol='+encodeURIComponent(symbol)+'&form='+encodeURIComponent(form)+'&date='+encodeURIComponent(date),{signal:ctrl.signal})
-  .then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.details||data.error||'披露数据暂不可用');return data as FilingDocument;})
+  .then(async r=>{const data=await readJson<any>(r);if(!r.ok)throw new Error(data.details||data.error||'披露数据暂不可用');return data as FilingDocument;})
   .then(data=>{if(!ctrl.signal.aborted)setState({loading:false,data,error:''});})
-  .catch(err=>{if(!ctrl.signal.aborted)setState({loading:false,data:null,error:String(err)});});
+  .catch(err=>{if(!ctrl.signal.aborted)setState({loading:false,data:null,error:errorText(err)});});
   return ()=>ctrl.abort();
  },[symbol,form,date]);
  if(state.loading)return <div className="reader-state"><LoaderCircle className="spin" size={22}/> {uiText("正在从披露源获取文件…")}</div>;
@@ -85,7 +86,7 @@ function ReaderContents({selection}:{selection:ReadingItem}){
 export function InAppReaderProvider({children}:{children:ReactNode}){
  const [selected,setSelected]=useState<ReadingItem|null>(null);
  const [sharing,setSharing]=useState(false),[shareMessage,setShareMessage]=useState('');
- const copyShare=async()=>{if(selected?.kind!=='news')return;setSharing(true);setShareMessage('');try{const r=await fetch('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:selected.item})}),j=await r.json();if(!r.ok)throw new Error(j.error||'分享失败');await navigator.clipboard.writeText(j.url);setShareMessage('站内短链接已复制');}catch(e){setShareMessage(e instanceof Error?e.message:'分享失败');}finally{setSharing(false);}};
+ const copyShare=async()=>{if(selected?.kind!=='news')return;setSharing(true);setShareMessage('');try{const r=await fetch('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:selected.item})}),j=await readJson<any>(r);if(!r.ok)throw new Error(j.error||'分享失败');await navigator.clipboard.writeText(j.url);setShareMessage('站内短链接已复制');}catch(e){setShareMessage(e instanceof Error?e.message:'分享失败');}finally{setSharing(false);}};
  const close=useCallback(()=>{setSelected(null);const u=new URL(location.href);u.searchParams.delete('article');if(/^\/n\//.test(u.pathname))u.pathname='/';history.replaceState(null,'',u);},[]);
  useEffect(()=>{const short=/^\/n\/([A-Za-z0-9_-]{16})$/.exec(location.pathname);if(short){setSelected({kind:'shared',id:short[1]});return;}const raw=new URLSearchParams(location.search).get('article');if(raw){const item=readNewsLink(raw);if(item)setSelected({kind:'news',item});}},[]);
  useEffect(()=>{

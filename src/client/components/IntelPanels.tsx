@@ -1,3 +1,4 @@
+import {errorText,readJson} from '../http';
 import {t as uiText} from '../preferences';
 import {formatMarketTime} from '../time-format';
 import { useEffect,useState } from 'react';
@@ -21,9 +22,9 @@ function useEndpoint<T>(path:string):Load<T>&{refresh:()=>void}{
   const c=new AbortController();
   setState({loading:true,data:null,error:''});
   fetch(path,{signal:c.signal,headers:{accept:'application/json'}})
-   .then(async r=>{const b=await r.json();if(!r.ok)throw new Error(b.details||b.error||'HTTP '+r.status);return b as T;})
+   .then(async r=>{const b=await readJson<any>(r);if(!r.ok)throw new Error(b.details||b.error||'HTTP '+r.status);return b as T;})
    .then(data=>{if(!c.signal.aborted)setState({loading:false,data,error:''});})
-   .catch(e=>{if(!c.signal.aborted)setState({loading:false,data:null,error:String(e)});});
+   .catch(e=>{if(!c.signal.aborted)setState({loading:false,data:null,error:errorText(e)});});
   return ()=>c.abort();
  },[path,version]);
  return {...state,refresh:()=>setVersion(v=>v+1)};

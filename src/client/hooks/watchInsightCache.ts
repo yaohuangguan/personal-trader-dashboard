@@ -1,3 +1,4 @@
+import {readJson} from '../http';
 import type {WatchInsightData} from '../../shared/watch-insight';
 
 /** Screen-independent memory: keep the last value visible while refreshing. */
@@ -21,7 +22,7 @@ export class WatchInsightCache{
 }
 export const watchInsightCache=new WatchInsightCache(async symbol=>{
  const response=await fetch('/api/desk/insight?symbol='+encodeURIComponent(symbol),{cache:'no-store',signal:AbortSignal.timeout(30000)});
- const data=await response.json();
+ const data=await readJson<any>(response);
  if(!response.ok||data.available===false)throw new Error(data.reason||data.error||'研判暂不可用');
  return data as WatchInsightData;
 });

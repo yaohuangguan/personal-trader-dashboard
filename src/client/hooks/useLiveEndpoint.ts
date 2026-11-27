@@ -1,45 +1,59 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { errorText, readJson } from '../http';
+import { nextEndpointDelay, shouldRefetchOnResume } from './live-policy';
+
+type LiveState<T> = { data: T | null; loading: boolean; error: string; updatedAt: number };
 
 export function useLiveEndpoint<T>(url: string | null, intervalMs = 0, enabled = true) {
-  const [state, setState] = useState<{ data: T | null; loading: boolean; error: string; updatedAt: number }>({ data: null, loading: !!url, error: '', updatedAt: 0 });
+  const [state, setState] = useState<LiveState<T>>({ data: null, loading: !!url, error: '', updatedAt: 0 });
   const [revision, setRevision] = useState(0);
-  const previousUrl = useRef<string | null>(null);
+  const previousUrl = useRef<string | null>(null), latest = useRef(state);
+  latest.current = state;
   const refresh = useCallback(() => setRevision(v => v + 1), []);
+  const lastRevision = useRef(revision);
   useEffect(() => {
     const changed = previousUrl.current !== url;
     previousUrl.current = url;
-    if (changed) setState({ data: null, loading: !!url && enabled, error: '', updatedAt: 0 });
+    const manual = !changed && lastRevision.current !== revision;
+    lastRevision.current = revision;
+    // A changed URL always loads below, so it is loading even when auto-refresh is disabled.
+    if (changed) setState({ data: null, loading: !!url, error: '', updatedAt: 0 });
     if (!url) return;
     let disposed = false, running = false, timer: ReturnType<typeof setTimeout> | undefined;
     let controller: AbortController | null = null, nextInterval = intervalMs;
-    const load = async () => {
+    const load = async (showLoading = false) => {
       if (disposed || running || document.hidden || !navigator.onLine) return;
       running = true;
+      // Manual refresh keeps the previous data visible but shows progress.
+      if (showLoading) setState(old => ({ ...old, loading: true }));
       controller = new AbortController();
       let timedOut = false;
       const deadline = setTimeout(() => { timedOut = true; controller?.abort(); }, /analysis|trend|history|chips|market-pools|dragon|earnings/.test(url) ? 30000 : 15000);
       try {
-        const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
-        const raw=await response.text();let body;
-        try{body=JSON.parse(raw);}catch{throw new Error(/Worker exceeded resource limits|Error 1102/.test(raw)?'Cloudflare 分析计算资源达到上限，K线可独立查看，请稍后重试。':'数据源返回异常响应（HTTP '+response.status+'），请稍后重试。');}
-        if (!response.ok || body.available === false) throw new Error(body.reason || body.error || '数据暂不可用');
+        const response = await fetch(url, { signal: controller.signal, cache: 'no-store', headers: { accept: 'application/json' } });
+        const body = await readJson<{ available?: boolean; reason?: string; error?: string }>(response);
+        if (body?.available === false) throw new Error(body.reason || body.error || '数据暂不可用');
         if (!disposed) setState({ data: body as T, loading: false, error: '', updatedAt: Date.now() });
-        if (intervalMs > 0 && intervalMs <= 5000 && Array.isArray(body.items) && body.items.length && body.items.every((q: { session?: string }) => q.session === 'closed')) nextInterval = 30000;
-        else nextInterval = intervalMs;
+        nextInterval = nextEndpointDelay(intervalMs, body);
       } catch (error) {
-        if (!disposed && (timedOut || !controller.signal.aborted)) setState(old => ({ ...old, loading: false, error: timedOut ? '请求超时，请稍后刷新' : error instanceof Error ? error.message : '连接暂不可用' }));
+        if (!disposed && (timedOut || !controller.signal.aborted)) setState(old => ({ ...old, loading: false, error: timedOut ? '请求超时，请稍后刷新' : errorText(error) }));
       } finally {
         clearTimeout(deadline);
         running = false;
         if (!disposed && enabled && intervalMs) timer = setTimeout(load, nextInterval || intervalMs);
       }
     };
-    const resume = () => { if (enabled && !document.hidden && navigator.onLine) { clearTimeout(timer); void load(); } };
-    const manualRefresh = () => { clearTimeout(timer); void load(); };
+    const resume = () => {
+      if (!enabled || document.hidden || !navigator.onLine) return;
+      const s = latest.current;
+      if (!shouldRefetchOnResume({ intervalMs, updatedAt: s.updatedAt, hasData: s.data !== null, hasError: !!s.error, now: Date.now() })) return;
+      clearTimeout(timer); void load();
+    };
+    const manualRefresh = () => { clearTimeout(timer); void load(true); };
     window.addEventListener('atlas:refresh', manualRefresh);
     document.addEventListener('visibilitychange', resume);
     window.addEventListener('online', resume);
-    if (enabled || changed || revision > 0) void load();
+    if (enabled || changed || manual) void load(manual);
     return () => { disposed = true; clearTimeout(timer); controller?.abort(); document.removeEventListener('visibilitychange', resume); window.removeEventListener('online', resume); window.removeEventListener('atlas:refresh', manualRefresh); };
   }, [url, intervalMs, enabled, revision]);
   const matches = previousUrl.current === url;

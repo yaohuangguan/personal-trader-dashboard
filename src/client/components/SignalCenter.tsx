@@ -1,3 +1,4 @@
+import {readJson} from '../http';
 import {formatMarketTime} from '../time-format';
 import {useEffect,useState,useCallback,useRef} from 'react';
 import {Bell,Pause,RefreshCw,Send,Trash2,ArrowUpRight,CheckCircle2,Clock3,Radio,Search} from 'lucide-react';
@@ -12,7 +13,7 @@ export default function SignalCenter({watchlist,onStock}:{watchlist:string[];onS
  const hydrated=useRef(false);
  const load=useCallback(async()=>{
   setLoading(true);
-  const results=await Promise.allSettled([monitorApi(),monitorApi<FullMarketStatus>('global'),fetch('/api/desk/close-report',{cache:'no-store',signal:AbortSignal.timeout(15000)}).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||'收盘候选暂不可用');return j as {report:CloseReport|null};})]);
+  const results=await Promise.allSettled([monitorApi(),monitorApi<FullMarketStatus>('global'),fetch('/api/desk/close-report',{cache:'no-store',signal:AbortSignal.timeout(15000)}).then(async r=>{const j=await readJson<any>(r);if(!r.ok)throw new Error(j.error||'收盘候选暂不可用');return j as {report:CloseReport|null};})]);
   if(results[0].status==='fulfilled'){const s=results[0].value;setState(s);if(!hydrated.current){setScope(s.config.scope==='selected'?'saved':'all');setActivity(s.config.activityFilter);hydrated.current=true;}}
   if(results[1].status==='fulfilled')setMarket(results[1].value);
   if(results[2].status==='fulfilled')setReport(results[2].value.report);

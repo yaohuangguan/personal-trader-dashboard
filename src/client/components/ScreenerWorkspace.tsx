@@ -1,3 +1,4 @@
+import {readJson} from '../http';
 import {t as copyText} from '../preferences';
 import type {CandidateNow} from '../../shared/candidate-now';
 import {useCallback,useEffect,useMemo,useState} from 'react';
@@ -13,7 +14,7 @@ import './Screener.css';
 export default function ScreenerWorkspace({active=true,onOpen,watchlist,onStock,onWatch}:{active?:boolean;onOpen?:()=>void;watchlist:string[];onStock:(s:string)=>void;onWatch:(s:string)=>void}){
  const scan=useScreener(),{state,busy}=scan;
  const [tab,setTab]=useState('auto'),[useShared,setUseShared]=useState(true),[options,setOptions]=useState<ScreenOptions>({...DEFAULT_SCREEN,auto:true}),[scope,setScope]=useState<ScanScope>('all'),[excludeST,setExcludeST]=useState(true),[query,setQuery]=useState(''),[page,setPage]=useState(0),[report,setReport]=useState<CloseReport|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState('');
- const load=useCallback(async()=>{setLoading(true);try{const r=await fetch('/api/desk/close-report',{cache:'no-store'}),j=await r.json();if(!r.ok)throw new Error(j.error||'收盘报告暂不可用');setReport(j.report);setError('');}catch(e){setError(e instanceof Error?e.message:'来源暂不可用');}finally{setLoading(false);}},[]);
+ const load=useCallback(async()=>{setLoading(true);try{const r=await fetch('/api/desk/close-report',{cache:'no-store'}),j=await readJson<any>(r);if(!r.ok)throw new Error(j.error||'收盘报告暂不可用');setReport(j.report);setError('');}catch(e){setError(e instanceof Error?e.message:'来源暂不可用');}finally{setLoading(false);}},[]);
  useEffect(()=>{if(active)void load();},[active,load]);
  const auto=tab==='auto',currentOptions={...options,auto},manual=!useShared&&state.startedAt>0&&!!state.options.auto===auto,base=manual?(state.sharedCandidates||state.candidates):report?.candidates||[];
  const rows=useMemo(()=>filterReport({candidates:base},{...options,auto}).filter(c=>(!excludeST||!/ST|退/i.test(c.name))&&(!query||c.name.includes(query)||c.symbol.toLowerCase().includes(query.toLowerCase()))),[base,options,auto,excludeST,query]);
@@ -25,7 +26,7 @@ export default function ScreenerWorkspace({active=true,onOpen,watchlist,onStock,
   const ac=new AbortController();let running=false;
   const refresh=async()=>{if(running||document.hidden)return;running=true;setQuoteBusy(true);setQuoteError('');
    try{const candidates=JSON.parse(quoteKey);if(!candidates.length)return;
-    const r=await fetch('/api/desk/candidate-check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({candidates}),signal:ac.signal}),j=await r.json();
+    const r=await fetch('/api/desk/candidate-check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({candidates}),signal:ac.signal}),j=await readJson<any>(r);
     if(!r.ok)throw Error(j.error||'当前行情暂不可用');if(!ac.signal.aborted)setCurrentQuotes(Object.fromEntries((j.items as CandidateNow[]).map(q=>[q.symbol,q])));
    }catch(e){if(!ac.signal.aborted){setCurrentQuotes({});setQuoteError('当前行情刷新失败，历史报价已标明日期。');}}finally{running=false;if(!ac.signal.aborted)setQuoteBusy(false);}
   };void refresh();const timer=setInterval(refresh,60000);document.addEventListener('visibilitychange',refresh);
