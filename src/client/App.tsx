@@ -1,8 +1,10 @@
 import {fetchJson,errorText} from './http';
 import {isArrayOf,isBookmark,isBoolean,isString,readStored,writeStored} from './storage';
 import {editWatch,useWatchState} from './watch-store';
+import {useQuotes} from './quote-store';
 import ErrorBoundary from './components/ErrorBoundary';
-import ResizeRail,{usePanelWidth} from './components/ResizeRail';
+import ResizeRail,{cssVarPreview,usePanelWidth} from './components/ResizeRail';
+const watchPreview=cssVarPreview('.app-shell','--watch-rail');
 import type {CSSProperties} from 'react';
 import WatchSidebar from './components/WatchSidebar';
 import SignalCenter from './components/SignalCenter';
@@ -116,9 +118,8 @@ export default function App(){
  const news=useMemo(()=>newsData?.items||[],[newsData]);
  const savedIds=useMemo(()=>new Set(saved.map(x=>x.url)),[saved]);
  const selectedData=markets[selected];
- const activeWatch=useMemo(()=>Array.from(new Set([selected,...watchlist])).slice(0,14),[selected,watchlist]);
- const analysis=useMemo(()=>selectedData?analyzeGuide(selectedData.candles):null,[selectedData]);
- const watchAnalyses=useMemo<Record<string,ReturnType<typeof analyzeGuide>>>(()=>view==='markets'?Object.fromEntries(watchlist.filter(symbol=>markets[symbol]).map(symbol=>[symbol,analyzeGuide(markets[symbol].candles)])):{},[view,watchlist,markets]);
+ const analysis=useMemo(()=>view==='overview'&&selectedData?analyzeGuide(selectedData.candles):null,[selectedData,view]);
+ const focusQuotes=useQuotes(view==='overview'?watchlist.slice(0,8):[]);
  useEffect(()=>{writeStored('atlas.bookmarks.v1',saved);},[saved]);
  useEffect(()=>{const t=setInterval(()=>setClock(new Date()),60000);return ()=>clearInterval(t);},[]);
  useEffect(()=>{
@@ -130,17 +131,20 @@ export default function App(){
   };
   window.addEventListener('keydown',handler);return ()=>window.removeEventListener('keydown',handler);
  },[]);
+ // Full daily K only for the symbol on screen (research / overview spotlight), once per manual refresh.
+ // The watchlist itself uses the shared quote store, so clicking a stock no longer re-downloads every list entry.
+ const fetchedMarkets=useRef(new Set<string>());
  useEffect(()=>{
+  if(view!=='research'&&view!=='overview')return;
+  const key=selected+':'+refreshKey;if(fetchedMarkets.current.has(key))return;
   const ac=new AbortController();
-  const symbols=activeWatch;
-  Promise.all(symbols.map(async symbol=>{
-   try{
-    const data=await api<MarketPayload>('/api/market?symbol='+encodeURIComponent(symbol),ac.signal);
-    if(!ac.signal.aborted)setMarkets(prev=>({...prev,[symbol]:data}));
-   }catch(e){if(!ac.signal.aborted)setMarketErrors(prev=>({...prev,[symbol]:errorText(e)}));}
-  })).catch(()=>{});
+  api<MarketPayload>('/api/market?symbol='+encodeURIComponent(selected),ac.signal).then(data=>{
+   if(ac.signal.aborted)return;fetchedMarkets.current.add(key);
+   setMarkets(prev=>Object.fromEntries([...Object.entries(prev).filter(([s])=>s!==selected).slice(-15),[selected,data]]));
+   setMarketErrors(prev=>{if(!(selected in prev))return prev;const next={...prev};delete next[selected];return next;});
+  }).catch(e=>{if(!ac.signal.aborted)setMarketErrors(prev=>({...prev,[selected]:errorText(e)}));});
   return ()=>ac.abort();
- },[activeWatch,refreshKey]);
+ },[selected,refreshKey,view]);
  useEffect(()=>{
   if(view==='research'||view==='screener'||view==='news'&&newsCategory==='all')return;
   const ac=new AbortController();setNewsLoading(true);setNewsError('');setNewsData(null);
@@ -182,7 +186,7 @@ export default function App(){
 
  return <div style={{'--watch-rail':watchWidth+'px'} as CSSProperties} className={'app-shell '+(view==='research'?'stock-workspace-shell':'')+(view==='research'&&!workspaceNav?' has-watch-sidebar':'')+(sidebarCollapsed?' sidebar-is-collapsed':'')}>
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
-   <div className="brand"><Logo/><div className="brand-copy"><strong>{uiText("观澜 · ATLAS")}</strong><span>MARKET RESEARCH</span></div><button className="desktop-collapse icon-button" aria-label={uiText(sidebarCollapsed?'展开侧栏':'收起侧栏')} aria-expanded={!sidebarCollapsed} onClick={()=>setSidebarCollapsed(v=>!v)}><ChevronRight size={18} style={{transform:sidebarCollapsed?undefined:'rotate(180deg)'}}/></button><button className="mobile-close icon-button" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
+   <div className="brand"><Logo/><div className="brand-copy"><strong>{uiText("观澜 · ATLAS")}</strong><span>MARKET RESEARCH</span></div><button className="desktop-collapse icon-button" aria-label={uiText(sidebarCollapsed?'展开侧栏':'收起侧栏')} aria-expanded={!sidebarCollapsed} onClick={()=>setSidebarCollapsed(v=>!v)}><ChevronRight size={18} style={{transform:sidebarCollapsed?undefined:'rotate(180deg)'}}/></button><button className="mobile-close icon-button" aria-label={uiText("关闭导航")} onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
    {view==='research'&&!workspaceNav?<WatchSidebar watchlist={watchlist} markets={markets} selected={selected} onStock={chooseSymbol} onSearch={()=>setSearchOpen(true)} onRemove={toggleWatch} onWorkspace={()=>setWorkspaceNav(true)} onClose={()=>setMobileNav(false)}/>:<><div className="nav-label">WORKSPACE</div>
    <nav className="nav-list">{uiText(NAV.map(([id,label,Icon])=><button key={id} onClick={()=>{if(id==='news')setNewsCategory('all');changeView(id);}} className={'nav-item '+(view===id?'active':'')}><Icon size={17}/><span>{uiText(label)}</span>{uiText(id==='saved'&&saved.length>0&&<small className="nav-count">{uiText(saved.length)}</small>)}</button>))}</nav>
    <div className="sidebar-section">
@@ -192,7 +196,7 @@ export default function App(){
    <div className="sidebar-bottom"><div className="connection-icon"><span className="pulse-dot"/> RESEARCH FEEDS</div><p>{uiText("全球情报 · A股 / 美股 · 原始资料核验")}</p><small>{uiText("公开快照 · 五档 / 分笔 · 非授权Level-2")}</small></div>
 {view==='research'&&<button className="watch-workspace-button" onClick={()=>setWorkspaceNav(false)}><Star size={18}/>{uiText('返回自选列表')}</button>}</>}
   </aside>
-  {view==='research'&&!workspaceNav&&!sidebarCollapsed&&<ResizeRail className="watch-resize-rail" label="调整自选列表宽度" width={watchWidth} onChange={setWatchWidth} defaultWidth={innerWidth>=1600?360:340} min={320} max={()=>Math.min(560,innerWidth-(document.querySelector('.desk-right')?.getBoundingClientRect().width||350)-384)}/>}
+  {view==='research'&&!workspaceNav&&!sidebarCollapsed&&<ResizeRail className="watch-resize-rail" label="调整自选列表宽度" width={watchWidth} onChange={setWatchWidth} preview={watchPreview} defaultWidth={innerWidth>=1600?360:340} min={320} max={()=>Math.min(560,innerWidth-(document.querySelector('.desk-right')?.getBoundingClientRect().width||350)-384)}/>}
   {uiText(mobileNav&&<button className="mobile-shade" aria-label={uiText("关闭导航")} onClick={()=>setMobileNav(false)}/>)}
   <div className="workspace">
    <header className="topbar">
@@ -240,7 +244,7 @@ export default function App(){
       <div className="overview-side">
        <div className="panel">
         <div className="panel-heading compact"><div><span className="eyebrow">FOCUS LIST / 03</span><h2>{uiText("市场关注")}</h2></div><button className="icon-button" title={uiText("打开自选股")} onClick={()=>changeView('markets')}><ChevronRight size={18}/></button></div>
-        {uiText(watchlist.every(symbol=>!markets[symbol]?.last)?<><TradingViewWidget kind="quotes" symbols={watchlist.slice(0,8)}/><div className="widget-note">{uiText("TradingView 第三方参考行情 · 可能延迟，点击右上角进入本站个股研究。")}</div></>:<div className="quote-lines">{uiText(watchlist.slice(0,8).map(symbol=><QuoteLine key={symbol} selected={selected===symbol} data={markets[symbol]||{symbol,name:CATALOG.find(c=>c.symbol===symbol)?.name||symbol} as MarketPayload} onClick={()=>chooseSymbol(symbol)}/>))}</div>)}
+        {uiText(!focusQuotes.quotes.size&&focusQuotes.error?<><TradingViewWidget kind="quotes" symbols={watchlist.slice(0,8)}/><div className="widget-note">{uiText("TradingView 第三方参考行情 · 可能延迟，点击右上角进入本站个股研究。")}</div></>:<div className="quote-lines">{uiText(watchlist.slice(0,8).map(symbol=><QuoteLine key={symbol} selected={selected===symbol} data={{symbol,name:focusQuotes.quotes.get(symbol)?.name||CATALOG.find(c=>c.symbol===symbol)?.name||symbol,last:focusQuotes.quotes.get(symbol)?.price??markets[symbol]?.last,changePercent:focusQuotes.quotes.get(symbol)?.changePercent??markets[symbol]?.changePercent} as MarketPayload} onClick={()=>chooseSymbol(symbol)}/>))}</div>)}
         <div className="panel-bottom"><span>{uiText("真实日线 · 收盘价")}</span><button onClick={()=>changeView('markets')}>{uiText("管理自选")}<ArrowRight size={13}/></button></div>
        </div>
        <div className="panel focus-spotlight">

@@ -4,7 +4,8 @@ import StockSectorMap from './StockSectorMap';
 import CompactSelect from './CompactSelect';
 import {patchSession} from '../../shared/patch-session';
 import {migrateMAPreferences} from '../../shared/chart-indicators';
-import ResizeRail,{usePanelWidth} from './ResizeRail';
+import ResizeRail,{cssVarPreview,usePanelWidth} from './ResizeRail';
+const quotePreview=cssVarPreview('.desk-layout','--quote-rail');
 import type {CSSProperties} from 'react';
 import StockSnapshot from './StockSnapshot';
 import LiveAlerts from './LiveAlerts';
@@ -19,7 +20,9 @@ import F10Panel from './F10Panel';
 import DailyTrendPanel from './DailyTrendPanel';
 import FlowPanel from './FlowPanel';
 import {t as uiText} from '../preferences';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuotes } from '../quote-store';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -87,7 +90,7 @@ type Props = { symbol: string; market?: MarketPayload; marketError?: string; mar
 export default function ResearchDesk({ symbol, market:baseMarket, marketError, markets, watchlist, onSelect, onToggleWatch, onSearch, onRefresh }: Props) {
   const [quoteWidth,setQuoteWidth]=usePanelWidth('atlas.quote-width.v1',380,280,600);
   const [auto, setAuto] = useState(true), [chartMode, setChartMode] = useState('daily'), [contextTab, setContextTab] = useState('chart'), [bookTab, setBookTab] = useState('book');
-  const [watchFilter, setWatchFilter] = useState('all'), [sectorCode, setSectorCode] = useState('');
+  const [sectorCode, setSectorCode] = useState(''), wide = useMediaQuery('(min-width: 1201px)');
   const [rules, setRules] = useState<WatchRule[]>(readRules), [alertOpen, setAlertOpen] = useState(false), [alertDirection, setAlertDirection] = useState<'above' | 'below'>('above'), [alertValue, setAlertValue] = useState(''), [alertMessage, setAlertMessage] = useState('');
   const chinese = /^\d{6}\.(SH|SZ|BJ)$/.test(symbol);
   const readMA=()=>{try{return migrateMAPreferences(JSON.parse(localStorage.getItem('atlas.chart.ma.v2')||'null')).filter(p=>p.enabled).map(p=>p.period).join(',');}catch{return '5,13,20,30,60,120,144,250';}};
@@ -95,10 +98,13 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   const decision=useLiveEndpoint<DecisionPayload>('/api/analysis?symbol='+symbol+'&review=1&ma='+maKey,60000,auto);
   const historyMarket=decision.data?.market||baseMarket;
   const symbols = useMemo(() => [...new Set([symbol, ...INDEXES, ...watchlist, ...rules.filter(r => !r.firedAt).map(r => r.symbol)].filter(s => supportedStock(s)))].slice(0, 60).sort().join(','), [symbol, watchlist, rules]);
-  const quotes = useLiveEndpoint<QuotesPayload>('/api/desk/quotes?symbols=' + symbols, 5000, auto);
-  const quoteMap = useMemo(() => new Map(quotes.data?.items.map(q => [q.symbol, q]) || []), [quotes.data]);
+  // Shared quote store (also feeds the sidebar); a paused desk keeps showing the snapshot it had.
+  const liveQuotes = useQuotes(symbols.split(',')), frozenQuotes = useRef(liveQuotes);
+  if (auto || !frozenQuotes.current.updatedAt) frozenQuotes.current = liveQuotes;
+  const quotes = frozenQuotes.current;
+  const quoteMap = quotes.quotes;
   const quote = quoteMap.get(symbol);
-  const market=useMemo(()=>{if(!historyMarket||!quote)return historyMarket;const unit=!chinese||historyMarket.provider.includes('新浪')||/^68[89]/.test(symbol)?'股':'手';const update=patchSession(historyMarket,quote,unit);return update?{...historyMarket,candles:update.candles}:historyMarket;},[historyMarket,quote,symbol]);
+  const market=useMemo(()=>{if(!historyMarket||!quote)return historyMarket;const unit=!chinese||historyMarket.provider.includes('新浪')||/^68[89]/.test(symbol)?'股':'手';const update=patchSession(historyMarket,quote,unit);return update&&update.candles!==historyMarket.candles?{...historyMarket,candles:update.candles}:historyMarket;},[historyMarket,quote,symbol]);
   const dayData = useLiveEndpoint<IntradayPayload>(chinese && contextTab === 'chart' && chartMode === 'intraday' ? '/api/desk/intraday?symbol=' + symbol : null, 15000, auto);
   const periodData = useLiveEndpoint<{candles:Candle[];source:string;volumeUnit?:string;notice?:string}>(contextTab === 'chart' && (chinese||['week','month'].includes(chartMode)) && ['week','month','m5','m15','m30','m60','m120'].includes(chartMode) ? '/api/desk/history?symbol=' + symbol + '&period=' + chartMode+'&study=client' : null);
   const guideWeekly = useLiveEndpoint<{candles:Candle[];source:string;volumeUnit?:string;notice?:string}>(contextTab === 'guide' ? '/api/desk/history?symbol=' + symbol + '&period=week&study=client' : null);
@@ -125,16 +131,16 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   useEffect(() => { try { localStorage.setItem('atlas.price-alerts.v1', JSON.stringify(rules)); } catch { /* browser storage disabled */ } }, [rules]);
   useEffect(() => {
     if (!auto || quotes.error) return;
-    const fired = evaluateWatchRules(rules, quotes.data?.items || []);
+    const fired = evaluateWatchRules(rules, quotes.items);
     if (!fired.length) return;
     setRules(old => old.map(r => fired.some(f => f.id === r.id) ? { ...r, firedAt: new Date().toISOString() } : r));
     setAlertMessage(fired.map(r => r.symbol + ' 已' + (r.direction === 'above' ? '达到 ' : '低于 ') + r.value.toFixed(2)).join('；'));
-  }, [quotes.data, quotes.error, rules, auto]);
+  }, [quotes.items, quotes.error, rules, auto]);
   const refresh = () => { quotes.refresh(); dayData.refresh(); flash.refresh(); decision.refresh(); onRefresh(); };
   const zone = zoneForSymbol(symbol), sourceDate = quote?.asOf ? dateClock(quote.asOf, zone) : market?.asOf || '—';
   const status = !auto ? '已暂停轮询' : quotes.error ? '行情连接异常' : !quote ? chinese ? '连接行情中' : '历史日线' : quote.stale ? '快照已过期' : quote?.session === 'trading' ? '盘中快照' : quote?.session === 'break' ? '午间休市' : '已收盘';
-  const visibleWatch = watchlist.filter(s => watchFilter === 'all' || (watchFilter === 'cn' ? /\.(SH|SZ|BJ)$/.test(s) : !/\.(SH|SZ|BJ)$/.test(s)));
-  const row = (s: string) => { const q = quoteMap.get(s), d = markets[s]; return { name: q?.name || d?.name || CATALOG.find(c => c.symbol === s)?.name || s, price: q?.price ?? d?.last, change: q?.changePercent ?? d?.changePercent }; };
+
+
   const renderSector = (board: Sector) => <button type="button" key={board.code} className={'desk-sector-row ' + (chosenBoard?.code === board.code ? 'selected' : '')} onClick={() => { setSectorCode(board.code); setContextTab('sectors'); }}><span>{uiText(board.name)}<small>{uiText(board.code)}</small></span><b className={tone(board.changePercent)}>{uiText(pct(board.changePercent))}</b><ChevronRight size={13} /></button>;
 
   const securityCard=(<section className="desk-security">
@@ -147,16 +153,9 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   return <Tooltip.Provider delayDuration={250}><div className="research-desk" data-testid="research-desk">
     <div className="desk-market-tape" aria-label={uiText("大盘联动")}>{uiText(INDEXES.map(s => { const q = quoteMap.get(s); return <button type="button" key={s} onClick={() => onSelect(s)}><span>{uiText(q?.name || ({ '000001.SH': '上证指数', '399001.SZ': '深证成指', '399006.SZ': '创业板指', '000300.SH': '沪深300', '000688.SH': '科创50' }[s]))}</span><b>{uiText(number(q?.price))}</b><small className={tone(q?.changePercent)}>{uiText(pct(q?.changePercent))}</small></button>; }))}<div className="desk-tape-stamp"><Radio size={12} />{uiText("公开快照")}</div></div>
     <div className="desk-mobile-sticky" data-testid="mobile-quote"><b>{name}</b><span>{symbol}</span><strong className={tone(change)}>{number(price)}</strong><em className={tone(change)}>{pct(change)}</em></div><div className="desk-layout" style={{'--quote-rail':quoteWidth+'px'} as CSSProperties}>
-      <aside className="desk-watch">
-        <div className="desk-block-heading"><h2>{uiText("我的自选")}<small>{uiText(watchlist.length)}</small></h2><button type="button" className="desk-icon" aria-label={uiText("搜索并添加自选")} onClick={onSearch}><Plus size={16} /></button></div>
-        <div className="desk-watch-filters">{uiText([['all', '全部'], ['cn', 'A股'], ['us', '美股']].map(([id, label]) => <button type="button" aria-pressed={watchFilter === id} className={watchFilter === id ? 'active' : ''} onClick={() => setWatchFilter(id)} key={id}>{uiText(label)}</button>))}</div>
-        <div className="desk-watch-labels"><span>{uiText("名称 / 代码")}</span><span>{uiText("价格 / 涨跌")}</span></div>
-        <div className="desk-watch-items">{uiText(visibleWatch.map(s => { const d = row(s); return <button type="button" key={s} className={'desk-watch-item ' + (s === symbol ? 'active' : '')} onClick={() => onSelect(s)}><span><b>{(d.name)}</b><small>{uiText(s)}</small></span><span><b className={tone(d.change)}>{uiText(number(d.price))}</b><small className={tone(d.change)}>{uiText(pct(d.change))}</small></span></button>; }))}{uiText(!visibleWatch.length && <Empty text={uiText("暂无自选，点击 + 添加")} />)}</div>
-        <div className="desk-watch-bottom"><button type="button" onClick={() => setAlertOpen(true)}><Bell size={14} /><span>{uiText("价格提醒")}</span><b>{uiText(rules.filter(r => !r.firedAt).length)}</b></button><p>{uiText("本页打开且盘中行情有效时触发")}</p></div>
-      </aside>
 
       <div className="desk-center">
-        <div className="desk-mobile-security">{securityCard}</div>
+        {!wide && <div className="desk-mobile-security">{securityCard}</div>}
 
         {chinese && <><LiveAlerts alerts={liveAlerts}/><DailyTrendPanel symbol={symbol} liveAlerts={liveAlerts}/></>}
         {uiText(analysis && <GuideSummary strategy={strategy} review={decision.data?.review} candles={market?.candles} character={character} data={analysis} onOpen={() => {setContextTab('guide'); document.getElementById('stock-context')?.scrollIntoView({behavior:'smooth',block:'start'});}} />)}
@@ -179,7 +178,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
         </Tabs.Root></section>
       </div>
 
-      <aside className="desk-right"><ResizeRail className="quote-resize-rail" label="调整盘口信息宽度" side="right" width={quoteWidth} onChange={setQuoteWidth} defaultWidth={380} max={()=>Math.min(600,(document.querySelector('.desk-layout')?.getBoundingClientRect().width||1000)-344)}/><div className="desk-pinned-quote">{securityCard}</div><div className="desk-right-stream">
+      <aside className="desk-right"><ResizeRail className="quote-resize-rail" label="调整盘口信息宽度" side="right" width={quoteWidth} onChange={setQuoteWidth} preview={quotePreview} defaultWidth={380} max={()=>Math.min(600,(document.querySelector('.desk-layout')?.getBoundingClientRect().width||1000)-344)}/>{wide && <div className="desk-pinned-quote">{securityCard}</div>}<div className="desk-right-stream">
         <section className="desk-orderbook"><Tabs.Root value={bookTab} onValueChange={setBookTab}><div className="desk-block-heading"><Tabs.List className="desk-tabs" aria-label={uiText("盘口类型")}><Tabs.Trigger value="book">{uiText("五档盘口")}</Tabs.Trigger><Tabs.Trigger value="level2">Level-2</Tabs.Trigger><Tabs.Trigger value="ticks">{uiText("成交分笔")}</Tabs.Trigger></Tabs.List><Hint text={uiText("公开五档和约3秒聚合分笔；没有授权十档、逐笔委托队列或完整交易所 Level-2。")} /></div>
           <Tabs.Content value="book"><Book quote={quote} loading={quotes.loading} error={uiText(quotes.error)} /></Tabs.Content>
           <Tabs.Content value="level2"><Level2Panel symbol={symbol}/></Tabs.Content><Tabs.Content value="ticks">{uiText(tickData.data?.items.length ? <><div className="desk-ticks-head"><span>{uiText("时间")}</span><span>{uiText("成交价")}</span><span>{uiText("量（手）")}</span></div><div className="desk-ticks-list">{uiText(tickData.data.items.slice(0, 45).map(t => <div key={t.sequence}><time>{uiText(t.time)}</time><b className={t.side === 'B' ? 'is-up' : t.side === 'S' ? 'is-down' : ''}>{uiText(number(t.price))}</b><span>{uiText(number(t.volume, 0))}<small>{uiText(t.side === 'B' ? 'B' : t.side === 'S' ? 'S' : '·')}</small></span></div>))}</div><Source text={uiText((tickData.data.date || '') + ' · 最近一页 · 聚合分笔，非全日完整明细')} error={uiText(tickData.error)} /></> : <Empty loading={tickData.loading} text={uiText(tickData.error || '暂无分笔数据')} />)}</Tabs.Content>

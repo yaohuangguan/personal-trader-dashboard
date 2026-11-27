@@ -15,3 +15,16 @@
 /* ---- Topbar clocks ---- */
 .time-label time{font-variant-numeric:tabular-nums}
 .time-label .time-secondary{color:var(--muted);font-size:.78rem;font-variant-numeric:tabular-nums}
+
+/* ---- Semantic tokens (both themes) ---- */
+:root{--up:#f04a55;--down:#28cdb6;--surface:var(--panel-raised);--panel-bg:var(--panel);--text-muted:var(--muted);--border:var(--stroke)}
+html[data-theme="light"]{--up:#c52c40;--down:#00806a}
+
+/* ---- Watch rows: portal menu, sparkline, full names ---- */
+.watch-sidebar-row .watch-row-menu{position:absolute;right:4px;bottom:4px;min-width:32px;min-height:28px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:16px;line-height:1;letter-spacing:1px}
+.watch-sidebar-row .watch-row-menu:hover,.watch-sidebar-row .watch-row-menu[aria-expanded="true"]{background:var(--panel-raised);color:var(--fg)}
+.watch-row-popover{position:fixed;z-index:var(--z-popover,1500);width:220px;max-height:min(60dvh,420px);overflow:auto;display:grid;gap:8px;padding:12px;background:var(--panel-raised);color:var(--fg);border:1px solid var(--stroke);border-radius:10px;box-shadow:0 10px 30px #0006}
+.watch-row-popover label{display:flex;align-items:center;gap:8px;min-height:36px}
+.watch-row-popover button{min-height:40px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel);color:var(--fg);font:inherit}
+.watch-spark.is-empty{visibility:hidden}
+.has-watch-sidebar .watch-sidebar-row b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow:hidden;line-height:1.3;word-break:break-word}
