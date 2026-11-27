@@ -17,8 +17,10 @@ async function activated(){
  try{sessionStorage.setItem('atlas.update.expected',info.build);}catch{}
  setTimeout(()=>location.reload(),120);
 }
+/** No page controller yet: the worker being installed is the first one, not a new version. */
+const firstInstall=()=>!navigator.serviceWorker.controller;
 function track(reg:ServiceWorkerRegistration){
- registration=reg;const inspect=()=>{const installing=reg.installing;
+ registration=reg;const inspect=()=>{const installing=reg.installing;if(firstInstall())return;
   if(reg.waiting){set({phase:'ready',error:''});void status(reg.waiting).then(info=>{if(info.build)set({build:info.build,completed:info.total,total:info.total});});}
   if(installing&&!installingWorkers.has(installing)){installingWorkers.add(installing);set({phase:'downloading',completed:0,total:0,error:''});installing.addEventListener('statechange',()=>{if(installing.state==='installed'){if(reg.waiting)inspect();else set({phase:'success',build:APP_BUILD,error:''});}else if(installing.state==='redundant'&&!reg.waiting)set({phase:'error',error:'新版本下载失败，当前版本仍可使用。'});});void status(installing).then(info=>{if(info.build&&reg.installing===installing)set({build:info.build,completed:info.completed,total:info.total});});}
  };if(!tracked.has(reg)){tracked.add(reg);reg.addEventListener('updatefound',inspect);}inspect();
@@ -28,14 +30,19 @@ export async function startUpdater(){
  try{const expected=sessionStorage.getItem('atlas.update.expected');if(expected){sessionStorage.removeItem('atlas.update.expected');set({phase:expected===APP_BUILD?'success':'error',error:expected===APP_BUILD?'':'更新未生效，请重新检查更新。'});}}catch{}
  if(!listening){listening=true;
  navigator.serviceWorker.addEventListener('controllerchange',()=>void activated());
- navigator.serviceWorker.addEventListener('message',event=>{const data=event.data;if(data?.type!=='ATLAS_UPDATE_STATUS'||typeof data.build!=='string')return;
+ navigator.serviceWorker.addEventListener('message',event=>{const data=event.data;
+  // Notification click on a tab the worker cannot navigate (uncontrolled): the page navigates itself.
+  if(data?.type==='ATLAS_NAVIGATE'&&typeof data.url==='string'){try{const target=new URL(data.url,location.origin);if(target.origin===location.origin)location.assign(target.href);}catch{/* ignore malformed */}return;}
+  if(data?.type!=='ATLAS_UPDATE_STATUS'||typeof data.build!=='string')return;
+  // First visit: the initial install is not an update; never flash 'new version downloaded'.
+  if(firstInstall()&&data.phase!=='active')return;
   if(data.phase==='active'){if(data.build!==APP_BUILD)void activated();else if(!applying||navigator.serviceWorker.controller===applyingTo){clearTimeout(applyTimer);applying=false;set({phase:'success',build:APP_BUILD,error:''});}return;}
   if(data.phase==='downloading'||data.phase==='ready'||data.phase==='error')set({phase:data.phase,build:data.build,completed:Number(data.completed)||0,total:Number(data.total)||0,error:data.error||''});
  });
  const resume=()=>{if(!document.hidden&&navigator.onLine&&Date.now()-lastCheck>60000)void checkUpdate();};window.addEventListener('online',resume);document.addEventListener('visibilitychange',resume);
  }
  let timer:ReturnType<typeof setTimeout>|undefined;
- try{track(await Promise.race([navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('更新服务连接超时')),12000);})]));}catch{set({phase:'error',error:'更新服务连接失败或超时，请检查网络后重试。'});}finally{clearTimeout(timer);}
+ try{track(await Promise.race([navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('更新服务连接超时')),12000);})]));}catch{/* Background registration failure: stay quiet; a manual check reports errors. */set({phase:'idle',error:''});}finally{clearTimeout(timer);}
 }
 export async function checkUpdate(){
  if(applying||state.phase==='checking'||state.phase==='downloading')return;
