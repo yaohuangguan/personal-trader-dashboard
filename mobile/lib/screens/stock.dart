@@ -802,44 +802,42 @@ class _StockPageState extends State<StockPage> {
               children: [
                 _quoteStrip(),
                 SizedBox(
-                  // Full-width and at least 28 pt (was 14) so large text fits;
-                  // the same analysis is also behind the 44 pt "走势" button.
-                  height: math.max(
-                    28,
-                    MediaQuery.textScalerOf(context).scale(11) + 14,
-                  ),
-                  child: InkWell(
-                    onTap: openTrend,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.sensors,
-                            size: 13,
-                            color: liveAlerts.isEmpty
-                                ? muted
-                                : const Color(0xffd5ae58),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              liveAlerts.isEmpty
-                                  ? tr(context, '盘中观察 · 无新增预警')
-                                  : liveAlerts
-                                        .take(2)
-                                        .map((a) => str(a['title']))
-                                        .join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: liveAlerts.isEmpty ? muted : ink,
+                  // Fixed (first screen): the text is capped instead. The same
+                  // analysis is also behind the 44 pt "走势" source-bar button.
+                  height: 14,
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.15,
+                    child: InkWell(
+                      onTap: openTrend,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.sensors,
+                              size: 13,
+                              color: liveAlerts.isEmpty ? muted : warning,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                liveAlerts.isEmpty
+                                    ? tr(context, '盘中观察 · 无新增预警')
+                                    : liveAlerts
+                                          .take(2)
+                                          .map((a) => str(a['title']))
+                                          .join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: liveAlerts.isEmpty ? muted : ink,
+                                ),
                               ),
                             ),
-                          ),
-                          Icon(Icons.chevron_right, size: 14, color: muted),
-                        ],
+                            Icon(Icons.chevron_right, size: 14, color: muted),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -879,74 +877,78 @@ class _StockPageState extends State<StockPage> {
       },
     ),
   );
-  Widget _quoteStrip() => InkWell(
-    onTap: more,
-    child: Container(
-      // A minimum, so large text grows the strip instead of overflowing.
-      constraints: const BoxConstraints(minHeight: 78),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: atlasColor(0xff24242a), width: .5),
+  Widget _quoteStrip() => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: _firstScreenTextScale,
+    child: InkWell(
+      onTap: more,
+      child: Container(
+        // Fixed so the chart below keeps its height; the text scale is capped
+        // (and prices use FittedBox) so large system sizes cannot overflow it.
+        height: 78,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: atlasColor(0xff24242a), width: .5),
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 5,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    fixed(q['price']),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      fixed(q['price']),
+                      style: TextStyle(
+                        fontSize: 31,
+                        height: 1,
+                        fontWeight: FontWeight.w600,
+                        color: tone(q['changePercent']),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${fixed(q['change'])}  ${percent(q['changePercent'])}',
                     style: TextStyle(
-                      fontSize: 31,
+                      fontSize: 13,
                       height: 1,
-                      fontWeight: FontWeight.w600,
                       color: tone(q['changePercent']),
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${fixed(q['change'])}  ${percent(q['changePercent'])}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1,
-                    color: tone(q['changePercent']),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            flex: 6,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _statColumn(
-                    '今开',
-                    fixed(q['open']),
-                    '最低',
-                    fixed(q['low']),
+            Expanded(
+              flex: 6,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _statColumn(
+                      '今开',
+                      fixed(q['open']),
+                      '最低',
+                      fixed(q['low']),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _statColumn(
-                    '最高',
-                    fixed(q['high']),
-                    '换手率',
-                    '${fixed(q['turnover'])}%',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _statColumn(
+                      '最高',
+                      fixed(q['high']),
+                      '换手率',
+                      '${fixed(q['turnover'])}%',
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -978,11 +980,21 @@ class _StockPageState extends State<StockPage> {
         ),
     ],
   );
-  Widget _periodBar() => PeriodSelector(
-    intraday: cnStock(widget.symbol),
-    value: timeframe,
-    onChanged: (v) => setState(() => timeframe = v),
+  // Above the chart on the first screen: fixed height, text scaled to fit,
+  // so the candles keep their room at every text size.
+  Widget _periodBar() => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: _firstScreenTextScale,
+    child: PeriodSelector(
+      height: 36,
+      intraday: cnStock(widget.symbol),
+      value: timeframe,
+      onChanged: (v) => setState(() => timeframe = v),
+    ),
   );
+
+  /// Largest text scale the fixed first-screen rows (quote strip, alert
+  /// strip, period bar) can hold; larger app/system sizes do not grow them.
+  static const _firstScreenTextScale = 22 / 18;
   Widget _waiting() => Center(
     child: Padding(
       padding: const EdgeInsets.all(16),

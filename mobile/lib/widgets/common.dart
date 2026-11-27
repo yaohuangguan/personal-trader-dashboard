@@ -451,13 +451,18 @@ class PeriodSelector extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.intraday = true,
+    this.height,
   });
   final bool intraday;
   final String value;
   final ValueChanged<String> onChanged;
+
+  /// Fixed height for space-critical places (the stock first screen);
+  /// otherwise a 44 pt row that grows with the text.
+  final double? height;
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: touchRowHeight(context, 14),
+    height: height ?? touchRowHeight(context, 14),
     child: Row(
       children: [
         for (final pair in [
