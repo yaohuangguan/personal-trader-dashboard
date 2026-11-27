@@ -1,3 +1,4 @@
+import {writeStored} from './storage';
 import {readJson} from './http';
 import {CLIENT_STATE_KEYS,MIGRATED_KEY,NEW_SITE,mergedClientState} from '../shared/client-state';
 const pending='atlas.client-migration.nonce';
@@ -21,9 +22,10 @@ export async function migrateClientState(){
  // The old Worker is retired. Redirecting fresh visitors there blocks all charts.
  if(u.searchParams.get('restore')==='1'){
   u.searchParams.delete('restore');
-  localStorage.setItem(MIGRATED_KEY,'1');
+  writeStored(MIGRATED_KEY,'1');
   history.replaceState(null,'',u.pathname+u.search+u.hash);
  }
- if(localStorage.getItem(MIGRATED_KEY)!=='1')localStorage.setItem(MIGRATED_KEY,'1');
+ // Private mode / full quota must not block the app from booting.
+ try{if(localStorage.getItem(MIGRATED_KEY)!=='1')localStorage.setItem(MIGRATED_KEY,'1');}catch{/* storage unavailable */}
  return true;
 }

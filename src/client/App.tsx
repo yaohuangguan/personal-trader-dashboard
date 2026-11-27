@@ -1,4 +1,6 @@
 import {fetchJson,errorText} from './http';
+import {isArrayOf,isBookmark,isBoolean,isString,readStored,writeStored} from './storage';
+import {editWatch,useWatchState} from './watch-store';
 import ErrorBoundary from './components/ErrorBoundary';
 import ResizeRail,{usePanelWidth} from './components/ResizeRail';
 import type {CSSProperties} from 'react';
@@ -34,9 +36,6 @@ const NAV:[View,string,typeof Globe2][]=[
  ['research','个股工作台',Target],['screener','选股雷达',SlidersHorizontal],['signals','收盘信号',Bell],['markets','市场全景',LineChart],['news','7×24 快讯',Globe2],
  ['overview','情报总览',LayoutDashboard],['radar','产业联动',Radar],['history','事件档案',Clock3],['saved','收藏情报',Bookmark]
 ];
-function readStored<T>(key:string,fallback:T):T{
- try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw) as T:fallback;}catch{return fallback;}
-}
 const money=(value:number|null|undefined,digits=2)=>value==null?'—':new Intl.NumberFormat('en-US',{maximumFractionDigits:digits,minimumFractionDigits:digits}).format(value);
 const percent=(value:number|null|undefined)=>value==null?'—':(value>=0?'+':'')+value.toFixed(2)+'%';
 const changeClass=(value:number|null|undefined)=>value==null?'muted':value>=0?'positive':'negative';
@@ -91,18 +90,17 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
 export default function App(){
  const display=usePreferences();
  const [watchWidth,setWatchWidth]=usePanelWidth('atlas.watch-width.v1',innerWidth>=1600?360:innerWidth<=1200?320:340,320,560);
- const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>readStored('atlas.sidebar-collapsed.v1',false));
- useEffect(()=>{localStorage.setItem('atlas.sidebar-collapsed.v1',JSON.stringify(sidebarCollapsed));},[sidebarCollapsed]);
+ const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>readStored('atlas.sidebar-collapsed.v1',false,isBoolean));
+ useEffect(()=>{writeStored('atlas.sidebar-collapsed.v1',sidebarCollapsed);},[sidebarCollapsed]);
  const [view,setView]=useState<View>(()=>{
   const params=new URLSearchParams(window.location.search),requested=params.get('view');
   if((['overview','news','radar','markets','research','history','saved','screener','signals'] as string[]).includes(requested||''))return requested as View;
   return params.get('symbol')?.trim()?'research':'markets';
  });
  const [mobileNav,setMobileNav]=useState(false);const [workspaceNav,setWorkspaceNav]=useState(false);
- const [watchlist,setWatchlist]=useState<string[]>(()=>readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));
- useEffect(()=>{const load=()=>setWatchlist(readStored('atlas.watchlist.v1',DEFAULT_WATCHLIST));window.addEventListener('atlas:watch-cloud',load);return()=>window.removeEventListener('atlas:watch-cloud',load);},[]);
- const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[]));
- const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):readStored('atlas.last-symbol.v1','300545.SZ');});
+ const {watchlist}=useWatchState();
+ const [saved,setSaved]=useState<NewsItem[]>(()=>readStored('atlas.bookmarks.v1',[],isArrayOf(isBookmark)) as NewsItem[]);
+ const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):readStored('atlas.last-symbol.v1','300545.SZ',isString);});
  const [markets,setMarkets]=useState<Record<string,MarketPayload>>({});
  const [marketErrors,setMarketErrors]=useState<Record<string,string>>({});
  const [newsCategory,setNewsCategory]=useState('all');
@@ -121,8 +119,7 @@ export default function App(){
  const activeWatch=useMemo(()=>Array.from(new Set([selected,...watchlist])).slice(0,14),[selected,watchlist]);
  const analysis=useMemo(()=>selectedData?analyzeGuide(selectedData.candles):null,[selectedData]);
  const watchAnalyses=useMemo<Record<string,ReturnType<typeof analyzeGuide>>>(()=>view==='markets'?Object.fromEntries(watchlist.filter(symbol=>markets[symbol]).map(symbol=>[symbol,analyzeGuide(markets[symbol].candles)])):{},[view,watchlist,markets]);
- useEffect(()=>{localStorage.setItem('atlas.watchlist.v1',JSON.stringify(watchlist));window.dispatchEvent(new Event('atlas:watch-local'));},[watchlist]);
- useEffect(()=>{localStorage.setItem('atlas.bookmarks.v1',JSON.stringify(saved));},[saved]);
+ useEffect(()=>{writeStored('atlas.bookmarks.v1',saved);},[saved]);
  useEffect(()=>{const t=setInterval(()=>setClock(new Date()),60000);return ()=>clearInterval(t);},[]);
  useEffect(()=>{
   const handler=(e:KeyboardEvent)=>{
@@ -164,11 +161,11 @@ export default function App(){
  },[searchQuery]);
  const chooseSymbol=useCallback((symbol:string)=>{
   setWorkspaceNav(false);const normalized=normalizeSymbol(symbol);setSelected(normalized);setView('research');setSearchOpen(false);setSearchQuery('');
-  try{localStorage.setItem('atlas.last-symbol.v1',JSON.stringify(normalized));}catch{/* storage unavailable */}
+  writeStored('atlas.last-symbol.v1',normalized);
   window.history.replaceState(null,'','?symbol='+encodeURIComponent(normalized));
   window.scrollTo({top:0,behavior:'smooth'});
  },[]);
- const toggleWatch=useCallback((symbol:string)=>setWatchlist(prev=>prev.includes(symbol)?prev.filter(x=>x!==symbol):prev.length>=60?prev:[symbol,...prev]),[]);
+ const toggleWatch=useCallback((symbol:string)=>{editWatch({kind:'toggle',symbol});},[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
  const changeView=useCallback((v:View)=>{if(v==='research')setWorkspaceNav(false);setView(v);setMobileNav(false);const url=new URL(window.location.href);url.searchParams.set('view',v);window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
  useEffect(()=>{const open=()=>changeView('signals');window.addEventListener('atlas:monitor-pool',open);return()=>window.removeEventListener('atlas:monitor-pool',open);},[changeView]);
