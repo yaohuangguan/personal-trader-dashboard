@@ -46,7 +46,7 @@ import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from 
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
 import { secCompany, fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
-interface Env extends Level2Env, DispatchEnv { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
+interface Env extends Level2Env, DispatchEnv { /** '1' computes heavy analysis in the Worker (Workers Paid plan with a larger CPU limit) instead of compute Durable Objects. */ COMPUTE_INLINE?:string; PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
 /** Successful payloads may be cached briefly; errors and `available:false` fallbacks never are. */
@@ -521,7 +521,7 @@ async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promis
    const admin=await adminRoute(request,env);if(admin)return admin;
    /** Heavy public analysis: edge cache first, then a compute Durable Object; inside that object it computes inline. */
    const heavy=(identity:string,ttl:number,shardKey:string,compute:()=>Promise<Response>|Response,options:{market?:'cn'|'us';body?:string}={})=>
-    inline?Promise.resolve(compute()):computeCache(request,identity,ttl,()=>offload(request,env.MARKET_SCANNER,shardKey,compute,options.body),{ctx,market:options.market});
+    inline?Promise.resolve(compute()):computeCache(request,identity,ttl,()=>env.COMPUTE_INLINE==='1'?compute():offload(request,env.MARKET_SCANNER,shardKey,compute,options.body),{ctx,market:options.market});
    const marketOf=(symbol:string)=>isUSStock(symbol)?'us' as const:'cn' as const;
    if(incoming.pathname==='/api/chart-study'){
     if(request.method!=='POST')return json({error:'Method not allowed'},405);

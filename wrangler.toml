@@ -20,6 +20,10 @@ APP_NAME = "观澜 · ATLAS"
 PUBLIC_ORIGIN = "https://guanlan.nzs.workers.dev"
 # Optional: configure SEC_USER_AGENT through wrangler secret put.
 # Optional: configure TWELVE_DATA_API_KEY / ALPHA_VANTAGE_API_KEY through wrangler secret put.
+# Optional: GITHUB_DISPATCH_TOKEN secret enables the closing-workflow cron below.
+# Heavy analysis runs in `compute:<n>` instances of MarketScanner (Free plan: 10 ms CPU per
+# Worker request). On Workers Paid with a larger CPU limit, set COMPUTE_INLINE = "1" to keep
+# it in the Worker and save Durable Object requests.
 
 # 07:25 UTC (15:25 Beijing) on weekdays: dispatch the GitHub closing workflow, whose own
 # schedules can start hours late. A no-op unless the optional secret GITHUB_DISPATCH_TOKEN
