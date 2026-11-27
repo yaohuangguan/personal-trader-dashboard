@@ -80,7 +80,8 @@ class _MarketPageState extends State<MarketPage> {
   );
   @override
   Widget build(BuildContext context) {
-    final store = context.watch<AtlasStore>(), quotes = rows(indices?['items']);
+    final store = context.read<AtlasStore>(), quotes = rows(indices?['items']);
+    context.select<AtlasStore, String>((s) => s.locale);
     final sourceDate = quotes.isEmpty
         ? null
         : str(quotes.first['asOf']).split('T').first;

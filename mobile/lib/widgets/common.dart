@@ -16,6 +16,13 @@ Color tone(dynamic value) => numOf(value) == null
     : down;
 String tr(BuildContext c, String key) => c.read<AtlasStore>().t(key);
 
+/// True when periodic work for this widget is worth doing: the app is in the
+/// foreground, its tab is on stage ([TickerMode]) and no route covers it.
+bool visibleHere(BuildContext context) =>
+    context.read<AtlasStore>().foreground &&
+    TickerMode.valuesOf(context).enabled &&
+    (ModalRoute.isCurrentOf(context) ?? true);
+
 double compactMenuHeight(BuildContext context) {
   final height = MediaQuery.sizeOf(context).height;
   final view = View.of(context);
@@ -151,16 +158,17 @@ class AsyncPanelState extends State<AsyncPanel> {
   void initState() {
     super.initState();
     refresh();
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (widget.refreshSeconds > 0 &&
-          DateTime.now().difference(lastRead).inSeconds >=
-              widget.refreshSeconds &&
-          !loading &&
-          mounted &&
-          context.read<AtlasStore>().foreground &&
-          (ModalRoute.of(context)?.isCurrent ?? true)) {
-        refresh();
-      }
+    _schedule();
+  }
+
+  /// A timer only exists when the panel refreshes at all; ticks are skipped
+  /// while the app is backgrounded, the tab is offstage or a route covers it.
+  void _schedule() {
+    timer?.cancel();
+    timer = null;
+    if (widget.refreshSeconds <= 0) return;
+    timer = Timer.periodic(Duration(seconds: widget.refreshSeconds), (_) {
+      if (!loading && mounted && visibleHere(context)) refresh();
     });
   }
 
@@ -174,6 +182,7 @@ class AsyncPanelState extends State<AsyncPanel> {
   void didUpdateWidget(covariant AsyncPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.key != widget.key) refresh();
+    if (oldWidget.refreshSeconds != widget.refreshSeconds) _schedule();
   }
 
   Future<void> refresh() async {

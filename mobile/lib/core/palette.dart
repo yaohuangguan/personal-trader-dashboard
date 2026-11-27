@@ -41,3 +41,12 @@ Color chartColor(Color c) {
       .withLightness(h.saturation < 0.15 ? 0.18 : h.lightness.clamp(0.25, 0.4))
       .toColor();
 }
+
+/// Favourite star / bookmark. Plain amber is 1.6:1 on white; the light value
+/// keeps ≥4.5:1 so the filled star reads as "on".
+Color get favorite =>
+    AtlasPalette.light ? const Color(0xff946200) : const Color(0xffffc94d);
+
+/// Caution text and icons (risk notes, intraday alerts) in both themes.
+Color get warning =>
+    AtlasPalette.light ? const Color(0xff8a5a00) : const Color(0xffd5ae58);

@@ -22,7 +22,9 @@ class NewsTile extends StatelessWidget {
   final bool compact;
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<AtlasStore>();
+    final s = context.read<AtlasStore>();
+    final saved = context.select<AtlasStore, bool>((s) => s.saved(item));
+    context.select<AtlasStore, String>((s) => s.locale);
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       title: Text(
@@ -49,8 +51,8 @@ class NewsTile extends StatelessWidget {
         onPressed: () => s.toggleSaved(item),
         tooltip: s.t('收藏'),
         icon: Icon(
-          s.saved(item) ? Icons.bookmark : Icons.bookmark_border,
-          color: s.saved(item) ? Colors.amber : muted,
+          saved ? Icons.bookmark : Icons.bookmark_border,
+          color: saved ? favorite : muted,
         ),
       ),
       onTap: () => openNews(context, item),

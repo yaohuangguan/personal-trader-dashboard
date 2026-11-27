@@ -606,7 +606,13 @@ class _StockPageState extends State<StockPage> {
       RepaintBoundary(key: snapshotKey, child: buildPage(context));
 
   Widget buildPage(BuildContext context) {
-    final s = context.watch<AtlasStore>(), name = str(q['name'], widget.symbol);
+    final s = context.read<AtlasStore>(), name = str(q['name'], widget.symbol);
+    // Rebuild for this page's star and the language only, not every store
+    // change.
+    final starred = context.select<AtlasStore, bool>(
+      (s) => s.watchlist.contains(widget.symbol),
+    );
+    context.select<AtlasStore, String>((s) => s.locale);
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 44,
@@ -641,14 +647,12 @@ class _StockPageState extends State<StockPage> {
             icon: const Icon(Icons.ios_share, size: 20),
           ),
           IconButton(
-            tooltip: s.t('我的自选'),
+            tooltip: s.t(starred ? '移除自选' : '加入自选'),
             onPressed: () => s.toggleWatch(widget.symbol),
             icon: Icon(
-              s.watchlist.contains(widget.symbol)
-                  ? Icons.star
-                  : Icons.star_border,
+              starred ? Icons.star : Icons.star_border,
               size: 20,
-              color: s.watchlist.contains(widget.symbol) ? Colors.amber : muted,
+              color: starred ? favorite : muted,
             ),
           ),
           IconButton(

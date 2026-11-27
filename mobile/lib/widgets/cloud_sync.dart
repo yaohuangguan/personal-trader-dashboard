@@ -284,6 +284,13 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AtlasStore>();
+    return ListenableBuilder(
+      listenable: s.syncChanges,
+      builder: (context, _) => _panel(s),
+    );
+  }
+
+  Widget _panel(AtlasStore s) {
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

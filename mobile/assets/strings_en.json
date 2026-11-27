@@ -2244,5 +2244,14 @@
   "登录后可发起全市场扫描": "Sign in to start a full-market scan",
   "数据服务暂未返回有效响应，请稍后重试": "The data service returned an invalid response. Please retry",
   "数据暂不可用，请稍后重试": "Data temporarily unavailable, please retry",
-  "读取失败：{error}": "Could not read: {error}"
+  "读取失败：{error}": "Could not read: {error}",
+  "返回": "Back",
+  "已移出分组": "Removed from group",
+  "撤销": "Undo",
+  "已移除自选": "Removed from watchlist",
+  "移出当前分组": "Remove from this group",
+  "移出分组": "Remove from group",
+  "跟随系统": "Match system",
+  "删除提醒": "Delete alert",
+  "已同步": "Synced"
 }

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,19 +13,41 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api.dart';
 import 'chart_studies.dart';
 import 'credentials.dart';
+import 'market_hours.dart';
+import 'quote_book.dart';
 import 'watch_transfer.dart';
 import 'watch_insights.dart';
 part 'watch_cloud.dart';
 
+class Pulse extends ChangeNotifier {
+  void notify() => notifyListeners();
+}
+
+/// App-wide state. Listeners of the store itself hear only about settings,
+/// the watchlist/groups, bookmarks, alerts, sync status and the catalog.
+/// Quotes ([quoteBook]) and watch insights ([watchInsights]) have their own
+/// notifiers, so a 5 s quote poll never rebuilds the whole tree.
 class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
-  AtlasStore(this.api, this.prefs, this.english, {CredentialStore? credentials})
-    : credentials = credentials ?? CredentialStore() {
+  AtlasStore(
+    this.api,
+    this.prefs,
+    this.english, {
+    CredentialStore? credentials,
+    DateTime Function()? clock,
+  }) : credentials = credentials ?? CredentialStore(),
+       clock = clock ?? DateTime.now {
     this.credentials.migrate(prefs);
-    watchlist =
-        prefs.getStringList('watchlist') ??
-        ['300545.SZ', '300308.SZ', '300502.SZ'];
+    final saved = prefs.getStringList('watchlist');
+    if (saved == null) {
+      // A fresh install shows demo stocks. They are marked so that the first
+      // connection to an account that already has a list does not add them.
+      watchlist = List.of(seedWatchlist);
+      prefs.setStringList(seedKey, seedWatchlist);
+    } else {
+      watchlist = saved;
+    }
     groups = rows(_decode(prefs.getString('watchGroups')));
-    themeMode = prefs.getString('themeMode') ?? 'dark';
+    themeMode = _themeOf(prefs.getString('themeMode'));
     locale = prefs.getString('locale') ?? 'zh-CN';
     fontSize = prefs.getDouble('fontSize') ?? 18;
     bookmarks = rows(_decode(prefs.getString('bookmarks')));
@@ -38,15 +61,19 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       this.credentials.write(CredentialStore.deviceToken, deviceToken);
     }
     WidgetsBinding.instance.addObserver(this);
-    watchInsights.addListener(notifyListeners);
   }
+  static const seedWatchlist = ['300545.SZ', '300308.SZ', '300502.SZ'];
+  static const seedKey = 'watchSeed';
+  static const syncEvery = Duration(seconds: 30);
   final AtlasApi api;
+  final DateTime Function() clock;
 
   /// Keychain-backed secrets: account session, sync key, device capability.
   final CredentialStore credentials;
   late final chartStudies = ChartStudies(api, prefs);
-  late final watchInsights = WatchInsights(api);
+  late final watchInsights = WatchInsights(api, clock: clock);
   late final extendedQuotes = ExtendedQuotes(api);
+  final quoteBook = QuoteBook();
   final SharedPreferences prefs;
   final Map<String, dynamic> english;
   late List<String> watchlist;
@@ -54,17 +81,38 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
   late double fontSize;
   late List<Json> bookmarks, alerts, groups;
   late String deviceToken;
-  final Map<String, Json> quotes = {};
+  Map<String, Json> get quotes => quoteBook.values;
+  String? get quoteError => quoteBook.error;
+  DateTime? get quoteReadAt => quoteBook.readAt;
   Json catalog = {};
-  String? quoteError;
-  DateTime? quoteReadAt;
-  bool foreground = true;
-  Timer? _timer;
+
+  final _foreground = ValueNotifier<bool>(true);
+
+  /// False only while the app is hidden or in the background. `inactive`
+  /// (Control Centre, an incoming-call banner) keeps the app foreground.
+  bool get foreground => _foreground.value;
+  set foreground(bool value) => _foreground.value = value;
+  ValueListenable<bool> get foregroundListenable => _foreground;
+
+  late final poller = PollScheduler(_tick, _nextDelay);
+  bool _started = false;
+  DateTime _nextQuotesAt = DateTime.fromMillisecondsSinceEpoch(0),
+      _nextInsightsAt = DateTime.fromMillisecondsSinceEpoch(0),
+      _catalogTriedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _quoteFailures = 0;
+  Duration? _quoteRetryAfter;
+  String? _cnHolidayDate;
+
   final chartRevision = ValueNotifier<int>(0);
+
+  /// Sync progress ([syncBusy], [syncStatus]) without rebuilding the app.
+  final syncChanges = Pulse();
   bool _running = false, syncBusy = false;
-  String syncStatus = '未连接云同步', _lastWatchState = '';
+  String syncStatus = '未连接云同步';
   DateTime _lastSyncAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _syncDebounce;
+  Future<void>? _syncTask;
+  bool _syncAgain = false, _switching = false;
   final StreamController<String> messages = StreamController.broadcast();
   static dynamic _decode(String? s) {
     try {
@@ -73,6 +121,9 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       return null;
     }
   }
+
+  static String _themeOf(String? value) =>
+      value == 'light' || value == 'system' ? value! : 'dark';
 
   late final _translator = UITranslation(english);
   String t(String key) => locale == 'en' ? _translator(key) : key;
@@ -94,46 +145,148 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  /// The watchlist plus every symbol with a pending price alert, so alerts on
+  /// stocks outside the watchlist are evaluated too.
+  List<String> get pollSymbols => <String>{
+    ...watchlist.where(supportedStock),
+    for (final rule in alerts)
+      if (rule['firedAt'] == null && supportedStock(str(rule['symbol'], '')))
+        str(rule['symbol']),
+  }.toList();
+
   void start() {
-    refreshQuotes();
-    syncCloud();
-    api
-        .get('/api/catalog')
-        .then((data) {
-          catalog = data;
-          notifyListeners();
-        })
-        .catchError((Object _) {});
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (foreground) {
-        refreshQuotes();
-        if (DateTime.now().difference(_lastSyncAt).inSeconds >= 30) syncCloud();
-      }
-    });
+    _started = true;
+    if (foreground) poller.start();
+  }
+
+  Future<void> _tick() async {
+    final now = clock();
+    final jobs = <Future<void>>[];
+    if (!now.isBefore(_nextQuotesAt)) jobs.add(refreshQuotes());
+    if (cloudConnected && now.difference(_lastSyncAt) >= syncEvery) {
+      jobs.add(syncCloud());
+    }
+    final visible = watchInsights.tracked.toList();
+    if (visible.isNotEmpty && !now.isBefore(_nextInsightsAt)) {
+      _nextInsightsAt = now.add(
+        pollInterval(
+              visible,
+              now,
+              open: const Duration(seconds: 10),
+              extended: const Duration(seconds: 30),
+              cnHoliday: _cnHolidayDate == beijingDate(now),
+            ) ??
+            const Duration(minutes: 5),
+      );
+      jobs.add(watchInsights.loadMany(visible));
+    }
+    watchInsights.checkFreshness();
+    if (catalog.isEmpty &&
+        now.difference(_catalogTriedAt) >= const Duration(seconds: 30)) {
+      jobs.add(loadCatalog());
+    }
+    await Future.wait(jobs);
+  }
+
+  Duration? _nextDelay() {
+    final now = clock();
+    final waits = [
+      _nextQuotesAt.difference(now),
+      if (cloudConnected) _lastSyncAt.add(syncEvery).difference(now),
+      if (watchInsights.tracked.isNotEmpty) ...[
+        _nextInsightsAt.difference(now),
+        const Duration(seconds: 30), // freshness labels age out
+      ],
+      if (catalog.isEmpty)
+        _catalogTriedAt.add(const Duration(seconds: 30)).difference(now),
+    ];
+    var wait = waits.reduce((a, b) => a < b ? a : b);
+    if (wait < const Duration(milliseconds: 500)) {
+      wait = const Duration(milliseconds: 500);
+    }
+    return wait;
+  }
+
+  /// Session-aware cadence: 5 s while a watched market trades, 15 s in US
+  /// extended hours, at most 5 min (never past the next open) otherwise;
+  /// failures back off and honour Retry-After.
+  Duration _quoteInterval() {
+    final now = clock();
+    var wait =
+        pollInterval(
+          pollSymbols,
+          now,
+          cnHoliday: _cnHolidayDate == beijingDate(now),
+        ) ??
+        const Duration(minutes: 5);
+    if (_quoteFailures > 0) {
+      final backoff = Duration(seconds: 5 * (1 << _quoteFailures.clamp(0, 4)));
+      if (backoff > wait) wait = backoff;
+    }
+    final retry = _quoteRetryAfter;
+    if (retry != null && retry > wait) wait = retry;
+    return wait;
+  }
+
+  Future<void> loadCatalog() async {
+    _catalogTriedAt = clock();
+    try {
+      final data = await api.get('/api/catalog');
+      if (_disposed) return;
+      catalog = data;
+      notifyListeners();
+    } catch (_) {
+      /* Retried by the scheduler and on resume. */
+    }
   }
 
   Future<void> refreshQuotes() async {
     if (_running) return;
-    final symbols = watchlist.where(supportedStock).toList();
-    if (symbols.isEmpty) return;
+    final symbols = pollSymbols;
+    if (symbols.isEmpty) {
+      _nextQuotesAt = clock().add(const Duration(minutes: 5));
+      return;
+    }
     _running = true;
     try {
       final data = await api.get(
         '/api/desk/quotes',
         parameters: {'symbols': symbols.join(',')},
       );
-      for (final q in rows(data['items'])) {
-        quotes[str(q['symbol'])] = q;
-      }
-      quoteError = null;
-      quoteReadAt = DateTime.now();
+      if (_disposed) return;
+      final items = rows(data['items']);
+      quoteBook.apply(items, clock());
+      _quoteFailures = 0;
+      _quoteRetryAfter = null;
+      _detectHoliday(items);
       _evaluateAlerts();
     } catch (e) {
-      quoteError = describeError(e);
+      _quoteFailures++;
+      _quoteRetryAfter = e is ApiException ? e.retryAfter : null;
+      quoteBook.fail(describeError(e));
     } finally {
       _running = false;
-      notifyListeners();
+      _nextQuotesAt = clock().add(_quoteInterval());
     }
+  }
+
+  /// A weekday without any A-share print today is an exchange holiday.
+  void _detectHoliday(List<Json> items) {
+    final now = clock(), today = beijingDate(now);
+    final local = now.toUtc().add(const Duration(hours: 8));
+    if (cnPhase(now) != MarketPhase.open ||
+        local.hour * 60 + local.minute < 9 * 60 + 35) {
+      return;
+    }
+    final cn = items.where((q) => cnStock(str(q['symbol'], ''))).toList();
+    if (cn.isEmpty) return;
+    final idle = cn.every(
+      (q) =>
+          q['session'] != 'trading' &&
+          str(q['asOf'], '').length >= 10 &&
+          str(q['asOf']).substring(0, 10).compareTo(today) < 0,
+    );
+    _cnHolidayDate = idle ? today : null;
   }
 
   void _evaluateAlerts() {
@@ -146,18 +299,50 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       }
       final timestamp = DateTime.tryParse(str(q['asOf']));
       if (timestamp == null ||
-          DateTime.now().difference(timestamp).inSeconds > 120) {
+          clock().difference(timestamp).inSeconds.abs() > 120) {
         continue;
       }
       final price = numOf(q['price']), target = numOf(rule['value']);
       if (price == null || target == null) continue;
       if (rule['direction'] == 'above' ? price >= target : price <= target) {
-        rule['firedAt'] = DateTime.now().toIso8601String();
+        rule['firedAt'] = clock().toIso8601String();
         if (!_disposed) messages.add('${rule['symbol']} ${t('价格提醒')} $price');
         changed = true;
       }
     }
-    if (changed) prefs.setString('alerts', jsonEncode(alerts));
+    if (changed) {
+      prefs.setString('alerts', jsonEncode(alerts));
+      notifyListeners();
+    }
+  }
+
+  /// Seed stocks a fresh install shows that the user never changed.
+  bool get untouchedSeed {
+    final seed = prefs.getStringList(seedKey);
+    return seed != null &&
+        groups.isEmpty &&
+        seed.length == watchlist.length &&
+        seed.every(watchlist.contains);
+  }
+
+  /// Every user edit of the watchlist or groups: the seed is no longer
+  /// untouched, cloud sync is scheduled and new symbols are polled.
+  void _watchEdited({
+    bool symbolsChanged = true,
+    Duration syncDelay = const Duration(milliseconds: 900),
+  }) {
+    prefs.remove(seedKey);
+    notifyListeners();
+    if (cloudConnected) {
+      _syncDebounce?.cancel();
+      _syncDebounce = Timer(syncDelay, syncCloud);
+    }
+    if (symbolsChanged) refreshQuotes();
+  }
+
+  Future<void> _saveWatch() async {
+    await prefs.setStringList('watchlist', watchlist);
+    await prefs.setString('watchGroups', jsonEncode(groups));
   }
 
   Future<void> toggleWatch(String symbol) async {
@@ -167,13 +352,55 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       for (final g in groups) {
         (g['symbols'] as List?)?.remove(symbol);
       }
-      await prefs.setString('watchGroups', jsonEncode(groups));
     } else {
       watchlist.add(symbol);
     }
-    await prefs.setStringList('watchlist', watchlist);
-    notifyListeners();
-    refreshQuotes();
+    await _saveWatch();
+    _watchEdited();
+  }
+
+  /// Removes a stock from the watchlist and every group. The cloud upload
+  /// waits until the undo snack bar has gone, so an undo never round-trips.
+  Future<void> removeWatch(String symbol) async {
+    symbol = normalize(symbol);
+    if (!watchlist.remove(symbol)) return;
+    for (final g in groups) {
+      (g['symbols'] as List?)?.remove(symbol);
+    }
+    await _saveWatch();
+    _watchEdited(symbolsChanged: false, syncDelay: const Duration(seconds: 6));
+  }
+
+  /// Snapshot for undoing a removal: position and group memberships.
+  ({String symbol, int index, List<String> groupIds}) removalOf(
+    String symbol,
+  ) => (
+    symbol: symbol,
+    index: watchlist.indexOf(symbol),
+    groupIds: [
+      for (final g in groups)
+        if ((g['symbols'] as List?)?.contains(symbol) == true) str(g['id']),
+    ],
+  );
+
+  Future<void> restoreWatch(
+    ({String symbol, int index, List<String> groupIds}) removed,
+  ) async {
+    if (!watchlist.contains(removed.symbol)) {
+      watchlist.insert(
+        removed.index.clamp(0, watchlist.length),
+        removed.symbol,
+      );
+    }
+    for (final g in groups) {
+      final members = List<String>.from(g['symbols'] ?? []);
+      if (removed.groupIds.contains(g['id']) &&
+          !members.contains(removed.symbol)) {
+        g['symbols'] = [...members, removed.symbol];
+      }
+    }
+    await _saveWatch();
+    _watchEdited();
   }
 
   Future<String?> saveGroup(String name, {String? id}) async {
@@ -193,30 +420,31 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       groups.firstWhere((g) => g['id'] == id)['name'] = name;
     }
     await prefs.setString('watchGroups', jsonEncode(groups));
-    notifyListeners();
+    _watchEdited(symbolsChanged: false);
     return id;
   }
 
   Future<void> deleteGroup(String id) async {
     groups.removeWhere((g) => g['id'] == id);
     await prefs.setString('watchGroups', jsonEncode(groups));
-    notifyListeners();
+    _watchEdited(symbolsChanged: false);
   }
 
   Future<void> groupStock(String id, String symbol, bool included) async {
     final group = groups.firstWhere((g) => g['id'] == id),
         symbols = List<String>.from(group['symbols'] ?? []);
     symbols.remove(symbol);
+    var added = false;
     if (included) {
       symbols.add(symbol);
       if (!watchlist.contains(symbol)) {
         watchlist.add(symbol);
-        await prefs.setStringList('watchlist', watchlist);
+        added = true;
       }
     }
     group['symbols'] = symbols;
-    await prefs.setString('watchGroups', jsonEncode(groups));
-    notifyListeners();
+    await _saveWatch();
+    _watchEdited(symbolsChanged: added);
   }
 
   Future<void> reorderWatch(int oldIndex, int newIndex) async {
@@ -224,7 +452,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     final s = watchlist.removeAt(oldIndex);
     watchlist.insert(newIndex, s);
     await prefs.setStringList('watchlist', watchlist);
-    notifyListeners();
+    _watchEdited(symbolsChanged: false);
   }
 
   Map<String, String> get chartMAParameters {
@@ -250,8 +478,9 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
           .map(int.parse)
           .toList();
 
+  /// 'dark', 'light' or 'system' (follow the iOS appearance).
   Future<void> setTheme(String value) async {
-    themeMode = value == 'light' ? 'light' : 'dark';
+    themeMode = _themeOf(value);
     await prefs.setString('themeMode', themeMode);
     notifyListeners();
   }
@@ -291,6 +520,8 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     });
     await prefs.setString('alerts', jsonEncode(alerts));
     notifyListeners();
+    // The alert's symbol joins the quote poll right away.
+    refreshQuotes();
   }
 
   Future<void> removeAlert(Json rule) async {
@@ -313,8 +544,8 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       }
       watchlist = plan.watchlist;
       groups = plan.groups;
-      notifyListeners();
-      refreshQuotes();
+      _watchImporting = false;
+      _watchEdited();
       return plan;
     } catch (_) {
       if (oldWatch == null) {
@@ -352,11 +583,9 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
         ...List<String>.from(group['symbols'] ?? []),
         ...unique.where(watchlist.contains),
       }.toList();
-      await prefs.setString('watchGroups', jsonEncode(groups));
     }
-    await prefs.setStringList('watchlist', watchlist);
-    notifyListeners();
-    refreshQuotes();
+    await _saveWatch();
+    _watchEdited();
     return watchlist.length - before;
   }
 
@@ -373,44 +602,46 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
     if (next.isEmpty) throw const FormatException('没有有效代码');
     watchlist = next;
     await prefs.setStringList('watchlist', watchlist);
-    notifyListeners();
-    refreshQuotes();
+    _watchEdited();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    foreground = state == AppLifecycleState.resumed;
-    if (foreground) {
-      refreshQuotes();
-      if (DateTime.now().difference(_lastSyncAt).inSeconds >= 30) syncCloud();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        foreground = true;
+        if (_started) {
+          if (catalog.isEmpty) _catalogTriedAt = DateTime(0);
+          poller.resume();
+        }
+      case AppLifecycleState.inactive:
+        // Still visible: Control Centre, notification shade, call banner.
+        break;
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        foreground = false;
+        poller.pause();
     }
   }
 
   bool _disposed = false;
   @override
   void notifyListeners() {
-    if (!_disposed) {
-      final state = jsonEncode({'watchlist': watchlist, 'groups': groups});
-      if (state != _lastWatchState) {
-        _lastWatchState = state;
-        if (cloudConnected) {
-          _syncDebounce?.cancel();
-          _syncDebounce = Timer(const Duration(milliseconds: 900), syncCloud);
-        }
-      }
-      super.notifyListeners();
-    }
+    if (!_disposed) super.notifyListeners();
   }
 
   @override
   void dispose() {
     _disposed = true;
-    _timer?.cancel();
+    poller.dispose();
     _syncDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     chartRevision.dispose();
-    watchInsights.removeListener(notifyListeners);
     watchInsights.dispose();
+    quoteBook.dispose();
+    syncChanges.dispose();
+    _foreground.dispose();
     messages.close();
     api.dispose();
     super.dispose();

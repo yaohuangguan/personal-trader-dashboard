@@ -47,8 +47,13 @@ class AtlasApp extends StatelessWidget {
       ChangeNotifierProvider(create: (_) => ScreenerController(store)),
       Provider.value(value: push),
     ],
-    child: Consumer<AtlasStore>(
-      builder: (context, s, _) {
+    child: Builder(
+      builder: (context) {
+        // Only theme, language and font size rebuild the app root.
+        context.select<AtlasStore, (String, String, double)>(
+          (s) => (s.themeMode, s.locale, s.fontSize),
+        );
+        final s = context.read<AtlasStore>();
         AtlasPalette.light = s.themeMode == 'light';
         final brightness = AtlasPalette.light
             ? Brightness.light
