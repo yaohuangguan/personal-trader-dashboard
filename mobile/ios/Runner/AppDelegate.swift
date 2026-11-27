@@ -55,6 +55,22 @@ import UniformTypeIdentifiers
       let channel = FlutterMethodChannel(name: "space.ps6.marketAtlas/watch-import", binaryMessenger: importer.messenger())
       channel.setMethodCallHandler { [weak bridge] call, result in bridge?.handle(call, result: result) }
     }
+    // Keeps system UI (share sheet, pickers, alerts) in the in-app theme;
+    // "system" follows the iOS appearance.
+    if let appearance = engineBridge.pluginRegistry.registrar(forPlugin: "Appearance") {
+      let channel = FlutterMethodChannel(name: "space.ps6.marketAtlas/appearance", binaryMessenger: appearance.messenger())
+      channel.setMethodCallHandler { call, result in
+        guard call.method == "setStyle", let mode = call.arguments as? String else {
+          result(FlutterMethodNotImplemented); return
+        }
+        let style: UIUserInterfaceStyle = mode == "light" ? .light : mode == "dark" ? .dark : .unspecified
+        for scene in UIApplication.shared.connectedScenes {
+          guard let windowScene = scene as? UIWindowScene else { continue }
+          for window in windowScene.windows { window.overrideUserInterfaceStyle = style }
+        }
+        result(nil)
+      }
+    }
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "StockSnapshot") else { return }
     let channel = FlutterMethodChannel(
       name: "space.ps6.marketAtlas/snapshot", binaryMessenger: registrar.messenger())

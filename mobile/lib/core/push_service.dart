@@ -104,6 +104,17 @@ class NativePushService {
       initialUrl = initial == null
           ? null
           : str(initial.data['url'], '/?view=signals');
+      // A tap on a local (foreground-shown) notification that launched the
+      // app is not a Firebase message; read it from the plugin.
+      if (initialUrl == null) {
+        final launch = await notifications.getNotificationAppLaunchDetails();
+        final payload = launch?.notificationResponse?.payload;
+        if (launch?.didNotificationLaunchApp == true &&
+            payload != null &&
+            payload.isNotEmpty) {
+          initialUrl = payload;
+        }
+      }
       ready = true;
     } catch (e) {
       error = e.toString();
@@ -127,15 +138,17 @@ class NativePushService {
     final token = await FirebaseMessaging.instance.getToken();
     if (token == null) throw StateError('设备通知令牌尚未就绪');
     await _register(token);
-    subscriptions.add(
-      // ignore: deprecated_member_use
-      FirebaseMessaging.instance.onTokenRefresh.listen((token) {
-        _register(token).catchError((Object e) {
-          error = e.toString();
-        });
-      }),
-    );
+    // Enabling again (e.g. after re-allowing notifications) must not stack
+    // a second refresh listener (compatibility token API, as above).
+    // ignore: deprecated_member_use
+    _tokenRefresh ??= FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      _register(token).catchError((Object e) {
+        error = e.toString();
+      });
+    });
   }
+
+  StreamSubscription<String>? _tokenRefresh;
 
   Future<void> _register(String token) async {
     await api.post('/api/monitor/native-subscribe', {
@@ -154,6 +167,7 @@ class NativePushService {
   }
 
   Future<void> dispose() async {
+    await _tokenRefresh?.cancel();
     for (final sub in subscriptions) {
       await sub.cancel();
     }
