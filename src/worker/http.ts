@@ -25,6 +25,7 @@ export function normalizeErrorBody(body: unknown, status: number, now = Date.now
   if (retryAfter === undefined && typeof value.retryAt === 'string' && Number.isFinite(Date.parse(value.retryAt))) retryAfter = Math.max(1, Math.ceil((Date.parse(value.retryAt) - now) / 1000));
   if (retryAfter === undefined && status === 503) retryAfter = DEFAULT_RETRY_AFTER;
   if (retryAfter !== undefined && (status === 429 || status === 503)) envelope.retryAfter = retryAfter;
+  else delete envelope.retryAfter;
   return envelope;
 }
 

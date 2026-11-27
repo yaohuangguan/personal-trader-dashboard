@@ -48,7 +48,8 @@ import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalend
 interface Env extends Level2Env, DispatchEnv { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
 const memory=new Map<string,CacheValue>();
-const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
+/** Successful payloads may be cached briefly; errors and `available:false` fallbacks never are. */
+const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':status===200&&!(data&&typeof data==='object'&&(data as {available?:unknown}).available===false)?'public, max-age=30, s-maxage=90':'no-store','x-content-type-options':'nosniff'}});
 /** JSON response that names the trade date its data covers, for the compute cache's closed-session TTL. */
 const dated=(data:unknown)=>{const response=json(data),day=dataDateOf(data);if(day)response.headers.set(DATA_DATE_HEADER,day);return response;};
 const validSymbol=(s:string)=>/^[A-Z0-9^.-]{1,18}$/.test(s);
@@ -373,13 +374,7 @@ async function handle(req:Request,env:Env):Promise<Response>{
   if(req.method!=='POST')return json({error:'Method not allowed'},405);
   const secret=env.INGEST_SECRET;
   if(!secret || secret.length<24)return json({error:'Manual ingest not configured'},503);
-  const auth=req.headers.get('Authorization')||'';
-  const actual=auth.startsWith('Bearer ')?auth.slice(7):'';
-  // Fixed-length XOR avoids immediately leaking the first mismatching character.
-  const expected=new TextEncoder().encode(secret),given=new TextEncoder().encode(actual);
-  let diff=expected.length^given.length;
-  for(let i=0;i<Math.max(expected.length,given.length);i++)diff|=(expected[i]||0)^(given[i]||0);
-  if(diff!==0)return json({error:'Unauthorized'},401);
+  if(!await timingSafeEqual(bearer(req),secret))return json({error:'Unauthorized'},401);
   try{return json(await scanOnce(env));}catch(e){return json({error:'Ingestion failed',details:String(e)},502);}
  }
  if(req.method!=='GET')return json({error:'Method not allowed'},405);
