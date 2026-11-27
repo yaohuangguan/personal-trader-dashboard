@@ -1,3 +1,4 @@
+import {formatMarketTime} from '../time-format';
 import {useEffect,useState,useCallback,useRef} from 'react';
 import {Bell,Pause,RefreshCw,Send,Trash2,ArrowUpRight,CheckCircle2,Clock3,Radio,Search} from 'lucide-react';
 import {monitorApi,subscribeMonitor,unsubscribeMonitor} from '../monitor-api';
@@ -21,7 +22,7 @@ export default function SignalCenter({watchlist,onStock}:{watchlist:string[];onS
  const act=async(fn:()=>Promise<unknown>,success='')=>{setBusy(true);setError('');setMessage('');try{await fn();setMessage(success);await load();}catch(e){setError(e instanceof Error?e.message:'操作失败');}finally{setBusy(false);}};
  const selected=(scope==='saved'?state?.config.symbols||[]:watchlist).filter(s=>/^\d{6}\.(SH|SZ|BJ)$/.test(s)).slice(0,60);
  const start=()=>act(()=>monitorApi('config',{enabled:true,scope:scope==='all'?'all':'selected',symbols:scope==='all'?[]:selected,activityFilter:activity,locale:prefs.locale}),'收盘汇总已开启；每个交易日完成后推送一次。');
- const manifest=report||market?.report||state?.report,count=manifest?('count' in manifest?manifest.count:manifest.candidates.length):null,time=(value:number|null|undefined)=>value?new Date(value).toLocaleString(prefs.locale,{timeZone:'Asia/Shanghai',hour12:false}):'—';
+ const manifest=report||market?.report||state?.report,count=manifest?('count' in manifest?manifest.count:manifest.candidates.length):null,time=(value:number|null|undefined)=>formatMarketTime(value,'dateTime');
  const candidates=(report?.candidates||[]).filter(c=>!query||c.name.includes(query)||c.symbol.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>(b.ranking?.score??0)-(a.ranking?.score??0)),events=state?.events.filter(e=>e.kind==='daily-candidate')||[];
  const gain=(v:number|null|undefined)=>v==null?'—':(v>0?'+':'')+v.toFixed(2)+'%',price=(v:number|null)=>v==null?'—':v.toFixed(2),tone=(v:number|null|undefined)=>v==null||v===0?'':v>0?'is-up':'is-down';
  return <div className="signal-center close-signal-center"><header className="signal-page-heading"><div><span>DAILY CLOSE · MARKET REVIEW</span><h1>{t('收盘信号中心')}</h1><p>{t('全市场收盘核验，每个交易日完成后推送一次。')}</p></div><button className="outline-button" disabled={loading} onClick={()=>void load()}><RefreshCw size={17} className={loading?'spin':''}/>{t('刷新状态')}</button></header>

@@ -1,3 +1,4 @@
+import {formatMarketTime} from './time-format';
 import {watchDiff,applyWatchOps,emptyWatch,validWatch,type WatchState} from '../shared/watch-sync';
 const TOKEN='atlas.sync.token.v1',BASE='atlas.sync.base.v1',ACCOUNT='atlas.account.v1';
 export type SignedIn={token:string;account:{id:string;email:string;username:string}};
@@ -38,7 +39,7 @@ export async function syncWatch(){
   // Preserve edits made while the network request was in flight; upload those on the next pass.
   const after=local(),pending=watchDiff(before,after),applied=applyWatchOps(result.state,pending);
   localStorage.setItem(BASE,JSON.stringify({state:result.state,revision:result.revision}));if(JSON.stringify(after)!==JSON.stringify(applied)){localStorage.setItem('atlas.watchlist.v1',JSON.stringify(applied.watchlist));localStorage.setItem('atlas.watch.groups.v1',JSON.stringify(applied.groups));window.dispatchEvent(new Event('atlas:watch-cloud'));}
-  announce('已同步 · '+new Date(result.updatedAt).toLocaleTimeString());if(pending.length)scheduleSync();
+  announce('已同步 · '+formatMarketTime(result.updatedAt,'clock'));if(pending.length)scheduleSync();
  }catch(e){if(e instanceof SyncError&&e.status===401&&account()){localStorage.removeItem(ACCOUNT);localStorage.removeItem(BASE);announce('登录已过期，请重新登录；本机自选保留');}else announce('未同步：'+(e instanceof Error?e.message:'网络异常')+'；本机修改保留');}finally{busy=false;}
 }
 export function scheduleSync(){clearTimeout(timer);timer=setTimeout(()=>void syncWatch(),900);}

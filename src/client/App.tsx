@@ -1,3 +1,4 @@
+import ErrorBoundary from './components/ErrorBoundary';
 import ResizeRail,{usePanelWidth} from './components/ResizeRail';
 import type {CSSProperties} from 'react';
 import WatchSidebar from './components/WatchSidebar';
@@ -25,6 +26,7 @@ import { OverviewIntelStrip, IntelHistory, StockResearchExtras } from './compone
 import { analyzeGuide } from '../shared/guide-analysis';
 import { CATALOG, DEFAULT_WATCHLIST, NEWS_CATEGORIES, SECTORS, normalizeSymbol, searchLocal } from '../shared/catalog';
 import type { MarketPayload, NewsItem, NewsPayload, SearchItem } from '../shared/types';
+import {formatMarketTime,relativeAge,validDate,zoneClock,ZONE_LABELS} from './time-format';
 
 type View='overview'|'news'|'radar'|'markets'|'research'|'history'|'saved'|'screener'|'signals';
 const NAV:[View,string,typeof Globe2][]=[
@@ -37,11 +39,10 @@ function readStored<T>(key:string,fallback:T):T{
 const money=(value:number|null|undefined,digits=2)=>value==null?'—':new Intl.NumberFormat('en-US',{maximumFractionDigits:digits,minimumFractionDigits:digits}).format(value);
 const percent=(value:number|null|undefined)=>value==null?'—':(value>=0?'+':'')+value.toFixed(2)+'%';
 const changeClass=(value:number|null|undefined)=>value==null?'muted':value>=0?'positive':'negative';
-const dateTime=(v:string|null|undefined)=>!v?'时间未知':new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Pacific/Auckland'}).format(new Date(v));
+const dateTime=(v:string|null|undefined)=>formatMarketTime(v,'dateClock',{fallback:'时间未知'})+(validDate(v)?' '+uiText(ZONE_LABELS.cn):'');
 const relative=(v:string|null|undefined)=>{
- if(!v)return '时间未知';
- const diff=Math.max(0,Date.now()-new Date(v).getTime()),m=Math.floor(diff/60000);
- if(m<1)return '刚刚';if(m<60)return m+' 分钟前';if(m<1440)return Math.floor(m/60)+' 小时前';return Math.floor(m/1440)+' 天前';
+ const age=relativeAge(v);
+ return age.unit==='unknown'?'时间未知':age.unit==='now'?'刚刚':age.count+(age.unit==='minute'?' 分钟前':age.unit==='hour'?' 小时前':' 天前');
 };
 async function api<T>(path:string,signal?:AbortSignal):Promise<T>{
  const r=await fetch(path,{signal,headers:{accept:'application/json'}});
@@ -68,7 +69,7 @@ function NewsRow({item,save,saved,major=false}:{item:NewsItem;save:(n:NewsItem)=
  const {openNews}=useReader();
  return <article className={'news-row '+(major?'news-major ':'')+(item.important?'news-important':'')}>
   <div className="news-copy">
-   <div className="news-meta"><span className="source-dot"/><strong>{uiText(item.source)}</strong><span className="separator-dot">·</span><span title={uiText(item.publishedAt||'')}>{uiText(relative(item.publishedAt))}</span>{uiText(sectors.map(s=><span key={s.id} className="tag-neutral">{uiText(s.name)}</span>))}</div>
+   <div className="news-meta"><span className="source-dot"/><strong>{uiText(item.source)}</strong><span className="separator-dot">·</span><span title={formatMarketTime(item.publishedAt,'dateTime',{fallback:''})+' '+uiText(ZONE_LABELS.cn)}>{uiText(relative(item.publishedAt))}</span>{uiText(sectors.map(s=><span key={s.id} className="tag-neutral">{uiText(s.name)}</span>))}</div>
    <button type="button" onClick={()=>openNews(item)} className="news-title inapp-news-button">{item.important&&<em className="news-priority">{uiText('重要')}</em>}{(item.title)}<BookOpen size={13} className="inline-external"/></button>
    {uiText(major&&<div className="news-extra">{uiText("来源：")}{uiText(sourceDomain(item.url))} {uiText("· 点击在本站阅读当前可用摘要")}</div>)}
   </div>
@@ -92,7 +93,7 @@ function QuoteCard({symbol,data,onClick}:{symbol:string;data?:MarketPayload;onCl
  </button>;
 }
 export default function App(){
- usePreferences();
+ const display=usePreferences();
  const [watchWidth,setWatchWidth]=usePanelWidth('atlas.watch-width.v1',innerWidth>=1600?360:innerWidth<=1200?320:340,320,560);
  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>readStored('atlas.sidebar-collapsed.v1',false));
  useEffect(()=>{localStorage.setItem('atlas.sidebar-collapsed.v1',JSON.stringify(sidebarCollapsed));},[sidebarCollapsed]);
@@ -179,7 +180,7 @@ export default function App(){
   const list=remoteResults.length?remoteResults:searchLocal(searchQuery);
   const seen=new Set<string>();return list.filter(x=>{if(seen.has(x.symbol))return false;seen.add(x.symbol);return true;}).slice(0,12);
  },[remoteResults,searchQuery]);
- const currentTime=new Intl.DateTimeFormat('en-NZ',{weekday:'short',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Pacific/Auckland'}).format(clock);
+ const currentTime=zoneClock(clock,'cn',display.locale),usTime=zoneClock(clock,'us',display.locale);
  const sectorCount=(id:string)=>news.filter(n=>n.category===id).length;
  const visibleArticles=view==='saved'?saved:news;
  const highlighted=visibleArticles.slice(0,1)[0];
@@ -204,14 +205,14 @@ export default function App(){
    <header className="topbar">
     <div className="top-left"><button className="icon-button mobile-menu" aria-label={uiText("打开导航")} onClick={()=>setMobileNav(true)}><Menu size={20}/></button><span className="crumb">MARKET DESK</span><ChevronRight size={14}/><strong>{uiText(NAV.find(n=>n[0]===view)?.[1])}</strong></div>
     <div className="top-right">
-     <span className="time-label"><span className="pulse-dot"/> AKL {uiText(currentTime)}</span>
+     <span className="time-label" title={uiText(ZONE_LABELS.cn)+' / '+uiText(ZONE_LABELS.us)}><span className="pulse-dot"/> <time>{currentTime}</time><small className="time-secondary">{usTime}</small></span>
      <Settings/><PWAControls/>
      <button onClick={()=>{setRefreshKey(v=>v+1);window.dispatchEvent(new Event('atlas:refresh'));}} className="icon-button" aria-label={uiText("刷新所有数据")} title={uiText("刷新数据")}><RefreshCw size={17}/></button>
      <span className="top-divider"/>
      <button className="search-trigger" onClick={()=>{setSearchOpen(true);searchRef.current?.focus();}}><Search size={16}/><span>{uiText("搜索全球股票 / 代码")}</span><kbd>⌘ K</kbd></button>
     </div>
    </header>
-   <main className={'main '+(view==='research'?'desk-main':'')}>
+   <main className={'main '+(view==='research'?'desk-main':'')}><ErrorBoundary label={NAV.find(n=>n[0]===view)?.[1]} resetKey={view+':'+selected}>
     {uiText(<ScreenerWorkspace active={view==='screener'} onOpen={()=>changeView('screener')} watchlist={watchlist} onStock={chooseSymbol} onWatch={toggleWatch}/>)}
     {uiText(view==='overview'&&<>
      <section className="page-heading">
@@ -300,7 +301,7 @@ export default function App(){
      <p className="section-subtitle">{uiText("快速保存值得二次验证的原始报道；只存当前浏览器，不会上传你的研究列表。")}</p>
      <div className="panel article-panel">{uiText(saved.length?saved.map(x=><NewsRow key={x.url} item={x} save={toggleSave} saved/>):<Blank title={uiText("还没有收藏情报")} detail={uiText("打开全球快讯，点击书签图标保存重要新闻")}/>)}</div>
     </>)}
-    <footer className="app-footer"><span>观澜 · MARKET ATLAS <i>·</i> PERSONAL RESEARCH</span><span>{uiText("公开来源研究 · 非实时交易数据 · 非投资建议")}</span></footer>
+    </ErrorBoundary><footer className="app-footer"><span>观澜 · MARKET ATLAS <i>·</i> PERSONAL RESEARCH</span><span>{uiText("公开来源研究 · 非实时交易数据 · 非投资建议")}</span></footer>
    </main>
   </div>
   <Dialog.Root open={searchOpen} onOpenChange={setSearchOpen}><Dialog.Portal><Dialog.Overlay className="search-overlay"/>

@@ -1,4 +1,5 @@
 import {t as uiText} from '../preferences';
+import {formatMarketTime} from '../time-format';
 import { useEffect,useState } from 'react';
 import { Activity, ArrowRight, BookOpenCheck, CalendarClock, ChevronDown, CircleAlert, Clock3, ExternalLink, FileText, LoaderCircle, Radar, RefreshCw, ShieldCheck, DatabaseZap, XCircle } from 'lucide-react';
 import { NEWS_CATEGORIES } from '../../shared/catalog';
@@ -27,13 +28,13 @@ function useEndpoint<T>(path:string):Load<T>&{refresh:()=>void}{
  },[path,version]);
  return {...state,refresh:()=>setVersion(v=>v+1)};
 }
-const format=(raw:string|null|undefined)=>raw?new Intl.DateTimeFormat('zh-CN',{timeZone:'Pacific/Auckland',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(raw)):'未知';
+const format=(raw:string|null|undefined)=>formatMarketTime(raw,'dateClock',{fallback:'未知'});
 const sectorName=(id:string)=>NEWS_CATEGORIES.find(x=>x.id===id)?.name||id;
 function Message({text,error=false}:{text:string;error?:boolean}){return <div className={'intel-message '+(error?'error':'')}><CircleAlert size={16}/><span>{uiText(text)}</span></div>;}
 function TimelineCard({item,onStock}:{item:IntelItem;onStock?:(symbol:string)=>void}){
  const {openNews}=useReader();
  return <article className="event-card">
-  <div className="event-date"><strong>{uiText(format(item.firstSeenAt))}</strong><small>{uiText("首次发现")}</small></div>
+  <div className="event-date"><strong>{uiText(format(item.firstSeenAt))}</strong><small>{uiText("首次发现")} · {uiText("北京时间")}</small></div>
   <div className="event-card-body">
    <div className="event-badges"><span className="intel-evidence">{uiText("媒体线索 · 未核验订单")}</span>{uiText(item.sectors.map(s=><span className="event-sector" key={s}>{uiText(sectorName(s))}</span>))}</div>
    <button type="button" className="event-title-button" onClick={()=>openNews(item)}>{(item.title)} <BookOpenCheck size={13}/></button>

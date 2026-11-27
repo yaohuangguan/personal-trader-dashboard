@@ -1,6 +1,8 @@
+import ErrorBoundary from './ErrorBoundary';
 import {SharedArticle,SharedAnnouncement} from './SharedArticle';
 import {newsLink,readNewsLink} from '../../shared/news-link';
 import {t as uiText} from '../preferences';
+import {formatMarketTime,validDate,ZONE_LABELS} from '../time-format';
 import {createContext,useCallback,useContext,useEffect,useMemo,useState,type ReactNode} from 'react';
 import {ArrowLeft,BookOpen,CalendarDays,Copy,FileText,Info,LoaderCircle,Newspaper,ShieldCheck,X} from 'lucide-react';
 import type {FundamentalsPayload,MarketPayload,NewsItem} from '../../shared/types';
@@ -14,7 +16,7 @@ type ReadingItem =
 type ReaderContextValue={openNews:(news:NewsItem)=>void;openFiling:(symbol:string,form:string,date:string,title?:string)=>void;openFinance:(data:FundamentalsPayload)=>void;openMarket:(data:MarketPayload)=>void};
 const ReaderContext=createContext<ReaderContextValue|null>(null);
 export function useReader(){const context=useContext(ReaderContext);if(!context)throw new Error('InAppReader provider missing');return context;}
-const pretty=(raw:string|null|undefined)=>raw?new Intl.DateTimeFormat('zh-CN',{timeZone:'Pacific/Auckland',dateStyle:'medium',timeStyle:'short'}).format(new Date(raw)):'时间未提供';
+const pretty=(raw:string|null|undefined)=>validDate(raw)?formatMarketTime(raw,'dateTime')+' '+uiText(ZONE_LABELS.cn):'时间未提供';
 type FilingDocument={available:boolean;content:string;title:string;notice:string;provider:string;publishedAt:string;sourceUrl:string};
 function OfficialDocument({symbol,form,date}:{symbol:string;form:string;date:string}){
  const [state,setState]=useState<{loading:boolean;data:FilingDocument|null;error:string}>({loading:true,data:null,error:''});
@@ -104,7 +106,7 @@ export function InAppReaderProvider({children}:{children:ReactNode}){
   {uiText(selected&&<div className="reader-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
    <div className="reader-modal" role="dialog" aria-modal="true" aria-label={uiText("站内资料阅读器")}>
     <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><button onClick={close} aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></header>
-    <div className="reader-scroll"><ReaderContents selection={selected}/></div>
+    <div className="reader-scroll"><ErrorBoundary label="阅读内容" resetKey={selected}><ReaderContents selection={selected}/></ErrorBoundary></div>
     <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button>{selected.kind==='news'&&<button disabled={sharing} onClick={copyShare}><Copy size={15}/>{uiText("复制站内链接")}</button>}<span role="status">{uiText(shareMessage||'站内阅读 · 来源可追溯')}</span></footer>
    </div>
   </div>)}

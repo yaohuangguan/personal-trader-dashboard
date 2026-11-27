@@ -1,3 +1,4 @@
+import {formatMarketTime,ZONE_LABELS} from '../time-format';
 import {useEffect,useRef,useState} from 'react';
 import {isUSStock} from '../../shared/market-clock';
 import {EXTENDED_LABELS,type ExtendedPayload} from '../../shared/extended-quote';
@@ -14,7 +15,7 @@ export default function ExtendedQuote({symbol}:{symbol:string}){
  const stale=q&&(q.stale||!!feed.error||Date.now()-Date.parse(q.asOf)>20*60000);
  const label=session?t(EXTENDED_LABELS[session]):t('盘前 / 盘后 / 24h');
  if(feed.data&&!q&&!session)return <div ref={ref}/>;
- return <div ref={ref} className="watch-extended-line" title={q?`${q.source} · ${new Date(q.asOf).toLocaleString()} · ${t('时段涨幅基准')} ${q.reference.toFixed(2)} USD`:t('扩展时段行情')}>
+ return <div ref={ref} className="watch-extended-line" title={q?`${q.source} · ${formatMarketTime(q.asOf,'dateTime',{zone:'us'})+' '+t(ZONE_LABELS.us)} · ${t('时段涨幅基准')} ${q.reference.toFixed(2)} USD`:t('扩展时段行情')}>
   <span className="extended-session">{label}</span>
   {q?<><span className={q.change>=0?'positive':'negative'}>{q.price.toFixed(2)}</span><span className={q.change>=0?'positive':'negative'}>{q.change>=0?'+':''}{q.changePercent.toFixed(2)}%</span>{stale&&<span className="extended-stale">{t('待更新')}</span>}</>:<span>{t(feed.error?'暂不可用':feed.loading?'加载中…':'暂无报价')}</span>}
  </div>;

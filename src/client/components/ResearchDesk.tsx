@@ -1,3 +1,4 @@
+import {formatMarketTime,zoneForSymbol,ZONE_LABELS,type MarketZone} from '../time-format';
 import {supportedStock} from '../../shared/market-clock';
 import StockSectorMap from './StockSectorMap';
 import CompactSelect from './CompactSelect';
@@ -41,8 +42,8 @@ const number = (v: number | null | undefined, digits = 2) => v == null ? '—' :
 const pct = (v: number | null | undefined) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 const tone = (v: number | null | undefined) => v == null || v === 0 ? '' : v > 0 ? 'is-up' : 'is-down';
 const amount = (v: number | null | undefined) => v == null ? '—' : Math.abs(v) >= 1e8 ? (v / 1e8).toFixed(2) + '亿' : Math.abs(v) >= 1e4 ? (v / 1e4).toFixed(2) + '万' : number(v, 0);
-const clock = (v: string | null | undefined) => !v || !Number.isFinite(Date.parse(v)) ? '—' : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(v));
-const dateClock = (v: string | null | undefined) => !v || !Number.isFinite(Date.parse(v)) ? '—' : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(v));
+const clock = (v: string | null | undefined) => formatMarketTime(v, 'clock');
+const dateClock = (v: string | null | undefined, zone: MarketZone = 'cn') => formatMarketTime(v, 'dateClock', { zone });
 
 function Hint({ text }: { text: string }) {
   return <Tooltip.Root><Tooltip.Trigger asChild><button type="button" className="desk-help" aria-label={uiText(text)}><CircleHelp size={13} /></button></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="desk-tooltip" sideOffset={7}>{uiText(text)}<Tooltip.Arrow /></Tooltip.Content></Tooltip.Portal></Tooltip.Root>;
@@ -130,7 +131,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
     setAlertMessage(fired.map(r => r.symbol + ' 已' + (r.direction === 'above' ? '达到 ' : '低于 ') + r.value.toFixed(2)).join('；'));
   }, [quotes.data, quotes.error, rules, auto]);
   const refresh = () => { quotes.refresh(); dayData.refresh(); flash.refresh(); decision.refresh(); onRefresh(); };
-  const sourceDate = quote?.asOf ? dateClock(quote.asOf) : market?.asOf || '—';
+  const zone = zoneForSymbol(symbol), sourceDate = quote?.asOf ? dateClock(quote.asOf, zone) : market?.asOf || '—';
   const status = !auto ? '已暂停轮询' : quotes.error ? '行情连接异常' : !quote ? chinese ? '连接行情中' : '历史日线' : quote.stale ? '快照已过期' : quote?.session === 'trading' ? '盘中快照' : quote?.session === 'break' ? '午间休市' : '已收盘';
   const visibleWatch = watchlist.filter(s => watchFilter === 'all' || (watchFilter === 'cn' ? /\.(SH|SZ|BJ)$/.test(s) : !/\.(SH|SZ|BJ)$/.test(s)));
   const row = (s: string) => { const q = quoteMap.get(s), d = markets[s]; return { name: q?.name || d?.name || CATALOG.find(c => c.symbol === s)?.name || s, price: q?.price ?? d?.last, change: q?.changePercent ?? d?.changePercent }; };
@@ -140,7 +141,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
           <div className="desk-security-top"><div className="desk-company"><span className="desk-market-tag">{uiText(symbol.endsWith('.SZ') ? '深' : symbol.endsWith('.SH') ? '沪' : symbol.endsWith('.BJ') ? '京' : 'US')}</span><h1>{(name)}</h1><span>{uiText(symbol)}</span><button type="button" className={'desk-icon ' + (watchlist.includes(symbol) ? 'is-starred' : '')} aria-label={uiText(watchlist.includes(symbol) ? '移出自选' : '加入自选')} onClick={() => onToggleWatch(symbol)}><Star size={16} fill={watchlist.includes(symbol) ? 'currentColor' : 'none'} /></button></div><div className={'desk-session ' + (quote?.session === 'trading' && !quote.stale && auto && !quotes.error ? 'is-trading' : '')}><i />{uiText(status)}<Hint text={uiText("盘中按5秒轮询公开行情，盘后30秒。市场时段按北京时间判断；交易日以来源快照为准，行情不保证交易所实时。")} /></div></div>
           <div className="desk-security-main"><div className={'desk-big-price ' + tone(change)}><strong>{uiText(number(price))}</strong><div><b>{uiText(quote?.change != null ? (quote.change >= 0 ? '+' : '') + number(quote.change) : market?.change != null ? number(market.change) : '—')}</b><span>{uiText(pct(change))}</span></div></div><div className="desk-live-actions"><StockSnapshot symbol={symbol}/><button type="button" onClick={() => { setAlertValue(price ? String(price) : ''); setAlertOpen(true); }}><Bell size={13} />{uiText("提醒")}</button><button type="button" onClick={() => setAuto(v => !v)} aria-pressed={!auto} aria-label={uiText(auto ? '暂停自动刷新' : '恢复自动刷新')}>{uiText(auto ? <Pause size={13} /> : <Play size={13} />)}{uiText(auto ? '自动' : '暂停')}</button><button type="button" onClick={refresh} aria-label={uiText("刷新个股工作台")}><RefreshCw size={14} /></button></div></div>
           <div className="desk-stat-grid">{uiText([{ label: '今开', value: number(quote?.open) }, { label: '最高', value: number(quote?.high) }, { label: '最低', value: number(quote?.low) }, { label: '成交额', value: amount(quote?.amount) }, { label: '换手率', value: quote?.turnover == null ? '—' : quote.turnover.toFixed(2) + '%' }, { label: '量比', value: number(quote?.volumeRatio) }, { label: '市盈率 TTM', value: number(quote?.pe) }, { label: '总市值', value: amount(quote?.marketCap) }].map(stat => <div key={stat.label}><span>{uiText(stat.label)}</span><b>{uiText(stat.value)}</b></div>))}</div>
-          <div className="desk-security-footer"><span>{uiText("快照")}{uiText(sourceDate)} {uiText("· 北京时间")}</span><span>{uiText("较沪深300")}<b className={tone(relativeStrength)}>{uiText(relativeStrength == null ? '—' : (relativeStrength >= 0 ? '+' : '') + relativeStrength.toFixed(2) + ' pct')}</b></span></div>
+          <div className="desk-security-footer"><span>{uiText("快照")}{uiText(sourceDate)} · {uiText(ZONE_LABELS[zone])}</span><span>{uiText("较沪深300")}<b className={tone(relativeStrength)}>{uiText(relativeStrength == null ? '—' : (relativeStrength >= 0 ? '+' : '') + relativeStrength.toFixed(2) + ' pct')}</b></span></div>
           {uiText(quotes.error && <Source text="" error={uiText(quote ? '刷新失败 · 当前保留上一行情快照' : quotes.error)} />)}
         </section>);
   return <Tooltip.Provider delayDuration={250}><div className="research-desk" data-testid="research-desk">
