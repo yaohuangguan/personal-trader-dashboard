@@ -1466,20 +1466,17 @@ class _MarketChartState extends State<MarketChart> {
       ? {1: 4, 3: 13, 6: 26}[n]!
       : n * 22;
 
-  /// Compact toolbar glyph with a full 44pt hit area. [lift] raises the glyph
-  /// so a 30pt-high toolbar keeps its look while the target overlaps the
-  /// (non-interactive) legend below.
+  /// Compact 17pt toolbar glyph with a full 44pt hit area.
   Widget _smallIcon(
     IconData icon,
     String title,
     VoidCallback action, {
     double width = 44,
-    double lift = 14,
   }) => SizedBox(
     width: width,
     height: 44,
     child: IconButton(
-      padding: EdgeInsets.only(bottom: lift),
+      padding: EdgeInsets.zero,
       constraints: BoxConstraints.tightFor(width: width, height: 44),
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1564,8 +1561,8 @@ class _MarketChartState extends State<MarketChart> {
             icon: const Icon(Icons.view_stream_outlined, size: 17),
           ),
         ),
-        _smallIcon(Icons.screen_rotation_outlined, '横竖屏切换', rotate, lift: 0),
-        _smallIcon(Icons.close, '关闭全屏', () => Navigator.pop(context), lift: 0),
+        _smallIcon(Icons.screen_rotation_outlined, '横竖屏切换', rotate),
+        _smallIcon(Icons.close, '关闭全屏', () => Navigator.pop(context)),
       ],
     ),
   );
@@ -1632,7 +1629,7 @@ class _MarketChartState extends State<MarketChart> {
             PopupMenuItem(value: n, child: Text(tr(context, text(n)))),
         ],
         child: Padding(
-          padding: const EdgeInsets.only(left: 6, bottom: 14),
+          padding: const EdgeInsets.only(left: 6),
           child: Row(
             children: [
               Expanded(
@@ -1669,7 +1666,6 @@ class _MarketChartState extends State<MarketChart> {
           .min(44.0, (c.maxWidth - 64) / math.max(1, actions.length))
           .floorToDouble();
       return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Only the range label follows pinches; the icons rebuild on
           // setState (e.g. when "回到最新" appears).
@@ -2284,13 +2280,13 @@ class _MarketChartState extends State<MarketChart> {
       );
     }
     final projecting = drawProjection;
-    // Terminal header: 30pt toolbar row (44pt targets overlap the legend),
-    // 40pt legend, 24pt OHLC readout; fullscreen adds a 44pt title row.
+    // Terminal header: 44pt toolbar row, 40pt legend, 24pt OHLC readout;
+    // fullscreen adds a 44pt title row.
     final height = widget.terminal
         ? math.max(
             160.0,
             (widget.viewportHeight ?? 500) -
-                (widget.expanded ? 138 : 94) -
+                (widget.expanded ? 152 : 108) -
                 (historyEnabled ? 24 : 0),
           )
         : compact
@@ -2348,32 +2344,13 @@ class _MarketChartState extends State<MarketChart> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (widget.terminal && widget.expanded) _portraitHeader(),
-            if (widget.terminal)
-              SizedBox(
-                height: 70,
-                child: Stack(
-                  children: [
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: 30,
-                      height: 40,
-                      child: ListenableBuilder(
-                        listenable: liveReadouts,
-                        builder: (context, _) => _legend(),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      top: 0,
-                      height: 44,
-                      child: _terminalToolbar(),
-                    ),
-                  ],
-                ),
-              )
-            else ...[
+            if (widget.terminal) ...[
+              SizedBox(height: 44, child: _terminalToolbar()),
+              ListenableBuilder(
+                listenable: liveReadouts,
+                builder: (context, _) => _legend(),
+              ),
+            ] else ...[
               _wideToolbar(),
               ?summary,
               ListenableBuilder(
