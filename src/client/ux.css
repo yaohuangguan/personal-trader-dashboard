@@ -42,3 +42,93 @@ html[data-theme="light"]{--chart-label-bg:#ffffffeb}
 .terminal-expanded-overlay{position:fixed;inset:0;z-index:var(--z-modal,1600);background:#000a}
 .terminal-expanded-dialog{position:fixed;inset:0;z-index:calc(var(--z-modal,1600) + 1);pointer-events:none}
 .terminal-expanded-dialog>.terminal-expanded{pointer-events:auto;z-index:auto}
+
+/* ---- Research desk: chart-first layout ---- */
+.research-desk .desk-center{gap:10px}
+/* Index tape: one line per index instead of two. */
+.research-desk .desk-market-tape{margin-bottom:10px}
+.research-desk .desk-market-tape>button{grid-template-columns:auto auto auto;align-items:baseline;gap:0 10px;padding:7px 14px;min-width:0;white-space:nowrap}
+.research-desk .desk-market-tape>button>span{grid-column:auto}
+.research-desk .desk-market-tape>button>b{font-size:.9rem}
+.research-desk .desk-market-tape small{font-size:.8rem}
+/* One-line research summary above the chart; full panels live below it. */
+.desk-summary-strip{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding:3px;border:1px solid var(--desk-border,var(--stroke));border-radius:7px;background:var(--desk-panel,var(--panel))}
+.desk-summary-strip::-webkit-scrollbar{display:none}
+.desk-summary-strip>button{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;min-height:36px;padding:6px 12px;border:0;border-radius:5px;background:transparent;color:var(--text);white-space:nowrap;font:inherit;text-align:left}
+.desk-summary-strip>button+button{box-shadow:-1px 0 0 var(--desk-border,var(--stroke))}
+.desk-summary-strip>button:hover{background:var(--panel-raised)}
+.desk-summary-strip span{font-size:.75rem;color:var(--muted)}
+.desk-summary-strip b{font-size:.875rem;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums}
+.desk-summary-strip small{margin-left:1px;font-size:.7rem;font-weight:400;color:var(--muted)}
+.desk-summary-strip em{margin-left:6px;font-style:normal;font-weight:500}
+.desk-summary-strip .has-alerts{color:var(--warm)}
+.desk-insights{display:grid;gap:10px;min-width:0}
+.desk-insights>div{scroll-margin-top:96px;min-width:0}
+.desk-insights .daily-trend-panel{margin:0}
+.desk-insights .guide-summary{width:100%}
+/* Live alerts (was inline dark styles). */
+.live-alerts{padding:10px 14px;border:1px solid var(--desk-border,var(--stroke));border-radius:7px;background:var(--desk-panel,var(--panel));color:var(--text)}
+.live-alerts>summary,.live-alerts-head{display:flex;align-items:baseline;gap:10px;min-height:28px;cursor:pointer;flex-wrap:wrap}
+.live-alerts-head{cursor:default}
+.live-alerts b{color:var(--fg)}
+.live-alerts small{color:var(--muted)}
+.live-alerts-count{min-width:20px;padding:0 6px;border-radius:10px;background:var(--panel-raised);color:var(--warm);font-style:normal;font-size:.75rem;text-align:center}
+.live-alert{margin-top:10px;padding-left:10px;border-left:2px solid var(--muted)}
+.live-alert.is-bullish{border-color:var(--up)}.live-alert.is-bullish strong{color:var(--up)}
+.live-alert.is-bearish{border-color:var(--down)}.live-alert.is-bearish strong{color:var(--down)}
+.live-alert p{margin:4px 0;font-size:.9em;line-height:1.6}
+.live-alerts-empty{margin:6px 0;color:var(--muted)}
+/* Quote header (tablet/phone) and key figures moved below the chart. */
+.desk-quote-head{padding:12px 14px}
+.desk-quote-head .desk-security-top{gap:8px}
+.desk-quote-head .desk-security-main{margin-top:8px;gap:10px}
+.desk-quote-stats{padding:12px 14px}
+.desk-quote-stats .desk-stat-grid{padding-top:0}
+.desk-company h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Sticky name bar: zero-height anchor so it overlays content without shifting it; opaque; hidden until the header scrolls away. */
+.desk-sticky-anchor{position:sticky;top:calc(72px + env(safe-area-inset-top,0px));z-index:28;height:0}
+.desk-sticky-anchor .desk-mobile-sticky{position:absolute;inset:0 0 auto 0;margin:0;background:var(--panel);backdrop-filter:none;-webkit-backdrop-filter:none;opacity:0;transform:translateY(-8px);pointer-events:none;visibility:hidden;transition:opacity .15s,transform .15s,visibility .15s}
+.desk-sticky-anchor .desk-mobile-sticky.is-visible{opacity:1;transform:none;pointer-events:auto;visibility:visible}
+@media(max-width:900px){
+ .desk-sticky-anchor{top:calc(66px + env(safe-area-inset-top,0px))}
+ .research-desk .desk-market-tape{margin:0}
+ .desk-quote-head{padding:10px 12px}
+ .desk-quote-head .desk-company h1{font-size:1.15rem}
+ .desk-quote-head .desk-big-price>strong{font-size:1.9rem}
+ .desk-quote-head .desk-security-main{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+ .desk-quote-head .desk-live-actions{flex-wrap:nowrap}
+ .desk-chart-heading>span{display:none}
+ .desk-context-tabs>button{padding-top:10px;padding-bottom:10px}
+ .desk-chart-heading{min-height:40px}
+ .desk-chart-heading .desk-tabs>button{padding-top:9px;padding-bottom:9px}
+}
+/* Chart toolbars on phones: one scrolling row each instead of 3–4 wrapped rows. */
+@media(max-width:600px){
+ .desk-chart-card .terminal-toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:8px;padding:6px 8px}
+ .desk-chart-card .terminal-toolbar::-webkit-scrollbar{display:none}
+ .desk-chart-card .terminal-range,.desk-chart-card .terminal-tools{flex:none;flex-wrap:nowrap}
+ .desk-chart-card .terminal-ma-legend{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:2px 12px;padding:5px 10px 0}
+ .desk-chart-card .terminal-ma-legend::-webkit-scrollbar{display:none}
+ .desk-chart-card .terminal-ma-legend>button{flex:none;min-width:0}
+ .desk-chart-card .terminal-readouts{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+ .desk-chart-card .terminal-readouts .terminal-ohlc{flex-wrap:nowrap;overflow:visible}
+ .desk-chart-card .terminal-readouts .terminal-pattern-readout{flex:none;padding-left:0}
+}
+.research-desk .desk-market-tape>button{flex:1 0 auto}
+.desk-chart-card .terminal-ma-legend{gap:2px 14px}
+.desk-chart-card .terminal-ma-legend>button{flex:0 0 auto;min-width:7.4em}
+@media(max-width:900px){
+ .research-desk .desk-quote-head .desk-security-main{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:space-between;margin-top:6px}
+ .research-desk .desk-quote-head .desk-big-price{gap:10px;min-width:0}
+ /* Icon-only actions on phones; the visible text stays the accessible name. */
+ .research-desk .desk-quote-head .desk-live-actions{flex-wrap:nowrap;gap:4px}
+ .research-desk .desk-quote-head .desk-live-actions button{font-size:0;gap:0;min-width:38px;min-height:38px;padding:0}
+ .research-desk .desk-quote-head .desk-live-actions button svg{width:16px;height:16px}
+}
+@media(max-width:900px){
+ .research-desk .desk-quote-head .desk-security-main>.desk-live-actions{width:auto;flex:none}
+ .research-desk .desk-quote-head .desk-big-price{flex:1 1 auto}
+ .research-desk .desk-quote-head .desk-security-top{flex-wrap:nowrap}
+ .research-desk .desk-quote-head .desk-company{min-width:0;flex:1 1 auto}
+ .research-desk .desk-quote-head .desk-session{flex:none;width:auto}
+}

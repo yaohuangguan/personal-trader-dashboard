@@ -9,5 +9,12 @@
   "自选、分组与设置仍保存在本机。": "Your watchlist, groups and settings are still saved on this device.",
   "重新加载": "Reload",
   "阅读内容": "Reader content",
-  "近30日收盘": "Closes, last 30 days"
+  "近30日收盘": "Closes, last 30 days",
+  "盘中按5秒轮询公开行情，午休15秒，收盘后60秒。市场时段按北京时间判断；交易日以来源快照为准，行情不保证交易所实时。": "Public quotes refresh every 5s while trading, 15s at lunch and 60s after the close. Sessions follow Beijing time; the trading day follows the source snapshot. Quotes are not guaranteed to be exchange real-time.",
+  "研判摘要": "Research summary",
+  "研判详情": "Research details",
+  "关键指标": "Key figures",
+  "图表引擎": "Charts by",
+  "K线图表": "K-line chart",
+  "正在刷新…": "Refreshing…"
 }

@@ -20,9 +20,9 @@ test('merged catalogue translates web-only templates',()=>{
 });
 test('string literals passed to t() in new web modules have English entries',()=>{
  const merged={...shared,...web} as Record<string,string>;
- const files=['src/client/components/ErrorBoundary.tsx','src/client/main.tsx'];
+ const files=['src/client/components/ErrorBoundary.tsx','src/client/main.tsx','src/client/components/LiveAlerts.tsx','src/client/components/WatchSidebar.tsx','src/client/components/ResearchDesk.tsx','src/client/components/MarketChart.tsx','src/client/components/IntradayChart.tsx','src/client/components/DailyTrendPanel.tsx','src/client/components/ExtendedQuote.tsx'];
  for(const file of files){
   const source=readFileSync(file,'utf8');
-  for(const match of source.matchAll(/\bt\('([^']*[㐀-鿿][^']*)'\)/g))assert.ok(Object.hasOwn(merged,match[1]),file+': '+match[1]);
+  for(const match of source.matchAll(/\b(?:t|uiText|copyText)\(\s*(['"])((?:(?!\1).)*[㐀-鿿](?:(?!\1).)*)\1\s*\)/g))assert.equal(translateUI(match[2],merged)!==match[2]||Object.hasOwn(merged,match[2]),true,file+': '+match[2]);
  }
 });
