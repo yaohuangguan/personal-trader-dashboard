@@ -38,12 +38,13 @@ import {monitorRoute,type MonitorNamespace} from './signal-monitor';
 export {CloseSignalMonitor as SignalMonitor} from './close-monitor';
 import { deskRoute } from './desk-api';
 import {firstSuccess} from './provider-chain';
+import {rateLimited} from './rate-limit';
 import {CLOSE_DISPATCH_CRON,dispatchCloseWorkflow,type DispatchEnv} from './close-dispatch';
 import { searchChineseMarket, mergeSearch } from './market-search';
 import type { Candle, MarketPayload, NewsItem, NewsPayload, SearchItem, FundamentalsPayload, FinanceMetric } from '../shared/types';
 import { CATALOG, SECTORS, NEWS_CATEGORIES, normalizeSymbol, searchLocal } from '../shared/catalog';
 import { persistScan, listEvents, intelSummary, readSnapshot, saveSnapshot, type D1Database } from './intelligence';
-import { fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
+import { secCompany, fmpDaily, yahooDaily, tencentAshares, validateDailyBars, earningsCalendar, officialFilings, announcementDetail, companyNews, sinaBeijingDaily, sinaAdjustedDaily } from './research';
 
 interface Env extends Level2Env, DispatchEnv { PUBLIC_ORIGIN?:string; SCREEN_JOB_TOKEN?:string; SHARES?:ShareStore; SIGNAL_MONITOR?:MonitorNamespace; MARKET_SCANNER?:MonitorNamespace; ASSETS?:{fetch(request:Request):Promise<Response>}; SEC_USER_AGENT?:string; TWELVE_DATA_API_KEY?:string; ALPHA_VANTAGE_API_KEY?:string; FMP_API_KEY?:string; INGEST_SECRET?:string; ADMIN_TOKEN?:string; DB?:D1Database; APP_NAME?:string }
 type CacheValue={until:number;body:unknown};
@@ -278,10 +279,7 @@ async function financials(symbol:string,env:Env):Promise<FundamentalsPayload>{
  if(!env.SEC_USER_AGENT || env.SEC_USER_AGENT.includes('example.com'))
   return {symbol,available:false,provider:'SEC EDGAR',sourceUrl,notice:'需配置 SEC_USER_AGENT（真实联系方式）才能访问官方 SEC XBRL 接口。'};
  const hdr={'User-Agent':env.SEC_USER_AGENT,'Accept-Encoding':'gzip, deflate','Accept':'application/json'};
- const listRes=await withTimeout('https://www.sec.gov/files/company_tickers.json',{headers:hdr},14000);
- if(!listRes.ok)throw new Error('SEC ticker index HTTP '+listRes.status);
- const list=await listRes.json() as Record<string,{ticker:string;cik_str:number;title:string}>;
- const company=Object.values(list).find(x=>x.ticker.toUpperCase()===symbol);
+ const company=await secCompany(symbol,env.SEC_USER_AGENT);
  if(!company)return {symbol,available:false,provider:'SEC EDGAR',sourceUrl,notice:'SEC 未找到该股票代码。'};
  const cik=String(company.cik_str).padStart(10,'0');
  const factsRes=await withTimeout('https://data.sec.gov/api/xbrl/companyfacts/CIK'+cik+'.json',{headers:hdr},14000);
@@ -555,7 +553,7 @@ async function route(request:Request,env:Env,ctx?:WaitUntil,inline=false):Promis
    const migrationAsset=incoming.pathname==='/index.html'||incoming.pathname==='/manifest.webmanifest'||incoming.pathname==='/favicon.svg'||incoming.pathname.startsWith('/assets/')||incoming.pathname.startsWith('/icons/');
    if(env.PUBLIC_ORIGIN&&incoming.hostname==='personal-market-atlas.nzs.workers.dev'&&request.method==='GET'&&!incoming.pathname.startsWith('/api/')&&!migrationAsset)return new Response(null,{status:308,headers:{location:env.PUBLIC_ORIGIN+incoming.pathname+incoming.search,'cache-control':'public, max-age=300'}});
    const share=await shareRoute(request,env.SHARES,env.PUBLIC_ORIGIN);if(share)return share;
-   const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR);if(monitoring)return monitoring;
+   const monitoring=await monitorRoute(request,env.SIGNAL_MONITOR,key=>rateLimited(env.MARKET_SCANNER,key,40,600000));if(monitoring)return monitoring;
    const closeUrl=new URL(request.url);
    if(closeUrl.pathname==='/api/desk/screen-job')return screenJobRoute(request,env);
    if(closeUrl.pathname==='/api/desk/close-report'&&request.method==='GET')return closeReportRoute(request,env.MARKET_SCANNER,ctx);

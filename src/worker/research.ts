@@ -1,5 +1,6 @@
 import type { Candle, NewsItem } from '../shared/types';
 import { CATALOG } from '../shared/catalog';
+import { shareClassSymbol } from '../shared/market-clock';
 export type ResearchEnv = {FMP_API_KEY?:string; SEC_USER_AGENT?:string};
 const numeric=(v:unknown)=>Number.isFinite(Number(v))?Number(v):0;
 const fixed=(s:string)=>/^[A-Z0-9.^-]{1,18}$/.test(s);
@@ -36,7 +37,9 @@ export async function fmpDaily(symbol:string,key:string):Promise<{candles:Candle
 export async function yahooDaily(symbol:string):Promise<{candles:Candle[];url:string}>{
  if(!fixed(symbol))throw new Error('Invalid symbol');
  // Unofficial, rate-limited Yahoo chart API: research-only best effort; do not circumvent 429.
- const endpoint='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(symbol);
+ // Yahoo spells US share classes with a dash (BRK-B).
+ const ticker=/\.(SH|SZ|BJ)$/.test(symbol)?symbol:shareClassSymbol(symbol,'-');
+ const endpoint='https://query1.finance.yahoo.com/v8/finance/chart/'+encodeURIComponent(ticker);
  const result=await requestData(endpoint+'?range=2y&interval=1d',{accept:'application/json'},8500) as
   {chart?:{result?:{timestamp?:number[];meta?:{exchangeTimezoneName?:string};indicators?:{quote?:Array<{open?:Array<number|null>;high?:Array<number|null>;low?:Array<number|null>;close?:Array<number|null>;volume?:Array<number|null>}>}}[]}};
  const body=result.chart?.result?.[0];
@@ -50,7 +53,7 @@ export async function yahooDaily(symbol:string):Promise<{candles:Candle[];url:st
  }));
  const candles=validateDailyBars(bars);
  if(candles.length<2)throw new Error('Yahoo returned no valid OHLCV');
- return {candles,url:'https://finance.yahoo.com/quote/'+encodeURIComponent(symbol)+'/history/'};
+ return {candles,url:'https://finance.yahoo.com/quote/'+encodeURIComponent(ticker)+'/history/'};
 }
 export type EarningsEvent = {symbol:string;date:string;time:string|null;epsEstimated:number|null;epsActual:number|null;sourceUrl:string;source:'FMP';status:'scheduled'|'reported'};
 export async function earningsCalendar(symbol:string,env:ResearchEnv):Promise<{available:boolean;items:EarningsEvent[];reason:string;provider:string}>{
@@ -93,8 +96,7 @@ export async function officialFilings(symbol:string,env:ResearchEnv):Promise<{
   notice:'配置 SEC_USER_AGENT（含可联系邮箱）后可读取官方 10-K、10-Q、8-K 披露历史。',items:[]
  };
  const headers={'User-Agent':env.SEC_USER_AGENT,'Accept':'application/json'};
- const index=await requestData('https://www.sec.gov/files/company_tickers.json',headers,12000) as Record<string,{ticker:string;cik_str:number}>;
- const company=Object.values(index).find(x=>x.ticker?.toUpperCase()===symbol);
+ const company=await secCompany(symbol,env.SEC_USER_AGENT);
  if(!company)return {available:false,provider:'SEC EDGAR',sourceUrl:'https://www.sec.gov/edgar/search/',
   notice:'未在 SEC 找到该证券的 CIK。',items:[]};
  const cik=String(company.cik_str).padStart(10,'0');
@@ -111,6 +113,24 @@ export async function officialFilings(symbol:string,env:ResearchEnv):Promise<{
  }
  return {available:true,provider:'SEC EDGAR',sourceUrl:'https://www.sec.gov/edgar/browse/?CIK='+cik,
   notice:'SEC 官方披露日期，不是下一次财报发布日期预测。',items};
+}
+let secIndex:{until:number;tickers:Map<string,{cik_str:number;title:string}>}|null=null;
+/**
+ * SEC CIK lookup. company_tickers.json (~1 MB) is downloaded at most once a day per isolate, and
+ * each resolved ticker is kept at the edge for 24 h, so a cold US stock no longer re-downloads it.
+ * SEC spells share classes with a dash (BRK-B).
+ */
+export async function secCompany(symbol:string,userAgent:string):Promise<{ticker:string;cik_str:number;title:string}|null>{
+ const ticker=shareClassSymbol(symbol,'-').toUpperCase(),edge=typeof caches!=='undefined'?(caches as CacheStorage&{default?:Cache}).default:undefined;
+ const key=new Request('https://sec-index.internal/__sec-cik/v1/'+encodeURIComponent(ticker));
+ try{const hit=await edge?.match(key);if(hit){const saved=await hit.json() as {company:{ticker:string;cik_str:number;title:string}|null};return saved.company;}}catch{}
+ if(!secIndex||secIndex.until<Date.now()){
+  const raw=await requestData('https://www.sec.gov/files/company_tickers.json',{'User-Agent':userAgent,'Accept':'application/json'},12000) as Record<string,{ticker:string;cik_str:number;title:string}>;
+  secIndex={until:Date.now()+86400000,tickers:new Map(Object.values(raw).filter(x=>typeof x?.ticker==='string').map(x=>[x.ticker.toUpperCase(),{cik_str:x.cik_str,title:x.title}]))};
+ }
+ const found=secIndex.tickers.get(ticker),company=found?{ticker,...found}:null;
+ try{await edge?.put(key,Response.json({company},{headers:{'cache-control':'public, max-age=86400'}}));}catch{}
+ return company;
 }
 export async function companyNews(symbol:string,items:NewsItem[],source:'stored'|'index'='stored'):Promise<{items:NewsItem[];source:'stored'|'index';notice:string}>{
  const company=CATALOG.find(c=>c.symbol===symbol),name=company?.name.toLowerCase();
