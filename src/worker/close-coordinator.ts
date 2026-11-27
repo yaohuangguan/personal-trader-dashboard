@@ -28,7 +28,8 @@ export class CloseCoordinator{
   if(new URL(req.url).hostname===COMPUTE_HOST)return runCompute(req,this.env,{waitUntil:task=>{void task.catch(()=>{});}});
   const action=new URL(req.url).pathname.slice(1),s=this.state.storage;
   if(action==='cloud-watch')return this.state.blockConcurrencyWhile(()=>watchVault(req,s));
-  if(action==='account')return this.state.blockConcurrencyWhile(()=>accountStore(req,s));
+  // Only short storage sections are serialised; PBKDF2 runs outside blockConcurrencyWhile.
+  if(action==='account')return accountStore(req,s,fn=>this.state.blockConcurrencyWhile(fn));
   if(action==='research-status'){const job=await s.get<import('./research-screen').ResearchJob>('research:v1:job'),p=new URL(req.url).searchParams;return json(await new ResearchScreen(s).read(statusView(job,{id:p.get('id'),count:p.get('count'),since:p.get('since')})));}
   if(action==='research-start'&&req.method==='POST'){
    const body=await req.json() as {retry?:boolean;symbols?:string[];authorized?:boolean};
