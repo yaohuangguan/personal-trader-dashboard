@@ -1,3 +1,5 @@
+import * as Dialog from '@radix-ui/react-dialog';
+import {useHistoryLayer} from '../hooks/useHistoryLayer';
 import {errorText,readJson} from '../http';
 import ErrorBoundary from './ErrorBoundary';
 import {SharedArticle,SharedAnnouncement} from './SharedArticle';
@@ -87,15 +89,10 @@ export function InAppReaderProvider({children}:{children:ReactNode}){
  const [selected,setSelected]=useState<ReadingItem|null>(null);
  const [sharing,setSharing]=useState(false),[shareMessage,setShareMessage]=useState('');
  const copyShare=async()=>{if(selected?.kind!=='news')return;setSharing(true);setShareMessage('');try{const r=await fetch('/api/shares',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item:selected.item})}),j=await readJson<any>(r);if(!r.ok)throw new Error(j.error||'分享失败');await navigator.clipboard.writeText(j.url);setShareMessage('站内短链接已复制');}catch(e){setShareMessage(e instanceof Error?e.message:'分享失败');}finally{setSharing(false);}};
- const close=useCallback(()=>{setSelected(null);const u=new URL(location.href);u.searchParams.delete('article');if(/^\/n\//.test(u.pathname))u.pathname='/';history.replaceState(null,'',u);},[]);
- useEffect(()=>{const short=/^\/n\/([A-Za-z0-9_-]{16})$/.exec(location.pathname);if(short){setSelected({kind:'shared',id:short[1]});return;}const raw=new URLSearchParams(location.search).get('article');if(raw){const item=readNewsLink(raw);if(item)setSelected({kind:'news',item});}},[]);
- useEffect(()=>{
-  if(!selected)return;
-  const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.stopPropagation();close();}};
-  window.addEventListener('keydown',onKey);
-  const old=document.body.style.overflow;document.body.style.overflow='hidden';
-  return ()=>{window.removeEventListener('keydown',onKey);document.body.style.overflow=old;};
- },[selected,close]);
+ const close=useCallback(()=>setSelected(null),[]);
+ useHistoryLayer(!!selected,close);
+ // Shared links open the reader once; the address is cleaned first so Back/close return to the normal page.
+ useEffect(()=>{const u=new URL(location.href),short=/^\/n\/([A-Za-z0-9_-]{16})$/.exec(u.pathname),raw=u.searchParams.get('article');if(!short&&!raw)return;u.searchParams.delete('article');if(short)u.pathname='/';history.replaceState(history.state,'',u);if(short){setSelected({kind:'shared',id:short[1]});return;}const item=readNewsLink(raw!);if(item)setSelected({kind:'news',item});},[]);
  const actions=useMemo<ReaderContextValue>(()=>({
   openNews:item=>setSelected({kind:'news',item}),
   openFiling:(symbol,form,date,title)=>setSelected({kind:'filing',symbol,form,date,title}),
@@ -104,12 +101,14 @@ export function InAppReaderProvider({children}:{children:ReactNode}){
  }),[]);
  return <ReaderContext.Provider value={actions}>
   {uiText(children)}
-  {uiText(selected&&<div className="reader-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}>
-   <div className="reader-modal" role="dialog" aria-modal="true" aria-label={uiText("站内资料阅读器")}>
-    <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><button onClick={close} aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></header>
+  {/* Radix dialog: initial focus, focus trap, Esc / outside click to close, scroll lock, focus restored on close. */}
+  <Dialog.Root open={!!selected} onOpenChange={open=>{if(!open)close();}}><Dialog.Portal><Dialog.Overlay className="reader-backdrop">
+   {selected&&<Dialog.Content className="reader-modal" aria-describedby={undefined}>
+    <Dialog.Title className="sr-only">{uiText("站内资料阅读器")}</Dialog.Title>
+    <header className="reader-header"><span><BookOpen size={19}/> MARKET ATLAS <em>/ READER</em></span><Dialog.Close asChild><button aria-label={uiText("关闭站内阅读器")}><X size={20}/></button></Dialog.Close></header>
     <div className="reader-scroll"><ErrorBoundary label="阅读内容" resetKey={selected}><ReaderContents selection={selected}/></ErrorBoundary></div>
     <footer className="reader-footer"><button onClick={close}><ArrowLeft size={15}/> {uiText("返回研究工作台")}</button>{selected.kind==='news'&&<button disabled={sharing} onClick={copyShare}><Copy size={15}/>{uiText("复制站内链接")}</button>}<span role="status">{uiText(shareMessage||'站内阅读 · 来源可追溯')}</span></footer>
-   </div>
-  </div>)}
+   </Dialog.Content>}
+  </Dialog.Overlay></Dialog.Portal></Dialog.Root>
  </ReaderContext.Provider>;
 }

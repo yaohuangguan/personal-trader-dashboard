@@ -19,6 +19,7 @@ import './MarketChart.css';
 import type { Candle } from '../../shared/types';
 import type { GuideEvent } from '../../shared/guide-analysis';
 import { defaultMAs, migrateMAPreferences, validMAPreferences, type MAPreference, type Point } from '../../shared/chart-indicators';
+import { useHistoryLayer } from '../hooks/useHistoryLayer';
 import { excludedFromAutoscale, useChartData, type ChartDataSnapshot } from './chart-data';
 
 const UP = '#f04a55', DOWN = '#28cdb6';
@@ -369,6 +370,7 @@ export default function MarketChart({ candles:initialCandles, compact = false, s
   useEffect(() => { const set = chartSetRef.current; if (set) { try { applyData(set, snapshot); } catch (error) { setChartError(error instanceof Error ? error.message : '图表加载失败'); } } }, [snapshot, applyData]);
 
   const closeExpanded = useCallback(() => setExpanded(false), []);
+  useHistoryLayer(expanded, closeExpanded);
   function chooseRange(value: Range) { visibleRef.current = null; setPeriod(value); }
   function resetView() {
     const set = chartSetRef.current; if (!set) return;

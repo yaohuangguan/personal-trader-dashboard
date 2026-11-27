@@ -150,3 +150,13 @@ html[data-theme="light"] .desk-chart-card .terminal-tools>button,html[data-theme
 .screen-notice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0;padding:10px 14px;border:1px solid var(--stroke);border-radius:7px;background:var(--panel);color:var(--text)}
 .screen-notice button{min-height:36px;padding:4px 12px;border:1px solid var(--stroke);border-radius:6px;background:var(--panel-raised);color:var(--fg);font:inherit}
 .desk-stale-tag{font-style:normal;color:var(--warm)}
+
+/* ---- One z-index scale: content < sticky < drawer < floating < toast < modal < popover < tooltip ---- */
+:root{--z-sticky:30;--z-drawer:40;--z-floating:50;--z-toast:1000;--z-modal:1400;--z-modal-nested:1450;--z-popover:1500;--z-tooltip:1600}
+.screen-running-indicator{z-index:var(--z-floating)!important}
+.pwa-toast-stack,.pwa-update-banner,.pwa-state-message,.desk-alert-toast{z-index:var(--z-toast)!important}
+.reader-backdrop,.search-overlay,.settings-overlay,.pwa-help-backdrop,.desk-dialog-overlay,.projection-dialog-overlay,.snapshot-overlay,.terminal-expanded-overlay{z-index:var(--z-modal)!important}
+.command-modal,.settings-modal,.pwa-help-modal,.desk-dialog,.projection-explanation-dialog,.snapshot-dialog,.terminal-expanded-dialog{z-index:calc(var(--z-modal) + 1)!important}
+.watch-transfer-overlay{z-index:var(--z-modal-nested)!important}.watch-transfer-dialog{z-index:calc(var(--z-modal-nested) + 1)!important}
+.compact-select-menu,.watch-row-popover{z-index:var(--z-popover)!important}
+.desk-tooltip{z-index:var(--z-tooltip)!important}

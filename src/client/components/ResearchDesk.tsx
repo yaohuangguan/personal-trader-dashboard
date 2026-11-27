@@ -23,6 +23,7 @@ import {t as uiText} from '../preferences';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuotes } from '../quote-store';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { useHistoryLayer } from '../hooks/useHistoryLayer';
 import ErrorBoundary from './ErrorBoundary';
 import { useThrottledBars } from './chart-data';
 import type { DailyTrend } from '../../shared/daily-trend';
@@ -138,6 +139,7 @@ export default function ResearchDesk({ symbol, market:baseMarket, marketError, m
   const benchmark = quoteMap.get('000300.SH');
   const relativeStrength = quote && benchmark && quote.asOf.slice(0, 10) === benchmark.asOf.slice(0, 10) && quote.changePercent !== null && benchmark.changePercent !== null ? quote.changePercent - benchmark.changePercent : null;
   const { openNews } = useReader();
+  useHistoryLayer(alertOpen, () => setAlertOpen(false));
   useEffect(() => { setSectorCode(''); setAlertValue(''); }, [symbol]);
   useEffect(() => { try { localStorage.setItem('atlas.price-alerts.v1', JSON.stringify(rules)); } catch { /* browser storage disabled */ } }, [rules]);
   useEffect(() => {

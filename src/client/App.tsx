@@ -2,6 +2,7 @@ import {fetchJson,errorText} from './http';
 import {isArrayOf,isBookmark,isBoolean,isString,readStored,writeStored} from './storage';
 import {editWatch,useWatchState} from './watch-store';
 import {useQuotes} from './quote-store';
+import {onHistoryLayer,useHistoryLayer} from './hooks/useHistoryLayer';
 import ErrorBoundary from './components/ErrorBoundary';
 import ResizeRail,{cssVarPreview,usePanelWidth} from './components/ResizeRail';
 const watchPreview=cssVarPreview('.app-shell','--watch-rail');
@@ -105,7 +106,7 @@ export default function App(){
  const [selected,setSelected]=useState(()=>{const sym=new URLSearchParams(window.location.search).get('symbol');return sym?normalizeSymbol(sym):readStored('atlas.last-symbol.v1','300545.SZ',isString);});
  const [markets,setMarkets]=useState<Record<string,MarketPayload>>({});
  const [marketErrors,setMarketErrors]=useState<Record<string,string>>({});
- const [newsCategory,setNewsCategory]=useState('all');
+ const [newsCategory,setNewsCategory]=useState(()=>new URLSearchParams(location.search).get('category')||'all');
  const [newsData,setNewsData]=useState<NewsPayload|null>(null);
  const [newsLoading,setNewsLoading]=useState(true);
  const [newsError,setNewsError]=useState('');
@@ -145,15 +146,17 @@ export default function App(){
   }).catch(e=>{if(!ac.signal.aborted)setMarketErrors(prev=>({...prev,[selected]:errorText(e)}));});
   return ()=>ac.abort();
  },[selected,refreshKey,view]);
+ // The sector filter belongs to the news view only: overview and the industry radar always read the full feed.
+ const newsFeed=view==='overview'||view==='radar'?'all':view==='news'&&newsCategory!=='all'?newsCategory:null;
  useEffect(()=>{
-  if(view==='research'||view==='screener'||view==='news'&&newsCategory==='all')return;
+  if(!newsFeed)return;
   const ac=new AbortController();setNewsLoading(true);setNewsError('');setNewsData(null);
-  api<NewsPayload>('/api/news?category='+encodeURIComponent(newsCategory),ac.signal)
+  api<NewsPayload>('/api/news?category='+encodeURIComponent(newsFeed),ac.signal)
    .then(data=>{if(!ac.signal.aborted)setNewsData(data);})
    .catch(e=>{if(!ac.signal.aborted)setNewsError(errorText(e));})
    .finally(()=>{if(!ac.signal.aborted)setNewsLoading(false);});
   return ()=>ac.abort();
- },[newsCategory,refreshKey,view]);
+ },[newsFeed,refreshKey]);
  useEffect(()=>{
   if(!searchQuery.trim()){setRemoteResults([]);return;}
   const ac=new AbortController();setRemoteResults([]);
@@ -163,15 +166,39 @@ export default function App(){
   },250);
   return ()=>{clearTimeout(timeout);ac.abort();};
  },[searchQuery]);
- const chooseSymbol=useCallback((symbol:string)=>{
-  setWorkspaceNav(false);const normalized=normalizeSymbol(symbol);setSelected(normalized);setView('research');setSearchOpen(false);setSearchQuery('');
-  writeStored('atlas.last-symbol.v1',normalized);
-  window.history.replaceState(null,'','?symbol='+encodeURIComponent(normalized));
-  window.scrollTo({top:0,behavior:'smooth'});
+ /** Views and stocks are history entries (pushState), so Back steps through them instead of leaving the PWA. */
+ const navigate=useCallback((next:{view:View;symbol?:string;category?:string})=>{
+  const params=new URLSearchParams();
+  if(next.view==='research'&&next.symbol)params.set('symbol',next.symbol);else params.set('view',next.view);
+  if(next.view==='news'&&next.category&&next.category!=='all')params.set('category',next.category);
+  const url=location.pathname+'?'+params.toString(),state={atlas:1,...next};
+  if(url===location.pathname+location.search&&!onHistoryLayer())return;
+  // From an overlay entry (search, reader) replace it so one Back returns to the previous page.
+  if(onHistoryLayer())history.replaceState(state,'',url);else history.pushState(state,'',url);
  },[]);
+ useEffect(()=>{
+  history.replaceState({...(history.state||{}),atlas:1},'');
+  const onPop=()=>{
+   if(onHistoryLayer())return;
+   const params=new URLSearchParams(location.search),requested=params.get('view')||'',symbol=params.get('symbol')?.trim();
+   setView(NAV.some(n=>n[0]===requested)?requested as View:symbol?'research':'markets');
+   if(symbol)setSelected(normalizeSymbol(symbol));
+   setNewsCategory(params.get('category')||'all');setMobileNav(false);
+  };
+  window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop);
+ },[]);
+ useHistoryLayer(searchOpen,()=>setSearchOpen(false));
+ useHistoryLayer(mobileNav,()=>setMobileNav(false));
+ const chooseSymbol=useCallback((symbol:string)=>{
+  setWorkspaceNav(false);const normalized=normalizeSymbol(symbol);setSelected(normalized);setView('research');setSearchOpen(false);setSearchQuery('');setMobileNav(false);
+  writeStored('atlas.last-symbol.v1',normalized);
+  navigate({view:'research',symbol:normalized});
+  window.scrollTo({top:0,behavior:'smooth'});
+ },[navigate]);
  const toggleWatch=useCallback((symbol:string)=>{editWatch({kind:'toggle',symbol});},[]);
  const toggleSave=useCallback((item:NewsItem)=>setSaved(prev=>prev.some(x=>x.url===item.url)?prev.filter(x=>x.url!==item.url):[item,...prev].slice(0,200)),[]);
- const changeView=useCallback((v:View)=>{if(v==='research')setWorkspaceNav(false);setView(v);setMobileNav(false);const url=new URL(window.location.href);url.searchParams.set('view',v);window.history.replaceState(null,'',url.pathname+url.search);window.scrollTo({top:0,behavior:'smooth'});},[]);
+ const selectedRef=useRef(selected);selectedRef.current=selected;
+ const changeView=useCallback((v:View,category='all')=>{if(v==='research')setWorkspaceNav(false);setView(v);setNewsCategory(category);setMobileNav(false);navigate({view:v,symbol:v==='research'?selectedRef.current:undefined,category});window.scrollTo({top:0,behavior:'smooth'});},[navigate]);
  useEffect(()=>{const open=()=>changeView('signals');window.addEventListener('atlas:monitor-pool',open);return()=>window.removeEventListener('atlas:monitor-pool',open);},[changeView]);
  const searchOptions=useMemo(()=>{
   const list=remoteResults.length?remoteResults:searchLocal(searchQuery);
@@ -182,7 +209,7 @@ export default function App(){
  const visibleArticles=view==='saved'?saved:news;
  const highlighted=visibleArticles.slice(0,1)[0];
  const focusedThemes=SECTORS.map(sector=>({sector,items:news.filter(n=>n.category===sector.id || sector.words.some(w=>n.title.toLowerCase().includes(w.toLowerCase())))}));
- const showNews=(category:string)=>{setNewsCategory(category);changeView('news');};
+ const showNews=(category:string)=>changeView('news',category);
 
  return <div style={{'--watch-rail':watchWidth+'px'} as CSSProperties} className={'app-shell '+(view==='research'?'stock-workspace-shell':'')+(view==='research'&&!workspaceNav?' has-watch-sidebar':'')+(sidebarCollapsed?' sidebar-is-collapsed':'')}>
   <aside className={'sidebar '+(mobileNav?'mobile-open':'')}>
@@ -266,7 +293,7 @@ export default function App(){
     {uiText(view==='news'&&newsCategory!=='all'&&<>
      <SectionHeading eyebrow="GLOBAL EVENTS / LIVE FEEDS" title={uiText("全球事件情报")} right={<span className="small-metadata"><Clock3 size={14}/> {uiText(newsData?'最后抓取 '+dateTime(newsData.fetchedAt):'尚未获取')}</span>}/>
      <p className="section-subtitle">{uiText("从全球宏观、政策、科技突破到产业订单线索。按时间排序的原始报道，并非自动确认的投资结论。")}</p>
-     <div className="chip-row">{uiText(NEWS_CATEGORIES.map(c=><button key={c.id} className={'chip '+(newsCategory===c.id?'selected':'')} onClick={()=>setNewsCategory(c.id)}>{uiText(c.name)}</button>))}</div>
+     <div className="chip-row">{uiText(NEWS_CATEGORIES.map(c=><button key={c.id} className={'chip '+(newsCategory===c.id?'selected':'')} onClick={()=>showNews(c.id)}>{uiText(c.name)}</button>))}</div>
      <div className="panel article-panel">
       <div className="list-toolbar"><div><span className="eyebrow">LATEST ARTICLES</span><b>{uiText(newsData?.items.length||0)} {uiText("条")}</b></div><span>{uiText("按发布时间 · 新→旧")}</span></div>
       {uiText(newsLoading?<Blank loading title={uiText("正在读取相关新闻")} detail={uiText("正在请求公开新闻 RSS")}/>:newsError?<Blank title={uiText("新闻源暂时不可用")} detail={uiText(newsError)}/>:
