@@ -60,7 +60,7 @@ export class SignalMonitor {
   return response({error:'Unknown action'},404);
  }
  protected async push(data:{title:string;body:string;url:string;tag:string},ttl=300){
-  const sub=await this.state.storage.get<PushSubscription>('subscription'),native=await this.state.storage.get<string>('native-token');if(!sub){if(native&&this.env?.FIREBASE_SERVICE_ACCOUNT){await sendNativePush(this.env.FIREBASE_SERVICE_ACCOUNT,native,data,this.state.storage);return;}throw new Error('尚未订阅设备通知');}
+  const sub=await this.state.storage.get<PushSubscription>('subscription'),native=await this.state.storage.get<string>('native-token');if(!sub){if(native&&this.env?.FIREBASE_SERVICE_ACCOUNT){await sendNativePush(this.env.FIREBASE_SERVICE_ACCOUNT,native,data,this.state.storage,ttl);return;}throw new Error('尚未订阅设备通知');}
   if(!validPushEndpoint(sub.endpoint))throw new Error('通知服务地址无效');
   const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl}},sub,await this.keys());
   const r=await fetch(sub.endpoint,{...payload,redirect:'error',signal:AbortSignal.timeout(7000)});
