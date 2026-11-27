@@ -1,7 +1,7 @@
 import type {ScreenCandidate} from './screening';
 import {passesMulti,type ScreenOptions} from './pattern-screen';
 import type {Snapshot} from './desk-types';
-export type CloseReport={id:string;date:string;generatedAt:number;total:number;eligible:number;checked:number;failed:number;failureSample:{symbol:string;reason:string}[];rejected:Record<string,number>;candidates:ScreenCandidate[];complete:boolean;source:string;elapsedMs:number;cacheHits:number};
+export type CloseReport={id:string;date:string;generatedAt:number;total:number;eligible:number;checked:number;failed:number;failureSample:{symbol:string;reason:string}[];rejected:Record<string,number>;candidates:ScreenCandidate[];complete:boolean;source:string;elapsedMs:number;cacheHits:number;/** Registered vs paged universe size; a small drift is tolerated and recorded. */universe?:{registered:number;actual:number;gap:number}};
 export type CloseManifest=Omit<CloseReport,'candidates'>&{chunks:number;count:number};
 export function isClosingSnapshot(q:Snapshot|undefined,date:string){return !!q&&!q.stale&&q.asOf.slice(0,10)===date&&q.asOf.slice(11,16)>='15:00'&&q.asOf.slice(11,16)<='23:59'&&Number.isFinite(Date.parse(q.asOf));}
 export function filterReport(report:Pick<CloseReport,'candidates'>,options:ScreenOptions){
