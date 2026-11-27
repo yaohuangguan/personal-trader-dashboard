@@ -47,7 +47,7 @@ class _SignalsPageState extends State<SignalsPage> {
           final result = await s.api.get('/api/desk/close-report');
           nextReport = result['report'] is Map ? obj(result['report']) : null;
         } catch (e) {
-          errors.add(e.toString());
+          errors.add(describeError(e));
         }
       }(),
       () async {
@@ -57,7 +57,7 @@ class _SignalsPageState extends State<SignalsPage> {
             token: s.deviceToken,
           );
         } catch (e) {
-          errors.add(e.toString());
+          errors.add(describeError(e));
         }
       }(),
       () async {
@@ -67,7 +67,7 @@ class _SignalsPageState extends State<SignalsPage> {
             token: s.deviceToken,
           );
         } catch (e) {
-          errors.add(e.toString());
+          errors.add(describeError(e));
         }
       }(),
     ]);
@@ -91,7 +91,7 @@ class _SignalsPageState extends State<SignalsPage> {
       await refresh();
       if (mounted) setState(() => message = success);
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }

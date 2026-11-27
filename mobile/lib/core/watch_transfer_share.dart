@@ -36,8 +36,11 @@ Future<void> shareWatchTransfer(BuildContext context) async {
     );
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('${store.t('导出失败')}：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${store.t('导出失败')}：${store.t(describeError(e))}'),
+        ),
+      );
     }
   }
 }
@@ -127,9 +130,7 @@ Future<void> shareWatchCode(BuildContext context) async {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            '${store.t('生成分享码失败')}：${store.t('$e'.replaceFirst('FormatException: ', ''))}',
-          ),
+          content: Text('${store.t('生成分享码失败')}：${store.t(describeError(e))}'),
         ),
       );
     }

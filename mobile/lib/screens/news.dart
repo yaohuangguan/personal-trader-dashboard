@@ -183,9 +183,11 @@ class ReaderPage extends StatelessWidget {
                 );
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('${s.t('分享失败')}：$e')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${s.t('分享失败')}：${s.t(describeError(e))}'),
+                    ),
+                  );
                 }
               }
             },

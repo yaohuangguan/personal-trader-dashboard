@@ -62,7 +62,7 @@ class _MarketPageState extends State<MarketPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = e.toString());
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 

@@ -232,7 +232,7 @@ class ScreenerController extends ChangeNotifier {
           state['failed'] = [
             ...rows(state['failed']),
             ...batch.map(
-              (s) => {'symbol': s['symbol'], 'reason': e.toString()},
+              (s) => {'symbol': s['symbol'], 'reason': describeError(e)},
             ),
           ];
           consecutive += batch.length;
@@ -251,7 +251,7 @@ class ScreenerController extends ChangeNotifier {
     } catch (e) {
       if (id == generation) {
         state['phase'] = 'paused';
-        state['message'] = e.toString();
+        state['message'] = describeError(e);
       }
     } finally {
       if (id == generation) {

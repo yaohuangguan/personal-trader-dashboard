@@ -210,7 +210,9 @@ class AsyncPanelState extends State<AsyncPanel> {
               Icon(Icons.cloud_off, color: muted),
             const SizedBox(height: 14),
             Text(
-              loading ? tr(context, '正在连接数据源…') : tr(context, error.toString()),
+              loading
+                  ? tr(context, '正在连接数据源…')
+                  : tr(context, describeError(error)),
               textAlign: TextAlign.center,
             ),
             if (!loading)
@@ -226,7 +228,10 @@ class AsyncPanelState extends State<AsyncPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (error != null) Notice('${tr(context, '刷新失败，保留上一快照')} · $error'),
+        if (error != null)
+          Notice(
+            '${tr(context, '刷新失败，保留上一快照')} · ${tr(context, describeError(error))}',
+          ),
         widget.builder(data!),
         TextButton.icon(
           onPressed: loading ? null : refresh,

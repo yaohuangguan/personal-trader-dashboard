@@ -129,7 +129,7 @@ class AtlasStore extends ChangeNotifier with WidgetsBindingObserver {
       quoteReadAt = DateTime.now();
       _evaluateAlerts();
     } catch (e) {
-      quoteError = e.toString();
+      quoteError = describeError(e);
     } finally {
       _running = false;
       notifyListeners();

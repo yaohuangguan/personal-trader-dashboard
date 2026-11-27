@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api.dart';
 import '../core/store.dart';
 import 'common.dart';
 
@@ -30,7 +31,7 @@ class _CloudSyncPanelState extends State<CloudSyncPanel> {
       keyInput.clear();
       password.clear();
     } catch (e) {
-      error = '$e';
+      error = describeError(e);
     }
     if (mounted) setState(() => working = false);
   }

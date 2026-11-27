@@ -141,7 +141,7 @@ class _StockPageState extends State<StockPage> {
       }
     } catch (e) {
       if (mounted && generation == historyGeneration) {
-        setState(() => historyError = e.toString());
+        setState(() => historyError = describeError(e));
         if (studies.isLocal && historyFailures++ < 2) {
           historyRetry = Timer(
             Duration(seconds: historyFailures == 1 ? 2 : 8),
@@ -183,7 +183,7 @@ class _StockPageState extends State<StockPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => quoteError = e.toString());
+      if (mounted) setState(() => quoteError = describeError(e));
     }
   }
 
@@ -258,7 +258,7 @@ class _StockPageState extends State<StockPage> {
       }
     } catch (e) {
       if (mounted && generation == analysisGeneration) {
-        setState(() => analysisError = e.toString());
+        setState(() => analysisError = describeError(e));
       }
     } finally {
       if (generation == analysisGeneration) loading = false;
@@ -280,7 +280,7 @@ class _StockPageState extends State<StockPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => trendError = e.toString());
+      if (mounted) setState(() => trendError = describeError(e));
     } finally {
       trendLoading = false;
     }

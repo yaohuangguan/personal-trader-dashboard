@@ -74,7 +74,7 @@ class StockSearch extends SearchDelegate<String> {
           children: [
             if (snapshot.connectionState == ConnectionState.waiting)
               const LinearProgressIndicator(),
-            if (snapshot.hasError) Notice(snapshot.error.toString()),
+            if (snapshot.hasError) Notice(describeError(snapshot.error)),
             ...rows(snapshot.data?['items']).map(
               (r) => ListTile(
                 title: Text(str(r['name'])),
@@ -175,12 +175,7 @@ class _WatchPageState extends State<WatchPage> {
                     Navigator.pop(ctx);
                   }
                 } catch (e) {
-                  set(
-                    () => error = e.toString().replaceFirst(
-                      'FormatException: ',
-                      '',
-                    ),
-                  );
+                  set(() => error = describeError(e));
                 }
               },
               child: Text(s.t('保存')),

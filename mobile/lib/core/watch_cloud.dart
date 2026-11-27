@@ -129,10 +129,10 @@ extension WatchCloud on AtlasStore {
         await prefs.remove('cloudSyncBase');
         syncStatus = '登录已过期，请重新登录；本机自选保留';
       } else {
-        syncStatus = '未同步：$e；本机修改保留';
+        syncStatus = '未同步：${describeError(e)}；本机修改保留';
       }
     } catch (e) {
-      syncStatus = '未同步：$e；本机修改保留';
+      syncStatus = '未同步：${describeError(e)}；本机修改保留';
     } finally {
       syncBusy = false;
       _lastSyncAt = DateTime.now();

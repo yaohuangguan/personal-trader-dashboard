@@ -61,7 +61,9 @@ class _EarningsBoardState extends State<EarningsBoard> {
       );
       if (mounted && request == revision) setState(() => data = next);
     } catch (e) {
-      if (mounted && request == revision) setState(() => error = e.toString());
+      if (mounted && request == revision) {
+        setState(() => error = describeError(e));
+      }
     } finally {
       if (mounted && request == revision) setState(() => loading = false);
     }

@@ -2237,5 +2237,12 @@
   "账号已删除，本机自选保留": "Account deleted; the watchlist stays on this device",
   "请输入密码确认删除": "Enter your password to confirm deletion",
   "密码错误": "Wrong password",
-  "隐私政策": "Privacy policy"
+  "隐私政策": "Privacy policy",
+  "服务繁忙，请稍后重试": "Service busy, please try again shortly",
+  "请求超时，请检查网络后重试": "Request timed out. Check the connection and retry",
+  "网络不可用，请检查网络连接": "No network connection. Check your connection",
+  "登录后可发起全市场扫描": "Sign in to start a full-market scan",
+  "数据服务暂未返回有效响应，请稍后重试": "The data service returned an invalid response. Please retry",
+  "数据暂不可用，请稍后重试": "Data temporarily unavailable, please retry",
+  "读取失败：{error}": "Could not read: {error}"
 }

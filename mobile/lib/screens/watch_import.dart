@@ -75,7 +75,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
           : str(r['text'], '');
       notice = (numOf(r['failedImages']) ?? 0) == 0 ? null : '部分图片未识别，请核对结果。';
     } catch (e) {
-      if (mounted) setState(() => error = '读取失败：$e');
+      if (mounted) setState(() => error = '读取失败：${describeError(e)}');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -145,7 +145,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
             '识别 ${parsed.length} 个，核验 ${symbols.length} 个；重复项自动合并。${parsed.length > symbols.length ? '未核验代码不会加入，请核对原图。' : ''}';
       });
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -183,7 +183,7 @@ class _WatchImportPageState extends State<WatchImportPage> {
       );
       Navigator.pop(context);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }
